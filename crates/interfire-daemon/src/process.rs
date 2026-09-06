@@ -44,6 +44,11 @@ impl std::error::Error for AttributionError {}
 
 /// Resolve immediately after receiving an event. A start-tick mismatch means
 /// the PID was reused and must never inherit the previous process's policy.
+///
+/// # Errors
+///
+/// Returns I/O failures, malformed `/proc` records, or
+/// [`AttributionError::PidReused`] when start ticks do not match.
 pub fn resolve(pid: u32, expected_start_ticks: u64) -> Result<ProcessIdentity, AttributionError> {
     let root = PathBuf::from("/proc").join(pid.to_string());
     let start_ticks = parse_start_ticks(&fs::read_to_string(root.join("stat"))?)?;
@@ -76,6 +81,11 @@ pub fn resolve(pid: u32, expected_start_ticks: u64) -> Result<ProcessIdentity, A
     })
 }
 
+/// Parse `starttime` (field 22) from a `/proc/<pid>/stat` line.
+///
+/// # Errors
+///
+/// Returns [`AttributionError::MalformedStat`] when the record cannot be parsed.
 pub fn parse_start_ticks(stat: &str) -> Result<u64, AttributionError> {
     // The command name can contain spaces and parentheses; fields after the
     // final ')' start with field 3. starttime is field 22, index 19 here.
@@ -92,6 +102,12 @@ pub struct ProcessCache {
 }
 
 impl ProcessCache {
+    /// Create a bounded process identity cache.
+    ///
+    /// # Panics
+    ///
+    /// Panics when `capacity` is zero.
+    #[must_use]
     pub fn new(capacity: usize) -> Self {
         assert!(capacity > 0, "process cache must be bounded");
         Self {
@@ -115,6 +131,7 @@ impl ProcessCache {
         self.entries.insert(key, identity);
     }
 
+    #[must_use]
     pub fn get(&self, pid: u32, start_ticks: u64) -> Option<&ProcessIdentity> {
         self.entries.get(&(pid, start_ticks))
     }

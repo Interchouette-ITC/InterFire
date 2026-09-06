@@ -1,0 +1,18 @@
+# Paths excluded from Codecov totals.
+# Plain folder paths only (Codecov treats entries as regex; avoid ** bombs).
+# Upload token stays in GitHub Actions secrets, not here.
+coverage:
+  status:
+    project:
+      default:
+        informational: true
+    patch:
+      default:
+        informational: true
+
+ignore:
+  - "scripts"
+  - "fixtures"
+  - "crates/interfire-ebpf-programs"
+  - "crates/interfire-daemon/src/main.rs"
+  - "crates/interfirectl/src/main.rs"

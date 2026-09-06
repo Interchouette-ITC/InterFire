@@ -81,6 +81,12 @@ pub enum Request {
 }
 
 impl Request {
+    /// Parse one newline-terminated `v1 …` control frame.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ProtocolError::UnsupportedVersion`] when the frame is not `v1`,
+    /// or [`ProtocolError::Malformed`] when the command or fields are invalid.
     pub fn parse(frame: &str) -> Result<Self, ProtocolError> {
         let mut fields = frame.split_whitespace();
         let version = fields.next().ok_or(ProtocolError::Malformed)?;
@@ -135,6 +141,8 @@ pub enum Response {
 }
 
 impl Response {
+    /// Encode a response as one newline-terminated control frame.
+    #[must_use]
     pub fn encode(&self) -> String {
         match self {
             Self::Pong => "v1 pong\n".into(),

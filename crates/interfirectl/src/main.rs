@@ -9,7 +9,7 @@ fn main() -> io::Result<()> {
     let mut arguments = Vec::new();
     for argument in env::args().skip(1) {
         if let Some(value) = argument.strip_prefix("--socket=") {
-            socket = value.to_owned();
+            value.clone_into(&mut socket);
         } else {
             arguments.push(argument);
         }

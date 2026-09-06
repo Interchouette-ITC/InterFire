@@ -7,3 +7,6 @@ target/
 *.swp
 .cursor/
 .github_credentials
+coverage/
+/docs/api-rust/**
+!/docs/api-rust/README.md

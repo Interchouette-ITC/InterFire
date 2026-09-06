@@ -63,6 +63,8 @@ pub struct Rule {
 }
 
 impl Rule {
+    /// Return whether this rule applies to `connection`.
+    #[must_use]
     pub fn matches(&self, connection: &Connection) -> bool {
         self.executable == connection.executable
             && self
@@ -82,17 +84,21 @@ impl Rule {
     }
 
     /// More constrained rules win; ID makes otherwise equal rules stable.
+    #[must_use]
     pub fn precedence(&self) -> (u8, u64) {
-        let constrained = [
-            self.protocol.is_some(),
-            self.direction.is_some(),
-            self.address.is_some(),
-            self.hostname.is_some(),
-            self.port.is_some(),
-        ]
-        .into_iter()
-        .filter(|value| *value)
-        .count() as u8;
+        let constrained = u8::try_from(
+            [
+                self.protocol.is_some(),
+                self.direction.is_some(),
+                self.address.is_some(),
+                self.hostname.is_some(),
+                self.port.is_some(),
+            ]
+            .into_iter()
+            .filter(|value| *value)
+            .count(),
+        )
+        .unwrap_or(u8::MAX);
         (constrained, self.id)
     }
 }
@@ -103,6 +109,13 @@ pub struct RuleSet {
 }
 
 impl RuleSet {
+    /// Insert a validated rule.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RuleError::ExecutableMustBeAbsolute`] when the executable is
+    /// empty or relative, or [`RuleError::DuplicateId`] when `rule.id` is already
+    /// present.
     pub fn insert(&mut self, rule: Rule) -> Result<(), RuleError> {
         if rule.executable.is_empty() || !rule.executable.starts_with('/') {
             return Err(RuleError::ExecutableMustBeAbsolute);
@@ -120,10 +133,13 @@ impl RuleSet {
         before != self.rules.len()
     }
 
+    #[must_use]
     pub fn rules(&self) -> &[Rule] {
         &self.rules
     }
 
+    /// Highest-precedence matching rule wins; otherwise [`Verdict::Prompt`].
+    #[must_use]
     pub fn verdict_for(&self, connection: &Connection) -> Verdict {
         self.rules
             .iter()
@@ -182,10 +198,16 @@ impl RulesStore {
         Self { path: path.into() }
     }
 
+    #[must_use]
     pub fn path(&self) -> &Path {
         &self.path
     }
 
+    /// Load rules from disk, or an empty set when the file is missing.
+    ///
+    /// # Errors
+    ///
+    /// Returns I/O, TOML parse, schema, or rule-validation failures.
     pub fn load(&self) -> Result<RuleSet, PersistenceError> {
         if !self.path.exists() {
             return Ok(RuleSet::default());
@@ -203,6 +225,12 @@ impl RulesStore {
         Ok(rules)
     }
 
+    /// Atomically replace the on-disk rules file (mode `0600`).
+    ///
+    /// # Errors
+    ///
+    /// Returns serialize or filesystem failures while writing the temporary
+    /// file, syncing, renaming, or setting permissions.
     pub fn save(&self, rules: &RuleSet) -> Result<(), PersistenceError> {
         let document = RulesDocument {
             schema_version: Self::SCHEMA_VERSION,
@@ -221,7 +249,7 @@ impl RulesStore {
             .open(&temporary)
             .map_err(PersistenceError::Io)?;
         file.write_all(data.as_bytes())
-            .and_then(|_| file.sync_all())
+            .and_then(|()| file.sync_all())
             .map_err(PersistenceError::Io)?;
         fs::rename(&temporary, &self.path).map_err(PersistenceError::Io)?;
         fs::set_permissions(&self.path, fs::Permissions::from_mode(0o600))

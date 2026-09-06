@@ -1,4 +1,13 @@
-# Interfire
+# InterFire
+
+<p align="center">
+  <strong>Linux-first Rust application firewall.</strong>
+</p>
+
+<p align="center">
+  <a href="https://github.com/Interchouette-ITC/InterFire/actions/workflows/ci.yml"><img src="https://github.com/Interchouette-ITC/InterFire/actions/workflows/ci.yml/badge.svg?branch=dev" alt="CI" /></a>
+  <a href="https://codecov.io/gh/Interchouette-ITC/InterFire"><img src="https://codecov.io/gh/Interchouette-ITC/InterFire/branch/dev/graph/badge.svg" alt="codecov" /></a>
+</p>
 
 Linux-first **application firewall** in Rust: attribute outbound connections to
 processes, match durable rules, and (when the verdict path is live) accept or
@@ -14,14 +23,14 @@ feasibility path.
 
 ## What you get today
 
-| Piece             | Role                                                     |
-| ----------------- | -------------------------------------------------------- |
-| `interfire-rules` | Deterministic application-rule matching + TOML store     |
-| `interfire-proto` | Versioned, bounded Unix-socket framing                   |
-| `interfired`      | Daemon skeleton (rules load, process cache, IPC)         |
-| `interfirectl`    | CLI: `ping`, `status`, `rules list` / `add` / `delete`   |
+| Piece | Role |
+| --- | --- |
+| `interfire-rules` | Deterministic application-rule matching + TOML store |
+| `interfire-proto` | Versioned, bounded Unix-socket framing |
+| `interfired` | Daemon skeleton (rules load, process cache, IPC) |
+| `interfirectl` | CLI: `ping`, `status`, `rules list` / `add` / `delete` |
 | `interfire-ebpf*` | Placeholders for observation programs (not attached yet) |
-| Docs              | Architecture, threat model, UX contract and studies      |
+| Docs | Architecture, threat model, UX contract and studies |
 
 Still building toward: eBPF observation, NFQUEUE verdicts, tray UI, and Debian
 packaging.
@@ -30,9 +39,8 @@ packaging.
 
 ```bash
 git clone https://github.com/Interchouette-ITC/InterFire.git
-cd interfire
-make lint
-make test
+cd InterFire
+make ci
 ```
 
 Non-root smoke (daemon + CLI on a temp socket):
@@ -54,13 +62,18 @@ is scoped.
 
 ## Docs
 
-| Doc                                    | Topic                                      |
-| -------------------------------------- | ------------------------------------------ |
-| [`architecture.md`](architecture.md)   | Event flow, NFQUEUE verdict path, baseline |
-| [`threat-model.md`](threat-model.md)   | Assets, trust boundaries, controls         |
-| [`ux-interfire.md`](ux-interfire.md)   | Locked UI contract                         |
-| [`ux-opensnitch.md`](ux-opensnitch.md) | OpenSnitch interaction study               |
-| [`ux-kerio.md`](ux-kerio.md)           | Kerio-era interaction study                |
+| Doc | Topic |
+| --- | --- |
+| [`architecture.md`](architecture.md) | Event flow, NFQUEUE verdict path, baseline |
+| [`threat-model.md`](threat-model.md) | Assets, trust boundaries, controls |
+| [`ux-interfire.md`](ux-interfire.md) | Locked UI contract |
+| [`ux-opensnitch.md`](ux-opensnitch.md) | OpenSnitch interaction study |
+| [`ux-kerio.md`](ux-kerio.md) | Kerio-era interaction study |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | Lint bar, Make targets, PR habits |
+| [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) | Community standards |
+| [`SECURITY.md`](SECURITY.md) | Vulnerability reporting |
+| [`../docs-dev/README.md`](../docs-dev/README.md) | Developer docs index |
+| [`api-rust/`](api-rust/) | rustdoc after `make doc` |
 
 ## Layout
 
@@ -72,6 +85,7 @@ crates/interfirectl/             CLI
 crates/interfire-ebpf/           eBPF loader stub
 crates/interfire-ebpf-programs/  eBPF program stub
 docs/                            product docs (this hub)
+docs-dev/                        developer notes
 fixtures/                        rule fixtures
 scripts/                         capability probe + NFQUEUE spike
 ui/                              reserved for the tray client
@@ -80,10 +94,11 @@ packaging/debian/                reserved for packaging
 
 ## Contributing
 
-1. Prefer Make targets (`make lint`, `make test`) over ad-hoc cargo lines.
-2. One concern per PR. Commits and docs in **English**.
-3. Do not claim enforcement until the verdict path is wired and measured.
+1. Read [`CONTRIBUTING.md`](CONTRIBUTING.md) and [`../docs-dev/DEVELOPMENT.md`](../docs-dev/DEVELOPMENT.md).
+2. Prefer Make targets (`make ci`) over ad-hoc cargo lines.
+3. One concern per PR. Commits and docs in **English**.
+4. Do not claim enforcement until the verdict path is wired and measured.
 
 ## License
 
-**Apache-2.0** (Apache License, Version 2.0).
+**Apache-2.0** (Apache License, Version 2.0). See [`../LICENSE`](../LICENSE).
