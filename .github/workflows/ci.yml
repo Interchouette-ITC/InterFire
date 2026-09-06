@@ -1,17 +1,126 @@
 name: CI
 
+# Action runtimes: Node 24+ (checkout v7, codecov-action v6).
 on:
   push:
+    branches: [dev]
   pull_request:
+    branches: [dev]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+  RUSTDOCFLAGS: "-D warnings"
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  rust:
+  changes:
+    name: detect changes
     runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@v7
+      - uses: dorny/paths-filter@v4
+        id: filter
         with:
-          components: clippy, rustfmt
-      - run: make fmt
-      - run: make lint
-      - run: make test
+          filters: |
+            code:
+              - "**"
+              - "!**/*.md"
+              - "!.github/ISSUE_TEMPLATE/**"
+
+  lint-test-doc:
+    name: fmt · clippy · test · rustdoc
+    needs: changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - name: Markdown-only
+        if: needs.changes.outputs.code != 'true'
+        run: echo "markdown-only; skipping heavy jobs"
+      - uses: dtolnay/rust-toolchain@stable
+        if: needs.changes.outputs.code == 'true'
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        if: needs.changes.outputs.code == 'true'
+      - name: lint + test + rustdoc
+        if: needs.changes.outputs.code == 'true'
+        run: make ci
+      - name: Github pages
+        if: >-
+          needs.changes.outputs.code == 'true'
+          && github.event_name == 'push'
+          && github.ref == 'refs/heads/dev'
+        uses: JamesIves/github-pages-deploy-action@ba1486788b0490a235422264426c45848eac35c6 # v4.4.1
+        with:
+          folder: docs/api-rust
+          branch: gh-pages
+          clean: true
+          commit-message: "Deploy documentation for ${{ github.sha }}"
+
+  coverage:
+    name: coverage
+    needs: changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - name: Markdown-only
+        if: needs.changes.outputs.code != 'true'
+        run: echo "markdown-only; skipping coverage"
+      - uses: dtolnay/rust-toolchain@stable
+        if: needs.changes.outputs.code == 'true'
+        with:
+          components: llvm-tools-preview
+      - uses: Swatinem/rust-cache@v2
+        if: needs.changes.outputs.code == 'true'
+      - name: Install cargo-llvm-cov
+        if: needs.changes.outputs.code == 'true'
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov
+      - name: Coverage
+        if: needs.changes.outputs.code == 'true'
+        run: make coverage
+      - name: Upload to Codecov
+        if: needs.changes.outputs.code == 'true'
+        uses: codecov/codecov-action@v6
+        with:
+          files: coverage/lcov.info
+          flags: rust
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+  supply-chain:
+    name: supply-chain
+    needs: changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - name: Markdown-only
+        if: needs.changes.outputs.code != 'true'
+        run: echo "markdown-only; skipping supply-chain"
+      - uses: dtolnay/rust-toolchain@stable
+        if: needs.changes.outputs.code == 'true'
+      - name: Install cargo-audit and cargo-deny
+        if: needs.changes.outputs.code == 'true'
+        run: |
+          cargo install --locked cargo-audit --version 0.22.0
+          cargo install --locked cargo-deny --version 0.20.2
+      - name: Cargo audit and deny
+        if: needs.changes.outputs.code == 'true'
+        run: make audit && make deny

@@ -1,0 +1,32 @@
+# cargo-deny configuration (run: `make deny`)
+# https://embarkstudios.github.io/cargo-deny/
+
+[graph]
+all-features = false
+
+[advisories]
+yanked = "warn"
+
+[licenses]
+unused-allowed-license = "allow"
+allow = [
+    "Apache-2.0",
+    "MIT",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-3.0",
+    "Zlib",
+    "OpenSSL",
+    "CDLA-Permissive-2.0",
+]
+confidence-threshold = 0.8
+
+[bans]
+multiple-versions = "warn"
+wildcards = "allow"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
