@@ -3,6 +3,7 @@ name = "interfire-ebpf-programs"
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true
+rust-version.workspace = true
 autobins = false
 
 [[bin]]
@@ -12,4 +13,4 @@ test = false
 bench = false
 
 [dependencies]
-aya-ebpf = "0.1"
+aya-ebpf = { workspace = true }
