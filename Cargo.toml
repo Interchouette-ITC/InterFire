@@ -1,0 +1,14 @@
+[workspace]
+members = [
+  "crates/interfire-rules",
+  "crates/interfire-proto",
+  "crates/interfire-daemon",
+  "crates/interfire-ebpf",
+  "crates/interfire-ebpf-programs",
+  "crates/interfirectl",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2024"
+license = "Apache-2.0"

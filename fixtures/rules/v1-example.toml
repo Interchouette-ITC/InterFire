@@ -1,0 +1,11 @@
+# Schema fixture for the TOML rules persistence format.
+schema_version = 1
+
+[[rules]]
+id = 1
+executable = "/usr/bin/curl"
+protocol = "tcp"
+direction = "outbound"
+port = 443
+verdict = "allow"
+scope = "permanent"

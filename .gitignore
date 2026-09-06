@@ -1,0 +1,9 @@
+node_modules
+.venv-pdf
+target/
+.cargo/
+!.cargo/
+!.cargo/config.toml
+*.swp
+.cursor/
+.github_credentials
