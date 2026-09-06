@@ -122,10 +122,10 @@ impl ProcessCache {
         if self.entries.contains_key(&key) {
             return;
         }
-        if self.entries.len() == self.capacity
-            && let Some(oldest) = self.order.pop_front()
-        {
-            self.entries.remove(&oldest);
+        if self.entries.len() == self.capacity {
+            if let Some(oldest) = self.order.pop_front() {
+                self.entries.remove(&oldest);
+            }
         }
         self.order.push_back(key);
         self.entries.insert(key, identity);

@@ -9,7 +9,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::Path;
 
-use interfire_proto::{IPC_VERSION, MAX_FRAME_BYTES, Request, Response};
+use interfire_proto::{Request, Response, IPC_VERSION, MAX_FRAME_BYTES};
 use interfire_rules::{Direction, Protocol, Rule, RuleSet, RulesStore, Scope, Verdict};
 
 fn main() -> io::Result<()> {
