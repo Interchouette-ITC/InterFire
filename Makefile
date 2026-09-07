@@ -4,7 +4,7 @@ CLIPPY_FLAGS := -D warnings -D clippy::all -D clippy::pedantic -D clippy::nurser
 CARGO ?= cargo +stable
 DOC_OUT ?= target/doc
 
-.PHONY: help fmt format lint test coverage audit deny doc doc-open doc-clean ci memcheck integration ebpf
+.PHONY: help fmt format lint test coverage audit deny doc doc-open doc-clean ci memcheck integration ebpf ui
 
 .DEFAULT_GOAL := help
 
@@ -19,6 +19,8 @@ help:
 	@echo "  make audit          cargo audit"
 	@echo "  make deny           cargo deny check"
 	@echo "  make ci             lint + test + doc"
+	@echo "  make ui             build interfire-ui (GPUI desktop client)"
+	@echo "  make ui-test        test interfire-ui (needs X11/Wayland UI libs)"
 	@echo "  make ebpf           rebuild embedded TCP-connect eBPF object (nightly)"
 	@echo "  make memcheck       idle interfired RSS vs < 40 MiB budget"
 	@echo "  make integration    root netns allow/deny gate (not part of make ci)"
@@ -30,16 +32,18 @@ format:
 	$(CARGO) fmt
 
 lint: fmt
-	$(CARGO) clippy --workspace --all-targets --exclude interfire-ebpf-programs -- $(CLIPPY_FLAGS)
+	$(CARGO) clippy --workspace --all-targets --exclude interfire-ebpf-programs --exclude interfire-ui -- $(CLIPPY_FLAGS)
+	$(CARGO) clippy -p interfire-ui -- $(CLIPPY_FLAGS)
 
 test:
-	$(CARGO) test --workspace
+	$(CARGO) test --workspace --exclude interfire-ui
 
 ## Requires cargo-llvm-cov + llvm-tools-preview. Writes coverage/lcov.info.
+## Exclude interfire-ui: GPUI needs system fontconfig/xkb; covered by `make ui-test` in CI.
 coverage:
 	mkdir -p coverage
-	RUSTUP_TOOLCHAIN=stable $(CARGO) llvm-cov --workspace --lcov \
-		--ignore-filename-regex 'scripts/|fixtures/|crates/interfire-ebpf-programs/|crates/interfire-daemon/src/main\.rs|crates/interfirectl/src/main\.rs|crates/interfire-tui/src/main\.rs' \
+	RUSTUP_TOOLCHAIN=stable $(CARGO) llvm-cov --workspace --exclude interfire-ui --lcov \
+		--ignore-filename-regex 'scripts/|fixtures/|crates/interfire-ebpf-programs/|crates/interfire-daemon/src/main\.rs|crates/interfirectl/src/main\.rs|crates/interfire-tui/src/main\.rs|ui/src/main\.rs' \
 		--output-path coverage/lcov.info
 
 ## Requires `cargo install cargo-audit`.
@@ -52,7 +56,7 @@ deny:
 
 ## rustdoc → `docs/api-rust/` (gitignored except README).
 doc:
-	RUSTDOCFLAGS='-D warnings' $(CARGO) doc --workspace --no-deps --exclude interfire-ebpf-programs
+	RUSTDOCFLAGS='-D warnings' $(CARGO) doc --workspace --no-deps --exclude interfire-ebpf-programs --exclude interfire-ui
 	@test -d "$(DOC_OUT)" || (echo "missing $(DOC_OUT)"; exit 1)
 	@rm -rf docs/api-rust
 	@mkdir -p docs/api-rust
@@ -81,6 +85,13 @@ doc-clean:
 		> docs/api-rust/README.md
 
 ci: lint test doc
+
+## GPUI desktop client (needs libxkbcommon-x11-dev and related system libs).
+ui:
+	$(CARGO) build -p interfire-ui
+
+ui-test:
+	$(CARGO) test -p interfire-ui
 
 ## Rebuild `crates/interfire-ebpf/bpf/interfire-ebpf-programs` (needs nightly + bpf-linker).
 ebpf:

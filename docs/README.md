@@ -98,13 +98,14 @@ crates/interfire-proto/          IPC version + frame bounds
 crates/interfire-daemon/         interfired
 crates/interfirectl/             one-shot CLI
 crates/interfire-tui/            ratatui control-plane TUI
+ui/                              interfire-ui (GPUI desktop; scaffold)
 crates/interfire-ebpf/           TCP event contract + aya loader
 crates/interfire-ebpf-programs/  TCP-connect eBPF program (bpfel)
 docs/                            product docs (this hub)
 docs-dev/                        developer notes
 fixtures/                        rule fixtures
 scripts/                         capability probe + NFQUEUE test helpers
-ui/                              empty (GPUI tray not implemented)
+ui/                              interfire-ui (GPUI desktop scaffold)
 packaging/debian/                empty (Debian packaging not implemented)
 ```
 

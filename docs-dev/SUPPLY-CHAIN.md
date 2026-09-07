@@ -19,6 +19,10 @@ cargo install --locked cargo-deny --version 0.20.2
 The `supply-chain` job runs `make audit && make deny` on every PR and on pushes
 to `dev`.
 
+`deny.toml` allows additional licenses pulled by the GPUI stack (**CC0-1.0**,
+**MPL-2.0**, **0BSD**, **bzip2-1.0.6**). Unmaintained advisories fail only for
+direct workspace crates (`unmaintained = "workspace"`); yanked stays warn.
+
 ## Dependabot
 
 [`.github/dependabot.yml`](../.github/dependabot.yml) opens weekly PRs for Cargo
