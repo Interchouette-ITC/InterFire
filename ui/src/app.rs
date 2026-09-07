@@ -1,22 +1,46 @@
-//! `InterFire` desktop shell: left navigation, tray chrome, connection alert.
+//! `InterFire` desktop shell: left navigation, tray, alert, and Rules CRUD.
 #![allow(clippy::wildcard_imports)]
 #![forbid(unsafe_code)]
 
 use std::time::Duration;
 
+use gpui_kit::component::input::InputState;
 use gpui_kit::component::*;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
-use interfire_proto::PromptRow;
+use interfire_proto::{PromptRow, RuleRow};
 
 use crate::alert::{AlertScope, AlertVerdict, ConnectionAlert};
+use crate::alert_view::alert_overlay;
 use crate::ipc_poll;
+use crate::rules::{RuleVerdict, next_rule_id, validate_new_rule};
+use crate::rules_view::{add_rule_overlay, rules_body};
 use crate::section::Section;
 use crate::tray::{DaemonLink, TrayState};
 #[cfg(target_os = "linux")]
 use crate::tray_host::TrayHost;
 
 const POLL_INTERVAL: Duration = Duration::from_secs(1);
+
+struct ShellContent<'a> {
+    section: Section,
+    socket: &'a str,
+    tray_state: TrayState,
+    link: &'a DaemonLink,
+    rules: &'a [RuleRow],
+    selected_rule: Option<u64>,
+    rules_message: Option<&'a str>,
+    adding: bool,
+}
+
+/// Active add-rule form backed by GPUI input states.
+pub struct AddRuleFormState {
+    pub id: Entity<InputState>,
+    pub executable: Entity<InputState>,
+    pub port: Entity<InputState>,
+    pub verdict: RuleVerdict,
+    pub error: Option<String>,
+}
 
 /// Root application view for the main window.
 pub struct App {
@@ -25,6 +49,10 @@ pub struct App {
     link: DaemonLink,
     tray_state: TrayState,
     prompts: Vec<PromptRow>,
+    rules: Vec<RuleRow>,
+    selected_rule: Option<u64>,
+    rules_message: Option<String>,
+    add_form: Option<AddRuleFormState>,
     alert: Option<ConnectionAlert>,
     #[cfg(target_os = "linux")]
     tray: Option<TrayHost>,
@@ -43,13 +71,17 @@ impl App {
             link,
             tray_state,
             prompts: Vec::new(),
+            rules: Vec::new(),
+            selected_rule: None,
+            rules_message: None,
+            add_form: None,
             alert: None,
             #[cfg(target_os = "linux")]
             tray: TrayHost::try_spawn(tray_state),
         }
     }
 
-    /// Start periodic daemon polls that drive tray, Status, and alerts.
+    /// Start periodic daemon polls that drive tray, Status, alerts, and rules.
     pub fn start_watchers(cx: &Context<Self>) {
         cx.spawn(async move |this, cx| {
             loop {
@@ -72,6 +104,12 @@ impl App {
         let snapshot = ipc_poll::poll_snapshot(&self.socket);
         self.link = snapshot.link;
         self.prompts = snapshot.prompts;
+        self.rules = snapshot.rules;
+        if let Some(id) = self.selected_rule
+            && !self.rules.iter().any(|row| row.id == id)
+        {
+            self.selected_rule = None;
+        }
         self.alert = ConnectionAlert::advance(self.alert.take(), &self.prompts);
         let next = TrayState::from_link(&self.link);
         if next != self.tray_state {
@@ -83,26 +121,31 @@ impl App {
         }
     }
 
-    fn select(&mut self, section: Section, cx: &mut Context<Self>) {
+    pub(crate) fn select(&mut self, section: Section, cx: &mut Context<Self>) {
         self.section = section;
         cx.notify();
     }
 
-    fn set_scope(&mut self, scope: AlertScope, cx: &mut Context<Self>) {
+    pub(crate) fn select_rule(&mut self, id: u64, cx: &mut Context<Self>) {
+        self.selected_rule = Some(id);
+        cx.notify();
+    }
+
+    pub(crate) fn set_scope(&mut self, scope: AlertScope, cx: &mut Context<Self>) {
         if let Some(alert) = &mut self.alert {
             alert.scope = scope;
             cx.notify();
         }
     }
 
-    fn toggle_details(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn toggle_details(&mut self, cx: &mut Context<Self>) {
         if let Some(alert) = &mut self.alert {
             alert.details_open = !alert.details_open;
             cx.notify();
         }
     }
 
-    fn submit_verdict(&mut self, verdict: AlertVerdict, cx: &mut Context<Self>) {
+    pub(crate) fn submit_verdict(&mut self, verdict: AlertVerdict, cx: &mut Context<Self>) {
         let Some(alert) = &self.alert else {
             return;
         };
@@ -124,6 +167,102 @@ impl App {
         }
         cx.notify();
     }
+
+    pub(crate) fn begin_add_rule(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.add_form.is_some() {
+            return;
+        }
+        let next_id = next_rule_id(&self.rules);
+        let id = cx.new(|cx| {
+            let mut state = InputState::new(window, cx);
+            state.set_value(next_id.to_string(), window, cx);
+            state
+        });
+        let executable = cx.new(|cx| InputState::new(window, cx));
+        let port = cx.new(|cx| {
+            let mut state = InputState::new(window, cx);
+            state.set_value("443", window, cx);
+            state
+        });
+        self.add_form = Some(AddRuleFormState {
+            id,
+            executable,
+            port,
+            verdict: RuleVerdict::Deny,
+            error: None,
+        });
+        self.rules_message = None;
+        cx.notify();
+    }
+
+    pub(crate) fn cancel_add_rule(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        self.add_form = None;
+        cx.notify();
+    }
+
+    pub(crate) fn set_add_verdict(&mut self, verdict: RuleVerdict, cx: &mut Context<Self>) {
+        if let Some(form) = &mut self.add_form {
+            form.verdict = verdict;
+            cx.notify();
+        }
+    }
+
+    pub(crate) fn submit_add_rule(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        let Some(form) = &self.add_form else {
+            return;
+        };
+        let id = form.id.read(cx).value().to_string();
+        let executable = form.executable.read(cx).value().to_string();
+        let port = form.port.read(cx).value().to_string();
+        let verdict = form.verdict;
+        let parsed = match validate_new_rule(&id, &executable, verdict, &port) {
+            Ok(rule) => rule,
+            Err(message) => {
+                if let Some(form) = &mut self.add_form {
+                    form.error = Some(message);
+                }
+                cx.notify();
+                return;
+            }
+        };
+        match ipc_poll::add_rule(
+            &self.socket,
+            parsed.id,
+            &parsed.executable,
+            &parsed.verdict,
+            parsed.port,
+        ) {
+            Ok(()) => {
+                self.add_form = None;
+                self.selected_rule = Some(parsed.id);
+                self.rules_message = Some(format!("added rule {}", parsed.id));
+                self.refresh_from_daemon();
+            }
+            Err(message) => {
+                if let Some(form) = &mut self.add_form {
+                    form.error = Some(message);
+                }
+            }
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn delete_selected_rule(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        let Some(id) = self.selected_rule else {
+            return;
+        };
+        match ipc_poll::delete_rule(&self.socket, id) {
+            Ok(()) => {
+                self.selected_rule = None;
+                self.rules_message = Some(format!("deleted rule {id}"));
+                self.refresh_from_daemon();
+            }
+            Err(message) => {
+                self.rules_message = Some(message);
+            }
+        }
+        cx.notify();
+    }
 }
 
 impl Render for App {
@@ -133,8 +272,12 @@ impl Render for App {
         let tray_state = self.tray_state;
         let link = self.link.clone();
         let alert = self.alert.clone();
+        let rules = self.rules.clone();
+        let selected_rule = self.selected_rule;
+        let rules_message = self.rules_message.clone();
+        let adding = self.add_form.is_some();
 
-        let shell = div()
+        let mut shell = div()
             .id("interfire-shell")
             .relative()
             .flex()
@@ -142,13 +285,27 @@ impl Render for App {
             .bg(cx.theme().background)
             .text_color(cx.theme().foreground)
             .child(nav_column(selected, cx))
-            .child(content_column(selected, &socket, tray_state, &link, cx));
+            .child(content_column(
+                &ShellContent {
+                    section: selected,
+                    socket: &socket,
+                    tray_state,
+                    link: &link,
+                    rules: &rules,
+                    selected_rule,
+                    rules_message: rules_message.as_deref(),
+                    adding,
+                },
+                cx,
+            ));
 
-        if let Some(alert) = alert {
-            shell.child(alert_overlay(&alert, cx))
-        } else {
-            shell
+        if let Some(form) = &self.add_form {
+            shell = shell.child(add_rule_overlay(form, cx));
         }
+        if let Some(alert) = alert {
+            shell = shell.child(alert_overlay(&alert, cx));
+        }
+        shell
     }
 }
 
@@ -192,13 +349,7 @@ fn nav_button(section: Section, selected: bool, cx: &Context<App>) -> impl IntoE
         .child(label)
 }
 
-fn content_column(
-    section: Section,
-    socket: &str,
-    tray_state: TrayState,
-    link: &DaemonLink,
-    cx: &Context<App>,
-) -> impl IntoElement {
+fn content_column(content: &ShellContent<'_>, cx: &Context<App>) -> impl IntoElement {
     div()
         .id("content")
         .flex_1()
@@ -207,8 +358,13 @@ fn content_column(
         .flex_col()
         .p_4()
         .gap_3()
-        .child(div().text_lg().font_semibold().child(section.label()))
-        .child(section_body(section, socket, tray_state, link, cx))
+        .child(
+            div()
+                .text_lg()
+                .font_semibold()
+                .child(content.section.label()),
+        )
+        .child(section_body(content, cx))
         .child(
             div()
                 .mt_auto()
@@ -218,32 +374,25 @@ fn content_column(
                 .text_xs()
                 .text_color(cx.theme().muted_foreground)
                 .child(format!(
-                    "{}  |  tray: {}  |  {socket}",
-                    section.label(),
-                    tray_state.label()
+                    "{}  |  tray: {}  |  {}",
+                    content.section.label(),
+                    content.tray_state.label(),
+                    content.socket
                 )),
         )
 }
 
-fn section_body(
-    section: Section,
-    socket: &str,
-    tray_state: TrayState,
-    link: &DaemonLink,
-    cx: &Context<App>,
-) -> Div {
+fn section_body(content: &ShellContent<'_>, cx: &Context<App>) -> Div {
     let muted = cx.theme().muted_foreground;
-    match section {
-        Section::Rules => div()
-            .v_flex()
-            .gap_2()
-            .child("Rules is the primary policy surface.")
-            .child(
-                div()
-                    .text_color(muted)
-                    .child("Scaffold: dense rule table and CRUD land in a later slice."),
-            ),
-        Section::Status => status_body(socket, tray_state, link, muted),
+    match content.section {
+        Section::Rules => rules_body(
+            content.rules,
+            content.selected_rule,
+            content.rules_message,
+            content.adding,
+            cx,
+        ),
+        Section::Status => status_body(content.socket, content.tray_state, content.link, muted),
         Section::Applications => div()
             .text_color(muted)
             .child("Observed identities and effective rules (thin shell)."),
@@ -257,11 +406,15 @@ fn section_body(
             .v_flex()
             .gap_2()
             .child("Socket path, diagnostics, reconnect.")
-            .child(div().text_color(muted).child(format!("socket = {socket}")))
             .child(
                 div()
                     .text_color(muted)
-                    .child(format!("tray = {}", tray_state.label())),
+                    .child(format!("socket = {}", content.socket)),
+            )
+            .child(
+                div()
+                    .text_color(muted)
+                    .child(format!("tray = {}", content.tray_state.label())),
             ),
     }
 }
@@ -294,151 +447,4 @@ fn status_body(socket: &str, tray_state: TrayState, link: &DaemonLink, muted: Hs
                     .child(format!("pending prompts: {pending_prompts}")),
             ),
     }
-}
-
-fn alert_overlay(alert: &ConnectionAlert, cx: &Context<App>) -> impl IntoElement {
-    let muted = cx.theme().muted_foreground;
-    let can_submit = alert.can_submit();
-    let prompt = &alert.prompt;
-
-    div()
-        .id("connection-alert")
-        .absolute()
-        .inset_0()
-        .flex()
-        .items_center()
-        .justify_center()
-        .bg(cx.theme().background.opacity(0.72))
-        .child(
-            div()
-                .id("connection-alert-card")
-                .w(px(520.))
-                .max_w_full()
-                .p_4()
-                .rounded_lg()
-                .border_1()
-                .border_color(cx.theme().border)
-                .bg(cx.theme().background)
-                .v_flex()
-                .gap_3()
-                .child(div().text_lg().font_semibold().child("Connection request"))
-                .child(div().font_semibold().child(prompt.executable.clone()))
-                .child(div().child(format!(
-                    "{}:{} ({})",
-                    prompt.destination, prompt.port, prompt.protocol
-                )))
-                .child(div().child(format!("remaining: {}s", prompt.remaining_secs)))
-                .when(alert.stale, |this| {
-                    this.child(
-                        div()
-                            .text_color(muted)
-                            .child("Expired or resolved elsewhere. Answer controls disabled."),
-                    )
-                })
-                .child(div().text_color(muted).child(alert.scope.rule_note()))
-                .child(scope_row(alert.scope, can_submit, cx))
-                .child(verdict_row(can_submit, cx))
-                .child(details_toggle(alert.details_open, cx))
-                .when(alert.details_open, |this| {
-                    this.child(
-                        div()
-                            .v_flex()
-                            .gap_1()
-                            .text_color(muted)
-                            .child(format!("prompt id: {}", prompt.id))
-                            .child(format!("protocol: {}", prompt.protocol))
-                            .child(
-                                "PID + start ticks, cmdline, uid, and cgroup appear when the daemon exposes them.",
-                            ),
-                    )
-                })
-                .when_some(alert.status_message.clone(), |this, message| {
-                    this.child(div().text_color(muted).child(format!("error: {message}")))
-                }),
-        )
-}
-
-fn scope_row(selected: AlertScope, enabled: bool, cx: &Context<App>) -> impl IntoElement {
-    let mut row = div().id("alert-scopes").flex().gap_2();
-    for scope in AlertScope::ALL {
-        let is_selected = scope == selected;
-        row = row.child(scope_chip(scope, is_selected, enabled, cx));
-    }
-    row
-}
-
-fn scope_chip(
-    scope: AlertScope,
-    selected: bool,
-    enabled: bool,
-    cx: &Context<App>,
-) -> impl IntoElement {
-    let label = scope.label();
-    div()
-        .id(ElementId::Name(format!("scope-{label}").into()))
-        .px_2()
-        .py_1()
-        .rounded_md()
-        .border_1()
-        .border_color(cx.theme().border)
-        .when(selected, |this| {
-            this.bg(cx.theme().accent)
-                .text_color(cx.theme().accent_foreground)
-        })
-        .when(enabled, |this| {
-            this.cursor_pointer()
-                .on_click(cx.listener(move |app, _, _, cx| app.set_scope(scope, cx)))
-        })
-        .when(!enabled, |this| {
-            this.text_color(cx.theme().muted_foreground)
-        })
-        .child(label)
-}
-
-fn verdict_row(enabled: bool, cx: &Context<App>) -> impl IntoElement {
-    div()
-        .id("alert-verdicts")
-        .flex()
-        .gap_2()
-        .child(verdict_chip(AlertVerdict::Allow, enabled, false, cx))
-        .child(verdict_chip(AlertVerdict::Deny, enabled, true, cx))
-}
-
-fn verdict_chip(
-    verdict: AlertVerdict,
-    enabled: bool,
-    emphasize: bool,
-    cx: &Context<App>,
-) -> impl IntoElement {
-    let label = verdict.label();
-    div()
-        .id(ElementId::Name(format!("verdict-{label}").into()))
-        .px_3()
-        .py_2()
-        .rounded_md()
-        .border_1()
-        .border_color(cx.theme().border)
-        .when(emphasize, |this| {
-            this.bg(cx.theme().accent)
-                .text_color(cx.theme().accent_foreground)
-        })
-        .when(enabled, |this| {
-            this.cursor_pointer()
-                .on_click(cx.listener(move |app, _, _, cx| app.submit_verdict(verdict, cx)))
-        })
-        .when(!enabled, |this| {
-            this.text_color(cx.theme().muted_foreground)
-        })
-        .child(label)
-}
-
-fn details_toggle(open: bool, cx: &Context<App>) -> impl IntoElement {
-    let label = if open { "Hide details" } else { "Show details" };
-    div()
-        .id("alert-details-toggle")
-        .text_sm()
-        .text_color(cx.theme().muted_foreground)
-        .cursor_pointer()
-        .on_click(cx.listener(|app, _, _, cx| app.toggle_details(cx)))
-        .child(label)
 }

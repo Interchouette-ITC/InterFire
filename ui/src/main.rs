@@ -5,8 +5,11 @@
 #![forbid(unsafe_code)]
 
 mod alert;
+mod alert_view;
 mod app;
 mod ipc_poll;
+mod rules;
+mod rules_view;
 mod section;
 mod tray;
 #[cfg(target_os = "linux")]
