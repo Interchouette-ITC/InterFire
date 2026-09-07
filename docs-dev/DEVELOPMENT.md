@@ -14,9 +14,9 @@ crates/interfire-ebpf-programs/  aya TCP-connect program (bpfel target)
 docs/                            product hub + community health
 docs-dev/                        developer notes (this tree)
 fixtures/                        IPC and rules fixtures
-scripts/                         capability probe + NFQUEUE spike
-ui/                              reserved tray client
-packaging/debian/                reserved packaging
+scripts/                         capability probe + NFQUEUE test helpers
+ui/                              empty (GPUI tray not implemented)
+packaging/debian/                empty (Debian packaging not implemented)
 .github/workflows/               CI
 ```
 
@@ -61,7 +61,7 @@ Audit: capped on-disk log (`--audit=PATH`, default under `/var/lib/interfire/aud
 | --- | --- |
 | `interfirectl` | **One-shot** only: `ping`, `status`, single `rules` / `prompts` / `dns` / `audit` commands. No REPL, no multi-screen browse loop. |
 | `interfire-tui` | Interactive control plane: tabs Status \| Rules \| Prompts \| Log \| Help, overlays for add-rule and answer-prompt. |
-| GPUI (`ui/`) | Desktop tray / alerts (later). Same IPC. |
+| GPUI (`ui/`) | Not implemented (empty tree). Same IPC when it ships. |
 
 Use the CLI from scripts and smoke checks. Use the TUI when you need to browse lists, answer prompts, or watch the log. The UX contract (`docs/ux-interfire.md`) locks this split.
 
@@ -81,10 +81,10 @@ cargo run -p interfire-tui -- --socket=/tmp/interfire.sock
 
 Builds `interfired`, starts it with `--no-ebpf --no-nfqueue`, samples `VmRSS`, and fails when the sample exceeds 40960 KiB (40 MiB). Override with `INTERFIRE_MEMCHECK_BUDGET_KIB`.
 
-## NFQUEUE spike and enforcement integration (root)
+## NFQUEUE isolated test and enforcement integration (root)
 
 ```bash
-sudo scripts/phase0-nfqueue-spike.sh
+sudo scripts/nfqueue-spike.sh
 sudo make integration
 ```
 

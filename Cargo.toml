@@ -23,7 +23,8 @@ aya-ebpf = "0.2"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 nfq = "0.2.5"
-nix = { version = "0.29", features = ["net", "poll", "user"] }
+nix = { version = "0.29", features = ["net", "user"] }
 ratatui = "0.30"
 crossterm = { version = "0.29", features = ["event-stream"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "sync", "time", "io-util"] }
+thiserror = "2"

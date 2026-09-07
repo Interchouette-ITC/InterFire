@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Measure idle `interfired` RSS against the Phase E budget (< 40 MiB).
+# Measure idle `interfired` RSS against the idle RSS budget (< 40 MiB).
 # Non-root: starts with --no-ebpf --no-nfqueue so CI and developer machines can
 # run the same gate without caps.
 set -euo pipefail

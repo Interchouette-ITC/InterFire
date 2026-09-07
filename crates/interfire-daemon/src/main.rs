@@ -23,6 +23,7 @@ use std::thread;
 use std::time::Duration;
 
 use interfire_ebpf::Observer;
+use interfire_proto::{DEFAULT_AUDIT_PATH, DEFAULT_RULES_PATH, DEFAULT_SOCKET_PATH};
 use interfire_rules::RulesStore;
 use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
@@ -111,9 +112,9 @@ struct Options {
 
 impl Options {
     fn from_env() -> Self {
-        let mut socket = "/run/interfire/interfired.sock".to_owned();
-        let mut rules_path = "/etc/interfire/rules.toml".to_owned();
-        let mut audit_path = PathBuf::from("/var/lib/interfire/audit.log");
+        let mut socket = DEFAULT_SOCKET_PATH.to_owned();
+        let mut rules_path = DEFAULT_RULES_PATH.to_owned();
+        let mut audit_path = PathBuf::from(DEFAULT_AUDIT_PATH);
         let mut skip_ebpf = false;
         let mut skip_nfqueue = false;
         for argument in env::args().skip(1) {

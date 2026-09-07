@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Phase 0 NFQUEUE verdict test. Run only as root. It creates all firewall state
+# Isolated NFQUEUE verdict test. Run only as root. It creates all firewall state
 # inside a new network namespace and removes it before returning.
 set -euo pipefail
 
@@ -7,7 +7,7 @@ PATH="/usr/sbin:/usr/bin:/sbin:/bin:${PATH}"
 readonly queue_number=4242
 readonly port=18080
 readonly script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-readonly listener_source="${script_dir}/phase0-nfqueue-listener.c"
+readonly listener_source="${script_dir}/nfqueue-listener.c"
 
 if [[ ${1:-} != --inside ]]; then
   if [[ ${EUID} -ne 0 ]]; then
@@ -29,7 +29,7 @@ cleanup() {
   local result=$?
   [[ -n "${listener_pid}" ]] && kill "${listener_pid}" 2>/dev/null || true
   [[ -n "${server_pid}" ]] && kill "${server_pid}" 2>/dev/null || true
-  nft delete table inet interfire_phase0 2>/dev/null || true
+  nft delete table inet interfire_nfqueue_spike 2>/dev/null || true
   rm -rf "${work_dir}"
   exit "${result}"
 }
@@ -71,7 +71,7 @@ run_case() {
   grep -qx ready "${listener_log}"
 
   nft -f - <<RULES
-table inet interfire_phase0 {
+table inet interfire_nfqueue_spike {
   chain output {
     type filter hook output priority filter; policy accept;
     ip daddr 127.0.0.1 tcp dport ${port} queue num ${queue_number}
@@ -86,7 +86,7 @@ RULES
   local result=$?
   set -e
 
-  nft delete table inet interfire_phase0
+  nft delete table inet interfire_nfqueue_spike
   wait "${listener_pid}"
   listener_pid=""
 
@@ -99,7 +99,7 @@ RULES
   fi
 }
 
-printf '%s\n' 'Interfire Phase 0 NFQUEUE spike: isolated network namespace'
+printf '%s\n' 'InterFire NFQUEUE isolated test: temporary network namespace'
 run_case allow pass
 run_case deny fail
 printf '%s\n' 'PASS  NFQUEUE delivered one packet and honored both userspace verdicts.'

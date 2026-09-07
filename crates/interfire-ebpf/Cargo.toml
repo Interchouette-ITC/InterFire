@@ -8,10 +8,11 @@ description = "TCP-connect observation contract and aya loader"
 
 [features]
 default = ["loader"]
-loader = ["dep:aya"]
+loader = ["dep:aya", "dep:thiserror"]
 
 [dependencies]
 aya = { workspace = true, optional = true }
+thiserror = { workspace = true, optional = true }
 
 [dev-dependencies]
 object = "0.36"

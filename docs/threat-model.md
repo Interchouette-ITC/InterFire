@@ -28,8 +28,10 @@
 | Firewall interference                | operate only an `interfire` nftables table; never rewrite unrelated tables                           |
 | Kernel compatibility failure         | explicit degraded diagnosis; no claim of protection without a functioning verdict path               |
 
-## Security decisions still gated
+## What is and is not claimed today
 
-NFQUEUE is the selected primary verdict path (see [`architecture.md`](architecture.md)).
-No product enforcement will be represented as reliable until production wiring,
-latency, daemon-loss, and coexistence measurements pass on supported kernels.
+NFQUEUE is the primary verdict path (see [`architecture.md`](architecture.md)).
+The daemon can bind queue **4242** and apply allow/deny when the operator
+installs the InterFire-owned nftables rule and capabilities are present. Do not
+represent enforcement as production-reliable until latency, daemon-loss, and
+coexistence measurements pass on supported kernels.

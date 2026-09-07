@@ -15,38 +15,21 @@ pub struct ProcessIdentity {
     pub cgroup: String,
 }
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum AttributionError {
-    Io(std::io::Error),
+    #[error("procfs I/O error: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("malformed procfs stat record")]
     MalformedStat,
+    #[error("PID reused: expected {expected}, got {actual}")]
     PidReused { expected: u64, actual: u64 },
 }
-
-impl From<std::io::Error> for AttributionError {
-    fn from(error: std::io::Error) -> Self {
-        Self::Io(error)
-    }
-}
-
-impl std::fmt::Display for AttributionError {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Io(error) => write!(formatter, "procfs I/O error: {error}"),
-            Self::MalformedStat => write!(formatter, "malformed procfs stat record"),
-            Self::PidReused { expected, actual } => {
-                write!(formatter, "PID reused: expected {expected}, got {actual}")
-            }
-        }
-    }
-}
-
-impl std::error::Error for AttributionError {}
 
 /// Resolve immediately after receiving an event. A start-tick mismatch means
 /// the PID was reused and must never inherit the previous process's policy.
 ///
-/// When `expected_start_ticks` is `0` (kernel program does not yet emit ticks),
-/// the live `/proc` start time is accepted without a reuse check.
+/// When `expected_start_ticks` is `0` (kernel program always emits `0`),
+/// userspace accepts the live `/proc` start time without a reuse check.
 ///
 /// # Errors
 ///

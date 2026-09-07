@@ -1,4 +1,4 @@
-// Minimal, single-packet NFQUEUE verdict helper for the Phase 0 spike.
+// Minimal, single-packet NFQUEUE verdict helper for the isolated NFQUEUE test.
 // It is intentionally not production daemon code.
 #include <arpa/inet.h>
 #include <errno.h>

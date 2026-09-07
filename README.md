@@ -1,6 +1,8 @@
 # InterFire
 
-Linux-first Rust application firewall (control plane in progress; enforcement not live yet).
+Linux-first Rust application firewall: eBPF observation, `/proc` attribution, and
+NFQUEUE allow/deny (operator nft + caps required). Interactive control plane is
+`interfire-tui`; GPUI tray is not shipped yet.
 
 <p align="center">
   <a href="https://github.com/Interchouette-ITC/InterFire/actions/workflows/ci.yml"><img src="https://github.com/Interchouette-ITC/InterFire/actions/workflows/ci.yml/badge.svg?branch=dev" alt="CI" /></a>

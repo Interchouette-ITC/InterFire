@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Read-only Phase 0 capability probe. It does not attach BPF programs or alter
+# Read-only host capability probe. It does not attach BPF programs or alter
 # nftables, packet filters, modules, services, or network traffic.
 set -euo pipefail
 
@@ -20,7 +20,7 @@ check() {
   fi
 }
 
-printf 'Interfire Phase 0 capability probe\n'
+printf 'InterFire capability probe\n'
 printf 'kernel: %s\n' "$(uname -r)"
 check 'BTF vmlinux is readable' test -r /sys/kernel/btf/vmlinux
 check 'bpffs path exists' test -d /sys/fs/bpf
