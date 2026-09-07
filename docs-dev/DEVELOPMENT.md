@@ -6,7 +6,8 @@
 crates/interfire-rules/          rule matching + TOML persistence
 crates/interfire-proto/          IPC version + frame bounds
 crates/interfire-daemon/         interfired binary
-crates/interfirectl/             CLI
+crates/interfirectl/             one-shot CLI
+crates/interfire-tui/            ratatui control-plane TUI (`interfire-tui`)
 crates/interfire-ebpf/           TCP event contract + aya loader
 crates/interfire-ebpf/bpf/       Embedded eBPF object (regenerate with `make ebpf`)
 crates/interfire-ebpf-programs/  aya TCP-connect program (bpfel target)
@@ -53,6 +54,14 @@ Default rule miss is **prompt**: the daemon enqueues a bounded pending prompt (c
 DNS names are optional metadata: `dns-note` / `dns-list` (and `interfirectl dns …`) feed a bounded TTL cache (`MAX_DNS_ENTRIES`). Fresh names may annotate connections for hostname rules; **stale or missing names stay unset** so the destination IP remains authoritative.
 
 Audit: capped on-disk log (`--audit=PATH`, default under `/var/lib/interfire/audit.log`, `MAX_AUDIT_FILE_BYTES`) plus in-memory ring (`MAX_LOG_RECORDS_PER_SUBSCRIBER`). `audit-tail` is one-shot; `audit-subscribe ID [since=N]` streams frames and **replaces** any prior subscription with the same `ID` on reconnect.
+
+## TUI terminal hygiene
+
+`interfire-tui` enables raw mode and the alternate screen. On normal exit it restores both. A panic hook also restores the terminal before the default panic printer runs, so a crash should not leave the tty stuck. Prefer quitting with `q` during development; do not kill `-9` the process if you can avoid it.
+
+```bash
+cargo run -p interfire-tui -- --socket=/tmp/interfire.sock
+```
 
 ## Idle RSS (`make memcheck`)
 
