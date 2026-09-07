@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 
+mod audit;
 mod dns;
 mod ipc;
 mod nfqueue;
@@ -16,7 +17,7 @@ use std::fs;
 use std::io;
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::UnixListener;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
@@ -43,7 +44,8 @@ fn main() -> io::Result<()> {
         4_096,
         Duration::from_secs(5),
         1_024,
-    ));
+        options.audit_path.clone(),
+    )?);
 
     if let Some(observer) = observer {
         let shared_observe = Arc::clone(&shared);
@@ -71,15 +73,19 @@ fn main() -> io::Result<()> {
     info!(
         observation = shared.observation(),
         enforcement = shared.enforcement(),
+        audit = %options.audit_path.display(),
         "pipeline status"
     );
 
     for stream in listener.incoming() {
         match stream {
             Ok(stream) => {
-                if let Err(error) = ipc::respond(stream, &shared) {
-                    error!(%error, "request failed");
-                }
+                let shared = Arc::clone(&shared);
+                thread::spawn(move || {
+                    if let Err(error) = ipc::handle(stream, &shared) {
+                        error!(%error, "request failed");
+                    }
+                });
             }
             Err(error) => error!(%error, "accept failed"),
         }
@@ -98,6 +104,7 @@ fn init_tracing() {
 struct Options {
     socket: String,
     rules_path: String,
+    audit_path: PathBuf,
     skip_ebpf: bool,
     skip_nfqueue: bool,
 }
@@ -106,6 +113,7 @@ impl Options {
     fn from_env() -> Self {
         let mut socket = "/run/interfire/interfired.sock".to_owned();
         let mut rules_path = "/etc/interfire/rules.toml".to_owned();
+        let mut audit_path = PathBuf::from("/var/lib/interfire/audit.log");
         let mut skip_ebpf = false;
         let mut skip_nfqueue = false;
         for argument in env::args().skip(1) {
@@ -113,6 +121,8 @@ impl Options {
                 value.clone_into(&mut socket);
             } else if let Some(value) = argument.strip_prefix("--rules=") {
                 value.clone_into(&mut rules_path);
+            } else if let Some(value) = argument.strip_prefix("--audit=") {
+                audit_path = PathBuf::from(value);
             } else if argument == "--no-ebpf" {
                 skip_ebpf = true;
             } else if argument == "--no-nfqueue" {
@@ -122,6 +132,7 @@ impl Options {
         Self {
             socket,
             rules_path,
+            audit_path,
             skip_ebpf,
             skip_nfqueue,
         }

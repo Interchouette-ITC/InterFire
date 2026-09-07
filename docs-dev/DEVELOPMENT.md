@@ -52,6 +52,8 @@ Default rule miss is **prompt**: the daemon enqueues a bounded pending prompt (c
 
 DNS names are optional metadata: `dns-note` / `dns-list` (and `interfirectl dns …`) feed a bounded TTL cache (`MAX_DNS_ENTRIES`). Fresh names may annotate connections for hostname rules; **stale or missing names stay unset** so the destination IP remains authoritative.
 
+Audit: capped on-disk log (`--audit=PATH`, default under `/var/lib/interfire/audit.log`, `MAX_AUDIT_FILE_BYTES`) plus in-memory ring (`MAX_LOG_RECORDS_PER_SUBSCRIBER`). `audit-tail` is one-shot; `audit-subscribe ID [since=N]` streams frames and **replaces** any prior subscription with the same `ID` on reconnect.
+
 ## Idle RSS (`make memcheck`)
 
 Builds `interfired`, starts it with `--no-ebpf --no-nfqueue`, samples `VmRSS`, and fails when the sample exceeds 40960 KiB (40 MiB). Override with `INTERFIRE_MEMCHECK_BUDGET_KIB`.

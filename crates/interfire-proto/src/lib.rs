@@ -6,6 +6,7 @@ pub const MAX_FRAME_BYTES: usize = 8 * 1024;
 pub const MAX_LOG_RECORDS_PER_SUBSCRIBER: usize = 2_000;
 pub const MAX_PENDING_PROMPTS: usize = 100;
 pub const MAX_DNS_ENTRIES: usize = 2_048;
+pub const MAX_AUDIT_FILE_BYTES: u64 = 1_048_576;
 
 /// PID is never a durable identity: the daemon pairs it with start ticks read
 /// from `/proc/<pid>/stat` before retaining a process record.
@@ -91,6 +92,13 @@ pub enum Request {
         ipv4: String,
         ttl_secs: Option<u64>,
     },
+    AuditTail {
+        limit: usize,
+    },
+    AuditSubscribe {
+        id: String,
+        since: u64,
+    },
 }
 
 impl Request {
@@ -172,6 +180,31 @@ impl Request {
                     _ => Err(ProtocolError::Malformed),
                 }
             }
+            Some("audit-tail") => {
+                let limit = match fields.next() {
+                    Some(value) => value.parse().map_err(|_| ProtocolError::Malformed)?,
+                    None => MAX_LOG_RECORDS_PER_SUBSCRIBER,
+                };
+                if fields.next().is_some() {
+                    return Err(ProtocolError::Malformed);
+                }
+                Ok(Self::AuditTail { limit })
+            }
+            Some("audit-subscribe") => {
+                let id = fields.next().map(str::to_owned);
+                let since = match fields.next() {
+                    Some(value) => value
+                        .strip_prefix("since=")
+                        .and_then(|value| value.parse().ok())
+                        .ok_or(ProtocolError::Malformed)?,
+                    None => 0,
+                };
+                if fields.next().is_some() {
+                    return Err(ProtocolError::Malformed);
+                }
+                id.map(|id| Self::AuditSubscribe { id, since })
+                    .ok_or(ProtocolError::Malformed)
+            }
             _ => Err(ProtocolError::Malformed),
         }
     }
@@ -191,6 +224,8 @@ pub enum Response {
     Rules(String),
     Prompts(String),
     Dns(String),
+    Audit(String),
+    Subscribed(String),
 }
 
 impl Response {
@@ -210,6 +245,8 @@ impl Response {
             Self::Rules(value) => format!("v1 rules {value}\n"),
             Self::Prompts(value) => format!("v1 prompts {value}\n"),
             Self::Dns(value) => format!("v1 dns {value}\n"),
+            Self::Audit(value) => format!("v1 audit-tail {value}\n"),
+            Self::Subscribed(id) => format!("v1 subscribed {id}\n"),
         }
     }
 }
@@ -288,6 +325,21 @@ mod tests {
                 hostname: "example.test".into(),
                 ipv4: "203.0.113.1".into(),
                 ttl_secs: Some(30),
+            })
+        );
+    }
+
+    #[test]
+    fn parses_audit_frames() {
+        assert_eq!(
+            Request::parse("v1 audit-tail 10\n"),
+            Ok(Request::AuditTail { limit: 10 })
+        );
+        assert_eq!(
+            Request::parse("v1 audit-subscribe ui since=3\n"),
+            Ok(Request::AuditSubscribe {
+                id: "ui".into(),
+                since: 3,
             })
         );
     }

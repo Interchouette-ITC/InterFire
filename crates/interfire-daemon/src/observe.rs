@@ -63,4 +63,15 @@ fn handle_event(event: TcpConnectEvent, shared: &Shared) {
             "pending verdict stored"
         );
     }
+    if let Ok(mut audit) = shared.audit.lock() {
+        let outcome = if decision.packet_verdict == nfq::Verdict::Accept {
+            "allow"
+        } else {
+            "deny"
+        };
+        audit.append(format!(
+            "connect port={} attributed={} outcome={outcome}",
+            decision.key.port, decision.attributed
+        ));
+    }
 }
