@@ -57,28 +57,35 @@ fn draw_body(frame: &mut Frame<'_>, app: &App, area: Rect) {
             .direction(Direction::Horizontal)
             .constraints([Constraint::Percentage(45), Constraint::Percentage(55)])
             .split(area);
-        let mut state = list_state(app);
-        frame.render_stateful_widget(list_widget(app), panes[0], &mut state);
+        let viewport_rows = usize::from(panes[0].height.saturating_sub(2));
+        let visible = app.visible_list(viewport_rows);
+        let mut state = ListState::default();
+        if !visible.items.is_empty() {
+            state.select(Some(visible.relative_selected));
+        }
+        frame.render_stateful_widget(list_widget(app, &visible), panes[0], &mut state);
         frame.render_widget(detail_widget(app), panes[1]);
     } else {
         frame.render_widget(detail_widget(app), area);
     }
 }
 
-fn list_state(app: &App) -> ListState {
-    let mut state = ListState::default();
-    if app.list_len() > 0 {
-        state.select(Some(app.list_selected));
-    }
-    state
-}
-
-fn list_widget(app: &App) -> List<'static> {
-    let items: Vec<ListItem<'static>> = app.list_items().into_iter().map(ListItem::new).collect();
-    let title = if app.pane == Pane::List {
-        format!("{} list [focus]", app.tab.label())
+fn list_widget(app: &App, visible: &crate::app::VisibleList) -> List<'static> {
+    let items: Vec<ListItem<'static>> = visible.items.iter().cloned().map(ListItem::new).collect();
+    let focus = if app.pane == Pane::List {
+        " [focus]"
     } else {
-        format!("{} list", app.tab.label())
+        ""
+    };
+    let title = if app.tab == Tab::Log && visible.total > 0 {
+        let shown = visible.start.saturating_add(1);
+        let end = visible.start.saturating_add(visible.items.len());
+        format!(
+            "Log list{focus}  {shown}-{end}/{total}",
+            total = visible.total
+        )
+    } else {
+        format!("{} list{focus}", app.tab.label())
     };
     List::new(items)
         .block(Block::default().borders(Borders::ALL).title(title))

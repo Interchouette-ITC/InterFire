@@ -31,7 +31,7 @@ and/or `--no-nfqueue` for non-root smoke.
 | `interfire-proto` | Versioned, bounded Unix-socket framing                               |
 | `interfired`      | Daemon: IPC, rules, ringbuf → `/proc` → rules → NFQUEUE           |
 | `interfirectl`    | One-shot CLI: `ping`, `status`, rules / prompts / dns / audit        |
-| `interfire-tui`   | ratatui control-plane TUI (scaffold; interactive ops live here)      |
+| `interfire-tui`   | ratatui control-plane TUI (interactive status / rules / prompts / log) |
 | `interfire-ebpf*` | TCP-connect observation program + aya loader                         |
 | Docs              | Architecture, threat model, UX contract and studies                  |
 

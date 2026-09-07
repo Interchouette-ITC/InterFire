@@ -88,6 +88,7 @@ fn usage() -> io::Result<()> {
     eprintln!(
         "usage: interfirectl [--socket=PATH] <ping|status|rules …|prompts …|dns …|audit tail [N]|audit subscribe ID [since=N]>"
     );
+    eprintln!("one-shot CLI only; use interfire-tui for interactive browse/answer");
     Err(io::Error::new(
         io::ErrorKind::InvalidInput,
         "invalid command",

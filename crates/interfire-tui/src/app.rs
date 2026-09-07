@@ -4,12 +4,22 @@
 use std::collections::VecDeque;
 
 use crossterm::event::KeyCode;
-use interfire_proto::{DaemonStatus, PromptRow, RuleRow};
+use interfire_proto::{DaemonStatus, MAX_LOG_RECORDS_PER_SUBSCRIBER, PromptRow, RuleRow};
 
 use crate::ipc::{IpcCommand, IpcEvent};
 
 pub const DEFAULT_SOCKET: &str = "/run/interfire/interfired.sock";
-pub const MAX_AUDIT_LINES: usize = 200;
+/// Cap aligned with `MAX_LOG_RECORDS_PER_SUBSCRIBER` (product UX contract).
+pub const MAX_AUDIT_LINES: usize = MAX_LOG_RECORDS_PER_SUBSCRIBER;
+
+/// Slice of list rows for the current viewport (Log is windowed).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct VisibleList {
+    pub relative_selected: usize,
+    pub items: Vec<String>,
+    pub start: usize,
+    pub total: usize,
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Tab {
@@ -308,14 +318,11 @@ impl App {
                 self.subscribed = false;
             }
             IpcEvent::Audit(record) => {
-                if self.audit.len() == MAX_AUDIT_LINES {
-                    self.audit.pop_front();
-                }
-                self.audit
-                    .push_back(format!("{}|{}", record.sequence, record.message));
-                self.clamp_selection();
+                self.push_audit_line(format!("{}|{}", record.sequence, record.message));
             }
             IpcEvent::SubscriptionReady => {
+                // Reconnect replaced the daemon subscription; keep the local
+                // capped buffer and resume appending from the stream.
                 self.subscribed = true;
             }
             IpcEvent::Rules(rules) => {
@@ -582,6 +589,17 @@ impl App {
         }
     }
 
+    fn push_audit_line(&mut self, line: String) {
+        if self.audit.len() == MAX_AUDIT_LINES {
+            self.audit.pop_front();
+            if self.list_selected > 0 && self.tab == Tab::Log {
+                self.list_selected -= 1;
+            }
+        }
+        self.audit.push_back(line);
+        self.clamp_selection();
+    }
+
     #[must_use]
     pub fn list_len(&self) -> usize {
         match self.tab {
@@ -592,13 +610,64 @@ impl App {
         }
     }
 
+    /// Visible list window for the given viewport height (virtualized for Log).
     #[must_use]
-    pub fn list_items(&self) -> Vec<String> {
+    pub fn visible_list(&self, viewport_rows: usize) -> VisibleList {
         match self.tab {
-            Tab::Log => self.audit.iter().cloned().collect(),
-            Tab::Rules => self.rules.iter().map(RuleRow::list_label).collect(),
-            Tab::Prompts => self.prompts.iter().map(PromptRow::list_label).collect(),
-            Tab::Status | Tab::Help => Vec::new(),
+            Tab::Log => self.visible_audit_window(viewport_rows),
+            Tab::Rules => VisibleList {
+                relative_selected: self.list_selected,
+                items: self.rules.iter().map(RuleRow::list_label).collect(),
+                start: 0,
+                total: self.rules.len(),
+            },
+            Tab::Prompts => VisibleList {
+                relative_selected: self.list_selected,
+                items: self.prompts.iter().map(PromptRow::list_label).collect(),
+                start: 0,
+                total: self.prompts.len(),
+            },
+            Tab::Status | Tab::Help => VisibleList {
+                relative_selected: 0,
+                items: Vec::new(),
+                start: 0,
+                total: 0,
+            },
+        }
+    }
+
+    fn visible_audit_window(&self, viewport_rows: usize) -> VisibleList {
+        let total = self.audit.len();
+        if total == 0 {
+            return VisibleList {
+                relative_selected: 0,
+                items: Vec::new(),
+                start: 0,
+                total: 0,
+            };
+        }
+        let height = viewport_rows.max(1);
+        let selected = self.list_selected.min(total - 1);
+        let start = if total <= height {
+            0
+        } else {
+            let half = height / 2;
+            selected
+                .saturating_sub(half)
+                .min(total.saturating_sub(height))
+        };
+        let end = (start + height).min(total);
+        VisibleList {
+            relative_selected: selected - start,
+            items: self
+                .audit
+                .iter()
+                .skip(start)
+                .take(end - start)
+                .cloned()
+                .collect(),
+            start,
+            total,
         }
     }
 
@@ -690,6 +759,7 @@ pub fn help_lines() -> Vec<String> {
         "Tabs: Left/Right or 1..5  (Status Rules Prompts Log Help)".into(),
         "Panes: h list · l detail  (Rules / Prompts / Log)".into(),
         "List: j/k or Up/Down".into(),
+        "Log: capped 2000 rows, virtualized viewport; reconnect replaces subscribe".into(),
         "Rules: a add · d delete · r refresh".into(),
         "Prompts: a/Enter answer · r refresh".into(),
         "Answer overlay: a/d verdict · Tab scope · Enter submit · Esc cancel".into(),
@@ -773,7 +843,10 @@ mod tests {
             verdict: "Allow".into(),
             port: 443,
         }]));
-        assert_eq!(app.list_items()[0], "9  /bin/curl  Allow  :443");
+        assert_eq!(
+            app.visible_list(usize::MAX).items[0],
+            "9  /bin/curl  Allow  :443"
+        );
         assert!(app.detail_lines().iter().any(|line| line.contains("id: 9")));
         assert_eq!(
             app.handle_key(KeyCode::Char('d')),
@@ -818,7 +891,7 @@ mod tests {
             protocol: "tcp".into(),
             remaining_secs: 30,
         }]));
-        assert!(app.list_items()[0].contains("/bin/curl"));
+        assert!(app.visible_list(usize::MAX).items[0].contains("/bin/curl"));
         assert!(
             app.detail_lines()
                 .iter()
@@ -877,5 +950,67 @@ mod tests {
         let mut app = App::new("/tmp/x.sock".into());
         app.apply(IpcEvent::Down("connect refused".into()));
         assert_eq!(app.chrome_title(), "daemon unavailable");
+    }
+
+    #[test]
+    fn audit_buffer_stays_capped_under_load() {
+        use super::MAX_AUDIT_LINES;
+        use interfire_proto::AuditStreamRecord;
+
+        let mut app = App::new("/tmp/x.sock".into());
+        app.handle_key(KeyCode::Char('4'));
+        for sequence in 1..=(MAX_AUDIT_LINES as u64 + 500) {
+            app.apply(IpcEvent::Audit(AuditStreamRecord {
+                sequence,
+                message: format!("line-{sequence}"),
+            }));
+        }
+        assert_eq!(app.audit.len(), MAX_AUDIT_LINES);
+        assert_eq!(app.list_len(), MAX_AUDIT_LINES);
+        let window = app.visible_list(10);
+        assert!(window.items.len() <= 10);
+        assert_eq!(window.total, MAX_AUDIT_LINES);
+        assert!(window.items.last().unwrap().contains("line-"));
+    }
+
+    #[test]
+    fn log_viewport_is_virtualized_around_selection() {
+        use interfire_proto::AuditStreamRecord;
+
+        let mut app = App::new("/tmp/x.sock".into());
+        app.handle_key(KeyCode::Char('4'));
+        for sequence in 1..=40 {
+            app.apply(IpcEvent::Audit(AuditStreamRecord {
+                sequence,
+                message: format!("m{sequence}"),
+            }));
+        }
+        app.list_selected = 30;
+        let window = app.visible_list(5);
+        assert_eq!(window.items.len(), 5);
+        assert_eq!(window.total, 40);
+        assert!(window.start <= 30);
+        assert_eq!(window.relative_selected, 30 - window.start);
+    }
+
+    #[test]
+    fn reconnect_ready_marks_subscription_without_unbounded_growth() {
+        use super::MAX_AUDIT_LINES;
+        use interfire_proto::AuditStreamRecord;
+
+        let mut app = App::new("/tmp/x.sock".into());
+        app.apply(IpcEvent::SubscriptionReady);
+        assert!(app.subscribed);
+        app.apply(IpcEvent::Down("eof".into()));
+        assert!(!app.subscribed);
+        app.apply(IpcEvent::SubscriptionReady);
+        assert!(app.subscribed);
+        for sequence in 1..=50 {
+            app.apply(IpcEvent::Audit(AuditStreamRecord {
+                sequence,
+                message: "x".into(),
+            }));
+        }
+        assert!(app.audit.len() <= MAX_AUDIT_LINES);
     }
 }
