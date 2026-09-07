@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["DEFAULT_AUDIT_MAX_BYTES","SUBSCRIBER_CHANNEL_CAPACITY"],"enum":["Fanout"],"fn":["encode_audit_frame","format_record","parse_record","run_subscriber","spawn_subscriber"],"struct":["AuditLog"]};
