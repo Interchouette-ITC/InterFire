@@ -4,7 +4,7 @@
 use std::collections::VecDeque;
 
 use crossterm::event::KeyCode;
-use interfire_proto::{DaemonStatus, RuleRow};
+use interfire_proto::{DaemonStatus, PromptRow, RuleRow};
 
 use crate::ipc::{IpcCommand, IpcEvent};
 
@@ -160,11 +160,94 @@ impl AddRuleForm {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AnswerVerdict {
+    Allow,
+    Deny,
+}
+
+impl AnswerVerdict {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Allow => "allow",
+            Self::Deny => "deny",
+        }
+    }
+
+    const fn toggle(self) -> Self {
+        match self {
+            Self::Allow => Self::Deny,
+            Self::Deny => Self::Allow,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AnswerScope {
+    Once,
+    Session,
+    Permanent,
+}
+
+impl AnswerScope {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Once => "once",
+            Self::Session => "session",
+            Self::Permanent => "permanent",
+        }
+    }
+
+    const fn next(self) -> Self {
+        match self {
+            Self::Once => Self::Session,
+            Self::Session => Self::Permanent,
+            Self::Permanent => Self::Once,
+        }
+    }
+
+    const fn prev(self) -> Self {
+        match self {
+            Self::Once => Self::Permanent,
+            Self::Session => Self::Once,
+            Self::Permanent => Self::Session,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AnswerPromptForm {
+    pub prompt: PromptRow,
+    pub verdict: AnswerVerdict,
+    pub scope: AnswerScope,
+}
+
+impl AnswerPromptForm {
+    const fn new(prompt: PromptRow) -> Self {
+        Self {
+            prompt,
+            verdict: AnswerVerdict::Deny,
+            scope: AnswerScope::Once,
+        }
+    }
+
+    fn to_command(&self) -> IpcCommand {
+        IpcCommand::AnswerPrompt {
+            id: self.prompt.id,
+            verdict: self.verdict.as_str().into(),
+            scope: self.scope.as_str().into(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Overlay {
     None,
     Notice(String),
     AddRule(AddRuleForm),
+    AnswerPrompt(AnswerPromptForm),
 }
 
 #[derive(Clone, Debug)]
@@ -188,6 +271,7 @@ pub struct App {
     pub link: Link,
     pub audit: VecDeque<String>,
     pub rules: Vec<RuleRow>,
+    pub prompts: Vec<PromptRow>,
     pub subscribed: bool,
     pub tab: Tab,
     pub pane: Pane,
@@ -204,6 +288,7 @@ impl App {
             link: Link::Connecting,
             audit: VecDeque::new(),
             rules: Vec::new(),
+            prompts: Vec::new(),
             subscribed: false,
             tab: Tab::Status,
             pane: Pane::List,
@@ -235,6 +320,10 @@ impl App {
             }
             IpcEvent::Rules(rules) => {
                 self.rules = rules;
+                self.clamp_selection();
+            }
+            IpcEvent::Prompts(prompts) => {
+                self.prompts = prompts;
                 self.clamp_selection();
             }
             IpcEvent::ActionOk(message) => {
@@ -272,6 +361,7 @@ impl App {
                 KeyAction::None
             }
             Overlay::AddRule(_) => self.handle_add_overlay_key(code),
+            Overlay::AnswerPrompt(_) => self.handle_answer_overlay_key(code),
         }
     }
 
@@ -284,7 +374,9 @@ impl App {
             KeyCode::Enter => {
                 let command = match &self.overlay {
                     Overlay::AddRule(form) => form.to_command(),
-                    Overlay::None | Overlay::Notice(_) => return KeyAction::None,
+                    Overlay::None | Overlay::Notice(_) | Overlay::AnswerPrompt(_) => {
+                        return KeyAction::None;
+                    }
                 };
                 return match command {
                     Ok(command) => {
@@ -315,6 +407,45 @@ impl App {
             KeyCode::Char(ch) if !ch.is_control() => {
                 form.focused_mut().push(ch);
             }
+            _ => {}
+        }
+        KeyAction::None
+    }
+
+    fn handle_answer_overlay_key(&mut self, code: KeyCode) -> KeyAction {
+        match code {
+            KeyCode::Esc => {
+                self.overlay = Overlay::None;
+                return KeyAction::None;
+            }
+            KeyCode::Enter => {
+                let command = match &self.overlay {
+                    Overlay::AnswerPrompt(form) => {
+                        if !form.prompt.can_answer() {
+                            self.overlay =
+                                Overlay::Notice("prompt expired or stale; actions disabled".into());
+                            return KeyAction::None;
+                        }
+                        form.to_command()
+                    }
+                    Overlay::None | Overlay::Notice(_) | Overlay::AddRule(_) => {
+                        return KeyAction::None;
+                    }
+                };
+                self.overlay = Overlay::None;
+                return KeyAction::Command(command);
+            }
+            _ => {}
+        }
+        let Overlay::AnswerPrompt(form) = &mut self.overlay else {
+            return KeyAction::None;
+        };
+        match code {
+            KeyCode::Char('a' | 'A') => form.verdict = AnswerVerdict::Allow,
+            KeyCode::Char('d' | 'D') => form.verdict = AnswerVerdict::Deny,
+            KeyCode::Left | KeyCode::Right => form.verdict = form.verdict.toggle(),
+            KeyCode::Tab => form.scope = form.scope.next(),
+            KeyCode::BackTab => form.scope = form.scope.prev(),
             _ => {}
         }
         KeyAction::None
@@ -379,7 +510,27 @@ impl App {
             KeyCode::Char('r') if self.tab == Tab::Rules => {
                 KeyAction::Command(IpcCommand::RefreshRules)
             }
+            KeyCode::Char('a') | KeyCode::Enter if self.tab == Tab::Prompts => {
+                self.open_answer_overlay()
+            }
+            KeyCode::Char('r') if self.tab == Tab::Prompts => {
+                KeyAction::Command(IpcCommand::RefreshPrompts)
+            }
             _ => KeyAction::None,
+        }
+    }
+
+    fn open_answer_overlay(&mut self) -> KeyAction {
+        match self.prompts.get(self.list_selected) {
+            Some(prompt) if prompt.can_answer() => {
+                self.overlay = Overlay::AnswerPrompt(AnswerPromptForm::new(prompt.clone()));
+                KeyAction::None
+            }
+            Some(_) => {
+                self.overlay = Overlay::Notice("prompt expired or stale; answer disabled".into());
+                KeyAction::None
+            }
+            None => KeyAction::None,
         }
     }
 
@@ -436,7 +587,8 @@ impl App {
         match self.tab {
             Tab::Log => self.audit.len(),
             Tab::Rules => self.rules.len(),
-            Tab::Prompts | Tab::Status | Tab::Help => 0,
+            Tab::Prompts => self.prompts.len(),
+            Tab::Status | Tab::Help => 0,
         }
     }
 
@@ -445,7 +597,8 @@ impl App {
         match self.tab {
             Tab::Log => self.audit.iter().cloned().collect(),
             Tab::Rules => self.rules.iter().map(RuleRow::list_label).collect(),
-            Tab::Prompts | Tab::Status | Tab::Help => Vec::new(),
+            Tab::Prompts => self.prompts.iter().map(PromptRow::list_label).collect(),
+            Tab::Status | Tab::Help => Vec::new(),
         }
     }
 
@@ -454,10 +607,7 @@ impl App {
         match self.tab {
             Tab::Status => self.status_detail_lines(),
             Tab::Rules => self.rule_detail_lines(),
-            Tab::Prompts => vec![
-                "Prompts browser chrome is ready.".into(),
-                "Allow/Deny overlays are not wired yet.".into(),
-            ],
+            Tab::Prompts => self.prompt_detail_lines(),
             Tab::Log => self
                 .audit
                 .get(self.list_selected)
@@ -479,6 +629,30 @@ impl App {
                     String::new(),
                     "a add · d delete · r refresh".into(),
                 ]
+            },
+        )
+    }
+
+    fn prompt_detail_lines(&self) -> Vec<String> {
+        self.prompts.get(self.list_selected).map_or_else(
+            || vec!["no pending prompts".into(), "r refresh".into()],
+            |prompt| {
+                let mut lines = vec![
+                    format!("id: {}", prompt.id),
+                    format!("path: {}", prompt.executable),
+                    format!(
+                        "dest: {}:{} ({})",
+                        prompt.destination, prompt.port, prompt.protocol
+                    ),
+                    format!("remaining: {}s", prompt.remaining_secs),
+                ];
+                lines.push(String::new());
+                if prompt.can_answer() {
+                    lines.push("a/Enter answer · r refresh".into());
+                } else {
+                    lines.push("expired/stale · answer disabled".into());
+                }
+                lines
             },
         )
     }
@@ -517,6 +691,8 @@ pub fn help_lines() -> Vec<String> {
         "Panes: h list · l detail  (Rules / Prompts / Log)".into(),
         "List: j/k or Up/Down".into(),
         "Rules: a add · d delete · r refresh".into(),
+        "Prompts: a/Enter answer · r refresh".into(),
+        "Answer overlay: a/d verdict · Tab scope · Enter submit · Esc cancel".into(),
         "Add overlay: Tab fields · Enter submit · Esc cancel".into(),
         "Overlay: ? opens · Esc dismisses (Esc never quits root)".into(),
         "Quit: q".into(),
@@ -528,6 +704,7 @@ pub fn footer_hints(app: &App) -> String {
     if !matches!(app.overlay, Overlay::None) {
         return match &app.overlay {
             Overlay::AddRule(_) => "Tab fields  Enter submit  Esc cancel".into(),
+            Overlay::AnswerPrompt(_) => "a/d verdict  Tab scope  Enter submit  Esc cancel".into(),
             Overlay::Notice(_) => "Esc dismiss overlay".into(),
             Overlay::None => String::new(),
         };
@@ -544,6 +721,9 @@ pub fn footer_hints(app: &App) -> String {
     if app.tab == Tab::Rules {
         parts.insert(1, "a/d/r rules".into());
     }
+    if app.tab == Tab::Prompts {
+        parts.insert(1, "a/r prompts".into());
+    }
     if let Some(message) = &app.status_message {
         parts.push(message.clone());
     }
@@ -554,7 +734,7 @@ pub fn footer_hints(app: &App) -> String {
 mod tests {
     use super::{App, IpcEvent, KeyAction, Link, Overlay, Pane, Tab};
     use crossterm::event::KeyCode;
-    use interfire_proto::{DaemonStatus, RuleRow};
+    use interfire_proto::{DaemonStatus, PromptRow, RuleRow};
 
     use crate::ipc::IpcCommand;
 
@@ -624,6 +804,54 @@ mod tests {
             })
         );
         assert_eq!(app.overlay, Overlay::None);
+    }
+
+    #[test]
+    fn prompt_answer_overlay_submits_command() {
+        let mut app = App::new("/tmp/x.sock".into());
+        app.handle_key(KeyCode::Char('3'));
+        app.apply(IpcEvent::Prompts(vec![PromptRow {
+            id: 4,
+            executable: "/bin/curl".into(),
+            destination: "203.0.113.1".into(),
+            port: 443,
+            protocol: "tcp".into(),
+            remaining_secs: 30,
+        }]));
+        assert!(app.list_items()[0].contains("/bin/curl"));
+        assert!(
+            app.detail_lines()
+                .iter()
+                .any(|line| line.contains("remaining: 30s"))
+        );
+        app.handle_key(KeyCode::Char('a'));
+        assert!(matches!(app.overlay, Overlay::AnswerPrompt(_)));
+        app.handle_key(KeyCode::Char('a'));
+        app.handle_key(KeyCode::Tab);
+        assert_eq!(
+            app.handle_key(KeyCode::Enter),
+            KeyAction::Command(IpcCommand::AnswerPrompt {
+                id: 4,
+                verdict: "allow".into(),
+                scope: "session".into(),
+            })
+        );
+    }
+
+    #[test]
+    fn expired_prompt_disables_answer() {
+        let mut app = App::new("/tmp/x.sock".into());
+        app.handle_key(KeyCode::Char('3'));
+        app.apply(IpcEvent::Prompts(vec![PromptRow {
+            id: 4,
+            executable: "/bin/curl".into(),
+            destination: "203.0.113.1".into(),
+            port: 443,
+            protocol: "tcp".into(),
+            remaining_secs: 0,
+        }]));
+        app.handle_key(KeyCode::Char('a'));
+        assert!(matches!(app.overlay, Overlay::Notice(_)));
     }
 
     #[test]
