@@ -4,7 +4,7 @@ CLIPPY_FLAGS := -D warnings -D clippy::all -D clippy::pedantic -D clippy::nurser
 CARGO ?= cargo +stable
 DOC_OUT ?= target/doc
 
-.PHONY: help fmt format lint test coverage audit deny doc doc-open doc-clean ci memcheck ebpf
+.PHONY: help fmt format lint test coverage audit deny doc doc-open doc-clean ci memcheck integration ebpf
 
 .DEFAULT_GOAL := help
 
@@ -20,7 +20,8 @@ help:
 	@echo "  make deny           cargo deny check"
 	@echo "  make ci             lint + test + doc"
 	@echo "  make ebpf           rebuild embedded TCP-connect eBPF object (nightly)"
-	@echo "  make memcheck       placeholder until enforcement runs"
+	@echo "  make memcheck       idle interfired RSS vs < 40 MiB budget"
+	@echo "  make integration    root netns allow/deny gate (not part of make ci)"
 
 fmt:
 	$(CARGO) fmt --check
@@ -89,4 +90,10 @@ ebpf:
 		crates/interfire-ebpf/bpf/interfire-ebpf-programs
 
 memcheck:
-	@echo "No long-running enforcement process to measure yet."
+	$(CARGO) build -p interfire-daemon
+	bash scripts/memcheck-daemon.sh
+
+## Root-only: controlled allow/deny in a temporary network namespace.
+integration:
+	$(CARGO) build -p interfire-daemon -p interfirectl
+	bash scripts/enforcement-allow-deny.sh

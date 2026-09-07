@@ -31,7 +31,7 @@ pub fn run(mut observer: Observer, shared: &Arc<Shared>) {
             handle_event(event, shared);
         }
         if !progressed {
-            thread::sleep(Duration::from_millis(10));
+            thread::sleep(Duration::from_millis(1));
         }
     }
 }

@@ -2,6 +2,8 @@
 #![forbid(unsafe_code)]
 
 use std::sync::Arc;
+use std::thread;
+use std::time::Duration;
 
 use nfq::{Queue, Verdict};
 use tracing::{debug, info, warn};
@@ -35,26 +37,29 @@ fn lookup_verdict(message: &nfq::Message, shared: &Shared) -> Verdict {
         warn!("NFQUEUE packet not parseable as IPv4 TCP; dropping");
         return Verdict::Drop;
     };
-    let Ok(mut pending) = shared.pending.lock() else {
-        return Verdict::Drop;
-    };
-    pending.take(key).map_or_else(
-        || {
-            warn!(
-                port = key.port,
-                "NFQUEUE without pending decision; dropping"
-            );
-            Verdict::Drop
-        },
-        |verdict| {
+    // Observation may still be draining the ring buffer after `tcp_v4_connect`;
+    // the packet is held in NFQUEUE, so a short wait stays fail-closed.
+    for attempt in 0..50 {
+        let Ok(mut pending) = shared.pending.lock() else {
+            return Verdict::Drop;
+        };
+        if let Some(verdict) = pending.take(key) {
             debug!(
                 port = key.port,
+                attempt,
                 ?verdict,
                 "NFQUEUE matched pending decision"
             );
-            verdict
-        },
-    )
+            return verdict;
+        }
+        drop(pending);
+        thread::sleep(Duration::from_millis(1));
+    }
+    warn!(
+        port = key.port,
+        "NFQUEUE without pending decision; dropping"
+    );
+    Verdict::Drop
 }
 
 /// Attempt to bind; on failure mark enforcement degraded and return.
