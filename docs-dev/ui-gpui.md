@@ -31,6 +31,12 @@ viewport; long-lived `audit-subscribe` id `interfire-ui` (reconnect
 replaces; tear-down on window/host drop). Other left-nav sections stay
 thin shells until their dedicated slices.
 
+## UI tests (`make ui-test`)
+
+Harness coverage for prompt Allow/Deny frames (including stale/expired
+disable) and audit reconnect that reuses the stable `interfire-ui`
+subscriber id. Run with the Linux UI packages above.
+
 ## Stack pin
 
 | Crate | Version | Role |

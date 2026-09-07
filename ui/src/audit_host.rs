@@ -152,6 +152,9 @@ fn connect(socket: &str) -> io::Result<UnixStream> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::os::unix::net::UnixListener;
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
     fn subscriber_id_is_stable() {
@@ -164,5 +167,83 @@ mod tests {
         thread::sleep(Duration::from_millis(50));
         host.shutdown();
         assert!(host.join.is_none());
+    }
+
+    #[test]
+    fn reconnect_reuses_stable_subscriber_id() {
+        let path = temp_sock("reconnect");
+        let _ = std::fs::remove_file(&path);
+        let listener = UnixListener::bind(&path).expect("bind audit sock");
+        listener.set_nonblocking(false).expect("blocking accept");
+
+        let (seen_tx, seen_rx) = mpsc::channel();
+        let server = thread::spawn(move || {
+            for _ in 0..2 {
+                let (mut stream, _) = listener.accept().expect("accept");
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(2)))
+                    .expect("read timeout");
+                let mut line = String::new();
+                BufReader::new(stream.try_clone().expect("clone"))
+                    .read_line(&mut line)
+                    .expect("read subscribe");
+                assert!(
+                    line.contains(&format!("audit-subscribe {AUDIT_SUBSCRIBER_ID}")),
+                    "unexpected request: {line}"
+                );
+                let _ = seen_tx.send(line);
+                let _ = stream.write_all(b"v1 subscribed interfire-ui\n");
+                // Drop stream so the client reconnects with the same id.
+            }
+        });
+
+        let mut host = AuditHost::spawn(path.to_string_lossy().into_owned());
+        let first = seen_rx
+            .recv_timeout(Duration::from_secs(3))
+            .expect("first subscribe");
+        wait_for_ready(&host, Duration::from_secs(2));
+        let second = seen_rx
+            .recv_timeout(Duration::from_secs(3))
+            .expect("second subscribe");
+        wait_for_ready(&host, Duration::from_secs(2));
+        assert!(first.contains(AUDIT_SUBSCRIBER_ID));
+        assert!(second.contains(AUDIT_SUBSCRIBER_ID));
+        assert_eq!(
+            first.split_whitespace().nth(2),
+            second.split_whitespace().nth(2)
+        );
+
+        host.shutdown();
+        server.join().expect("server");
+        let _ = std::fs::remove_file(path);
+    }
+
+    fn wait_for_ready(host: &AuditHost, budget: Duration) {
+        let deadline = SystemTime::now() + budget;
+        loop {
+            if host
+                .drain()
+                .into_iter()
+                .any(|event| matches!(event, AuditEvent::Ready))
+            {
+                return;
+            }
+            assert!(
+                SystemTime::now() <= deadline,
+                "timed out waiting for AuditEvent::Ready"
+            );
+            thread::sleep(Duration::from_millis(20));
+        }
+    }
+
+    fn temp_sock(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "interfire-ui-audit-{}-{}-{name}.sock",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        ))
     }
 }

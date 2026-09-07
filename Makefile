@@ -33,7 +33,7 @@ format:
 
 lint: fmt
 	$(CARGO) clippy --workspace --all-targets --exclude interfire-ebpf-programs --exclude interfire-ui -- $(CLIPPY_FLAGS)
-	$(CARGO) clippy -p interfire-ui -- $(CLIPPY_FLAGS)
+	$(CARGO) clippy -p interfire-ui --all-targets -- $(CLIPPY_FLAGS)
 
 test:
 	$(CARGO) test --workspace --exclude interfire-ui

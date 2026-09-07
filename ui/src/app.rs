@@ -173,15 +173,14 @@ impl App {
     }
 
     pub(crate) fn submit_verdict(&mut self, verdict: AlertVerdict, cx: &mut Context<Self>) {
-        let Some(alert) = &self.alert else {
+        let Some(frame) = self
+            .alert
+            .as_ref()
+            .and_then(|alert| alert.answer_frame(verdict))
+        else {
             return;
         };
-        if !alert.can_submit() {
-            return;
-        }
-        let id = alert.prompt.id;
-        let scope = alert.scope.as_str();
-        match ipc_poll::answer_prompt(&self.socket, id, verdict.as_str(), scope) {
+        match ipc_poll::send_expect_pong(&self.socket, &frame) {
             Ok(()) => {
                 self.alert = None;
                 self.refresh_from_daemon();
