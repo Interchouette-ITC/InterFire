@@ -38,12 +38,12 @@ CI mirrors `make ci`, plus coverage upload to Codecov and a supply-chain job. Li
 ## Smoke (non-root)
 
 ```bash
-cargo run -p interfire-daemon -- --socket=/tmp/interfire.sock --no-ebpf
+cargo run -p interfire-daemon -- --socket=/tmp/interfire.sock --no-ebpf --no-nfqueue
 cargo run -p interfirectl -- --socket=/tmp/interfire.sock ping
 cargo run -p interfirectl -- --socket=/tmp/interfire.sock status
 ```
 
-Without `--no-ebpf`, the daemon tries to attach the embedded TCP-connect program and reports `observation=attached` or `observation=degraded`. Verdict enforcement remains `none` until the NFQUEUE path is wired.
+Without `--no-ebpf`, the daemon tries to attach the embedded TCP-connect program and reports `observation=attached` or `observation=degraded`. Without `--no-nfqueue`, it tries to bind NFQUEUE 4242 and reports `enforcement=nfqueue` or `enforcement=degraded`.
 
 ## NFQUEUE spike (root)
 

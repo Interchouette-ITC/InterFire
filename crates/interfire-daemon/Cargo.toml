@@ -13,3 +13,7 @@ path = "src/main.rs"
 interfire-ebpf = { path = "../interfire-ebpf" }
 interfire-proto = { path = "../interfire-proto" }
 interfire-rules = { path = "../interfire-rules" }
+nfq = { workspace = true }
+nix = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }

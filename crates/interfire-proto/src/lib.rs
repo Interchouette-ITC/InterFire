@@ -133,7 +133,7 @@ impl Request {
 pub enum Response {
     Pong,
     Status {
-        /// Verdict path state (`none` until NFQUEUE is live).
+        /// Verdict path state (`none`, `nfqueue`, or `degraded`).
         enforcement: &'static str,
         /// eBPF observation state (`attached` or `degraded`).
         observation: &'static str,
