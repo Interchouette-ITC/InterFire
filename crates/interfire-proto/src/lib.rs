@@ -331,6 +331,76 @@ impl AuditStreamRecord {
     }
 }
 
+/// One rule row as returned by `v1 rules …`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuleRow {
+    pub id: u64,
+    pub executable: String,
+    pub verdict: String,
+    pub port: u16,
+}
+
+impl RuleRow {
+    /// Parse a `v1 rules …` response frame into rows.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ProtocolError`] when the frame is not a well-formed rules list.
+    pub fn parse_frame(frame: &str) -> Result<Vec<Self>, ProtocolError> {
+        let line = frame.trim_end_matches(['\r', '\n']);
+        let mut fields = line.splitn(3, ' ');
+        match fields.next() {
+            Some("v1") => {}
+            Some(token) if token.starts_with('v') => return Err(ProtocolError::UnsupportedVersion),
+            _ => return Err(ProtocolError::Malformed),
+        }
+        if fields.next() != Some("rules") {
+            return Err(ProtocolError::Malformed);
+        }
+        let payload = fields.next().unwrap_or("");
+        if payload.is_empty() {
+            return Ok(Vec::new());
+        }
+        payload.split(',').map(Self::parse_row).collect()
+    }
+
+    fn parse_row(row: &str) -> Result<Self, ProtocolError> {
+        let mut parts = row.splitn(4, '|');
+        let id = parts
+            .next()
+            .and_then(|value| value.parse().ok())
+            .ok_or(ProtocolError::Malformed)?;
+        let executable = parts.next().ok_or(ProtocolError::Malformed)?.to_owned();
+        let verdict = parts.next().ok_or(ProtocolError::Malformed)?.to_owned();
+        let port = parts
+            .next()
+            .and_then(|value| value.parse().ok())
+            .ok_or(ProtocolError::Malformed)?;
+        Ok(Self {
+            id,
+            executable,
+            verdict,
+            port,
+        })
+    }
+
+    /// Compact list label: `id exe verdict port`.
+    #[must_use]
+    pub fn list_label(&self) -> String {
+        format!(
+            "{}  {}  {}  :{}",
+            self.id, self.executable, self.verdict, self.port
+        )
+    }
+}
+
+/// Parse `v1 error …` into the message body.
+#[must_use]
+pub fn parse_error_message(frame: &str) -> Option<String> {
+    let line = frame.trim_end_matches(['\r', '\n']);
+    line.strip_prefix("v1 error ").map(str::to_owned)
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ProtocolError {
     Malformed,
@@ -391,6 +461,32 @@ mod tests {
                 sequence: 9,
                 message: "allow curl".into(),
             })
+        );
+    }
+
+    #[test]
+    fn parses_rules_list_frame() {
+        assert_eq!(
+            RuleRow::parse_frame("v1 rules 1|/bin/curl|Allow|443,2|/usr/bin/ssh|Deny|22\n"),
+            Ok(vec![
+                RuleRow {
+                    id: 1,
+                    executable: "/bin/curl".into(),
+                    verdict: "Allow".into(),
+                    port: 443,
+                },
+                RuleRow {
+                    id: 2,
+                    executable: "/usr/bin/ssh".into(),
+                    verdict: "Deny".into(),
+                    port: 22,
+                },
+            ])
+        );
+        assert_eq!(RuleRow::parse_frame("v1 rules\n"), Ok(vec![]));
+        assert_eq!(
+            parse_error_message("v1 error invalid_rule\n").as_deref(),
+            Some("invalid_rule")
         );
     }
 

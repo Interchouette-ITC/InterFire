@@ -8,7 +8,7 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap};
 
-use crate::app::{App, Overlay, Pane, Tab};
+use crate::app::{AddField, AddRuleForm, App, Overlay, Pane, Tab};
 
 pub fn draw(frame: &mut Frame<'_>, app: &App) {
     let chunks = Layout::vertical([
@@ -20,8 +20,10 @@ pub fn draw(frame: &mut Frame<'_>, app: &App) {
     frame.render_widget(tabs_bar(app), chunks[0]);
     draw_body(frame, app, chunks[1]);
     frame.render_widget(Paragraph::new(crate::app::footer_hints(app)), chunks[2]);
-    if let Overlay::Notice(message) = app.overlay {
-        draw_overlay(frame, message);
+    match &app.overlay {
+        Overlay::None => {}
+        Overlay::Notice(message) => draw_notice(frame, message),
+        Overlay::AddRule(form) => draw_add_rule(frame, form),
     }
 }
 
@@ -94,7 +96,7 @@ fn detail_widget(app: &App) -> Paragraph<'_> {
         .block(Block::default().borders(Borders::ALL).title(title))
 }
 
-fn draw_overlay(frame: &mut Frame<'_>, message: &str) {
+fn draw_notice(frame: &mut Frame<'_>, message: &str) {
     let area = centered_rect(60, 30, frame.area());
     frame.render_widget(Clear, area);
     frame.render_widget(
@@ -104,13 +106,43 @@ fn draw_overlay(frame: &mut Frame<'_>, message: &str) {
                 Style::default().add_modifier(Modifier::BOLD),
             )),
             Line::from(""),
-            Line::from(message),
+            Line::from(message.to_owned()),
             Line::from(""),
             Line::from("Esc dismisses · does not quit"),
         ])
         .block(Block::default().borders(Borders::ALL).title("notice")),
         area,
     );
+}
+
+fn draw_add_rule(frame: &mut Frame<'_>, form: &AddRuleForm) {
+    let area = centered_rect(70, 55, frame.area());
+    frame.render_widget(Clear, area);
+    let lines = vec![
+        field_line(form, AddField::Id, &form.id),
+        field_line(form, AddField::Executable, &form.executable),
+        field_line(form, AddField::Verdict, &form.verdict),
+        field_line(form, AddField::Port, &form.port),
+        Line::from(""),
+        Line::from("Tab next field · Enter submit · Esc cancel"),
+    ];
+    frame.render_widget(
+        Paragraph::new(lines).block(Block::default().borders(Borders::ALL).title("add rule")),
+        area,
+    );
+}
+
+fn field_line(form: &AddRuleForm, field: AddField, value: &str) -> Line<'static> {
+    let marker = if form.focus == field { ">" } else { " " };
+    let style = if form.focus == field {
+        Style::default().add_modifier(Modifier::BOLD)
+    } else {
+        Style::default()
+    };
+    Line::from(Span::styled(
+        format!("{marker} {}: {value}", field.label()),
+        style,
+    ))
 }
 
 fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {

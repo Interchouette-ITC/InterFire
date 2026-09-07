@@ -24,7 +24,7 @@ use ratatui::backend::CrosstermBackend;
 use tokio::sync::mpsc;
 use tokio::time;
 
-use crate::app::{App, DEFAULT_SOCKET};
+use crate::app::{App, DEFAULT_SOCKET, KeyAction};
 use crate::ipc::spawn as spawn_ipc;
 
 #[tokio::main]
@@ -73,7 +73,8 @@ async fn run(
 ) -> io::Result<()> {
     let mut app = App::new(socket.clone());
     let (tx, mut rx) = mpsc::unbounded_channel();
-    spawn_ipc(socket, tx);
+    let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
+    spawn_ipc(socket, tx, cmd_rx);
     let mut events = EventStream::new();
     let mut tick = time::interval(Duration::from_millis(100));
     loop {
@@ -82,8 +83,12 @@ async fn run(
             maybe = events.next() => {
                 match maybe {
                     Some(Ok(Event::Key(key))) if key.kind == KeyEventKind::Press => {
-                        if app.handle_key(key.code) {
-                            return Ok(());
+                        match app.handle_key(key.code) {
+                            KeyAction::Quit => return Ok(()),
+                            KeyAction::Command(command) => {
+                                let _ = cmd_tx.send(command);
+                            }
+                            KeyAction::None => {}
                         }
                     }
                     Some(Err(error)) => return Err(error),
