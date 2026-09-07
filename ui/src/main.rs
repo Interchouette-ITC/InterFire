@@ -7,7 +7,10 @@
 mod alert;
 mod alert_view;
 mod app;
+mod audit_host;
 mod ipc_poll;
+mod log_buf;
+mod log_view;
 mod rules;
 mod rules_view;
 mod section;

@@ -26,8 +26,10 @@ personal-firewall tray/alert path. Same Unix IPC as `interfirectl` /
 Tray: protected | prompting | degraded | daemon-unavailable (Linux SNI via
 `ksni`; state also mirrored in Status chrome and the window status bar).
 Rules: live list / select / add / delete over Unix IPC (`rule-list`,
-`rule-add`, `rule-delete`). Other left-nav sections stay thin shells until
-their dedicated slices.
+`rule-add`, `rule-delete`). Log: capped at 2,000 rows with a virtualized
+viewport; long-lived `audit-subscribe` id `interfire-ui` (reconnect
+replaces; tear-down on window/host drop). Other left-nav sections stay
+thin shells until their dedicated slices.
 
 ## Stack pin
 

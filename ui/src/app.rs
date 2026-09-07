@@ -1,4 +1,4 @@
-//! `InterFire` desktop shell: left navigation, tray, alert, and Rules CRUD.
+//! `InterFire` desktop shell: left navigation, tray, alert, Rules, and Log.
 #![allow(clippy::wildcard_imports)]
 #![forbid(unsafe_code)]
 
@@ -12,7 +12,10 @@ use interfire_proto::{PromptRow, RuleRow};
 
 use crate::alert::{AlertScope, AlertVerdict, ConnectionAlert};
 use crate::alert_view::alert_overlay;
+use crate::audit_host::{AuditEvent, AuditHost};
 use crate::ipc_poll;
+use crate::log_buf::LogBuffer;
+use crate::log_view::log_body;
 use crate::rules::{RuleVerdict, next_rule_id, validate_new_rule};
 use crate::rules_view::{add_rule_overlay, rules_body};
 use crate::section::Section;
@@ -31,6 +34,7 @@ struct ShellContent<'a> {
     selected_rule: Option<u64>,
     rules_message: Option<&'a str>,
     adding: bool,
+    log: &'a LogBuffer,
 }
 
 /// Active add-rule form backed by GPUI input states.
@@ -54,6 +58,8 @@ pub struct App {
     rules_message: Option<String>,
     add_form: Option<AddRuleFormState>,
     alert: Option<ConnectionAlert>,
+    log: LogBuffer,
+    audit: AuditHost,
     #[cfg(target_os = "linux")]
     tray: Option<TrayHost>,
 }
@@ -65,6 +71,7 @@ impl App {
             reason: "connecting".into(),
         };
         let tray_state = TrayState::from_link(&link);
+        let audit = AuditHost::spawn(socket.clone());
         Self {
             section: Section::Rules,
             socket,
@@ -76,12 +83,14 @@ impl App {
             rules_message: None,
             add_form: None,
             alert: None,
+            log: LogBuffer::new(),
+            audit,
             #[cfg(target_os = "linux")]
             tray: TrayHost::try_spawn(tray_state),
         }
     }
 
-    /// Start periodic daemon polls that drive tray, Status, alerts, and rules.
+    /// Start periodic daemon polls that drive tray, Status, alerts, rules, and Log.
     pub fn start_watchers(cx: &Context<Self>) {
         cx.spawn(async move |this, cx| {
             loop {
@@ -101,6 +110,7 @@ impl App {
     }
 
     fn refresh_from_daemon(&mut self) {
+        self.drain_audit_events();
         let snapshot = ipc_poll::poll_snapshot(&self.socket);
         self.link = snapshot.link;
         self.prompts = snapshot.prompts;
@@ -121,6 +131,18 @@ impl App {
         }
     }
 
+    fn drain_audit_events(&mut self) {
+        for event in self.audit.drain() {
+            match event {
+                AuditEvent::Ready => self.log.set_subscribed(true),
+                AuditEvent::Record(record) => {
+                    self.log.push_line(record.sequence, &record.message);
+                }
+                AuditEvent::Down(_) => self.log.set_subscribed(false),
+            }
+        }
+    }
+
     pub(crate) fn select(&mut self, section: Section, cx: &mut Context<Self>) {
         self.section = section;
         cx.notify();
@@ -128,6 +150,11 @@ impl App {
 
     pub(crate) fn select_rule(&mut self, id: u64, cx: &mut Context<Self>) {
         self.selected_rule = Some(id);
+        cx.notify();
+    }
+
+    pub(crate) fn select_log_row(&mut self, index: usize, cx: &mut Context<Self>) {
+        self.log.select(index);
         cx.notify();
     }
 
@@ -276,6 +303,7 @@ impl Render for App {
         let selected_rule = self.selected_rule;
         let rules_message = self.rules_message.clone();
         let adding = self.add_form.is_some();
+        let log = self.log.clone();
 
         let mut shell = div()
             .id("interfire-shell")
@@ -295,6 +323,7 @@ impl Render for App {
                     selected_rule,
                     rules_message: rules_message.as_deref(),
                     adding,
+                    log: &log,
                 },
                 cx,
             ));
@@ -396,9 +425,7 @@ fn section_body(content: &ShellContent<'_>, cx: &Context<App>) -> Div {
         Section::Applications => div()
             .text_color(muted)
             .child("Observed identities and effective rules (thin shell)."),
-        Section::Log => div()
-            .text_color(muted)
-            .child("Capped audit stream (virtualized in a later slice)."),
+        Section::Log => log_body(content.log, cx),
         Section::Network => div()
             .text_color(muted)
             .child("InterFire-owned nftables view only (thin until packaging work)."),
