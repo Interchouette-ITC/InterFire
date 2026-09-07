@@ -448,11 +448,11 @@ fn section_body(content: &ShellContent<'_>, cx: &Context<App>) -> Div {
         Section::Status => status_body(content.socket, content.tray_state, content.link, muted),
         Section::Applications => div()
             .text_color(muted)
-            .child("Observed identities and effective rules (thin shell)."),
+            .child("Observed identities and effective rules are not listed here yet."),
         Section::Log => log_body(content.log, cx),
         Section::Network => div()
             .text_color(muted)
-            .child("InterFire-owned nftables view only (thin until packaging work)."),
+            .child("InterFire-owned nftables controls are not available yet."),
         Section::Settings => div()
             .v_flex()
             .gap_2()

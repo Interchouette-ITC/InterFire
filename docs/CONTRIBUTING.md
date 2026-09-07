@@ -21,8 +21,10 @@
 | `make coverage` | `cargo llvm-cov` → `coverage/lcov.info` |
 | `make audit` | `cargo audit` |
 | `make deny` | `cargo deny check` |
-| `make doc` | rustdoc → `docs/api-rust/` |
+| `make doc` | rustdoc → `docs/api-rust/` (excludes `interfire-ui` and the BPF program crate) |
 | `make ci` | `lint` + `test` + `doc` |
+| `make ui` | Build `interfire-ui` (needs GPUI system libs; see [`../docs-dev/ui-gpui.md`](../docs-dev/ui-gpui.md)) |
+| `make ui-test` | Test `interfire-ui` (same system libs; also run in CI) |
 | `make ebpf` | Rebuild embedded eBPF object (nightly + bpf-linker) |
 | `make memcheck` | Idle `interfired` RSS vs < 40 MiB (non-root) |
 | `make memcheck-ui` | Release UI RSS gates (idle / prompt-load / combined) |
