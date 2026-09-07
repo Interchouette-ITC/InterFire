@@ -21,6 +21,7 @@ pub struct PollSnapshot {
 
 /// Poll daemon status, pending prompts, and rules.
 #[must_use]
+#[hotpath::measure]
 pub fn poll_snapshot(socket: &str) -> PollSnapshot {
     match fetch_status(socket) {
         Ok(status) => {

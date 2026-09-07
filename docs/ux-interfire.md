@@ -103,8 +103,10 @@ diagnostics. Desktop prompts are alert-first; the TUI retains a Prompts tab.
 ### RSS budgets (release gates)
 
 Release profile, sampled with `make memcheck-ui` (DISPLAY or `xvfb-run`,
-software GL). GPUI + wgpu baseline on Linux is about 190 MiB idle; the
-original sketch ceilings (80 / 120 / 150 MiB) are retired.
+software GL). GPUI + wgpu baseline on Linux is about **190 MiB** idle; the
+original sketch ceilings (80 / 120 / 150 MiB) are retired. That floor is the
+desktop toolkit, not `interfired` (daemon idle stays under 40 MiB). Optional
+allocation report: `make profile-ui` ([hotpath-rs](https://hotpath.rs/)).
 
 | Client | Idle | Under prompt load |
 | --- | --- | --- |

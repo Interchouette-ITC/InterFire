@@ -80,6 +80,11 @@ starts a temp daemon, launches the UI with `--rss-probe=idle` then
 Needs `DISPLAY` or `xvfb-run`. Defaults force software GL
 (`LIBGL_ALWAYS_SOFTWARE=1`, `WGPU_BACKEND=gl`).
 
+Honest floor: release GPUI + wgpu on Linux measures around **~190 MiB** idle
+VmRSS even before InterFire's own tables grow. That is a framework cost, not the
+daemon. Idle `interfired` stays under **40 MiB** (`make memcheck`; ~6 MiB typical
+on this tree). Do not treat the UI ceiling as "lightweight firewall" marketing.
+
 | Condition | Budget | Env override |
 | --- | --- | --- |
 | Idle UI | < 220 MiB | `INTERFIRE_UI_IDLE_BUDGET_KIB` (default 225280) |
@@ -90,6 +95,21 @@ Prompt-load stages 100 pending prompts, an alert, and a full 2,000-row audit
 buffer inside the UI process. Fail the release if any sample exceeds budget.
 
 Settle time: `INTERFIRE_UI_MEMCHECK_SETTLE_SECS` (default 4).
+
+### Allocation profiling (optional)
+
+[hotpath-rs](https://hotpath.rs/) is wired behind Cargo features (no cost in
+default `make ui` / packaging builds):
+
+```bash
+make profile-ui
+# or: cargo build -p interfire-ui --release --features hotpath,hotpath-alloc
+```
+
+`make profile-ui` runs a short idle session (`HOTPATH_SHUTDOWN_MS`, default
+8000) and prints timing + allocation tables for instrumented paths (`App::new`,
+RSS probe, IPC poll). Use that to separate InterFire heap from the GPUI floor
+before deciding whether budgets can drop.
 
 ## Related docs
 
