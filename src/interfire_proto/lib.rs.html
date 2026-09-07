@@ -133,7 +133,7 @@
 <a href=#133 id=133 data-nosnippet>133</a></span><span class="kw">pub enum </span>Response {
 <a href=#134 id=134 data-nosnippet>134</a>    Pong,
 <a href=#135 id=135 data-nosnippet>135</a>    Status {
-<a href=#136 id=136 data-nosnippet>136</a>        <span class="doccomment">/// Verdict path state (`none` until NFQUEUE is live).
+<a href=#136 id=136 data-nosnippet>136</a>        <span class="doccomment">/// Verdict path state (`none`, `nfqueue`, or `degraded`).
 <a href=#137 id=137 data-nosnippet>137</a>        </span>enforcement: <span class="kw-2">&amp;</span><span class="lifetime">'static </span>str,
 <a href=#138 id=138 data-nosnippet>138</a>        <span class="doccomment">/// eBPF observation state (`attached` or `degraded`).
 <a href=#139 id=139 data-nosnippet>139</a>        </span>observation: <span class="kw-2">&amp;</span><span class="lifetime">'static </span>str,

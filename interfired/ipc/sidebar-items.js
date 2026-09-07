@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["Mutate"],"fn":["mutate","peer_may_mutate","respond","rule_list"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["ENFORCEMENT_DEGRADED","ENFORCEMENT_NFQUEUE","ENFORCEMENT_NONE","OBSERVATION_ATTACHED","OBSERVATION_DEGRADED"],"fn":["enforcement_code","enforcement_label","observation_code","observation_label"],"struct":["Shared"]};

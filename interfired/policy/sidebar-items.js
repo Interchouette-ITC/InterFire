@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["attribute","connection_from","decide","packet_verdict"],"struct":["Decision"]};
