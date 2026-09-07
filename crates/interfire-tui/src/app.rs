@@ -9,7 +9,7 @@ use interfire_proto::{DaemonStatus, MAX_LOG_RECORDS_PER_SUBSCRIBER, PromptRow, R
 use crate::ipc::{IpcCommand, IpcEvent};
 
 pub use interfire_proto::DEFAULT_SOCKET_PATH as DEFAULT_SOCKET;
-/// Cap aligned with `MAX_LOG_RECORDS_PER_SUBSCRIBER` (product UX contract).
+/// Cap aligned with `MAX_LOG_RECORDS_PER_SUBSCRIBER`.
 pub const MAX_AUDIT_LINES: usize = MAX_LOG_RECORDS_PER_SUBSCRIBER;
 
 /// Slice of list rows for the current viewport (Log is windowed).

@@ -2,21 +2,10 @@
 
 ## Layout
 
+Tree overview: [`../docs/README.md`](../docs/README.md) (Layout). Extra developer paths:
+
 ```text
-crates/interfire-rules/          rule matching + TOML persistence
-crates/interfire-proto/          IPC version + frame bounds
-crates/interfire-daemon/         interfired binary
-crates/interfirectl/             one-shot CLI
-crates/interfire-tui/            ratatui control-plane TUI (`interfire-tui`)
-ui/                              GPUI desktop client (`interfire-ui`)
-crates/interfire-ebpf/           TCP event contract + aya loader
 crates/interfire-ebpf/bpf/       Embedded eBPF object (regenerate with `make ebpf`)
-crates/interfire-ebpf-programs/  aya TCP-connect program (bpfel target)
-docs/                            product hub + community health
-docs-dev/                        developer notes (this tree)
-fixtures/                        IPC and rules fixtures
-scripts/                         capability probe + NFQUEUE test helpers
-packaging/debian/                empty (Debian packaging not implemented)
 .github/workflows/               CI
 ```
 

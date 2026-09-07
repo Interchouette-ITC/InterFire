@@ -1,7 +1,7 @@
 //! Main-window section identifiers (no GPUI imports).
 #![forbid(unsafe_code)]
 
-/// Main-window sections (WinRoute-style left tree, InterFire-only nodes).
+/// Main-window left-nav sections.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Section {
     Status,
