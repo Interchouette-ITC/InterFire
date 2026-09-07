@@ -16,6 +16,7 @@ use crate::audit_host::{AuditEvent, AuditHost};
 use crate::ipc_poll;
 use crate::log_buf::LogBuffer;
 use crate::log_view::log_body;
+use crate::rss_probe::{RssProbeMode, prompt_load_fixture};
 use crate::rules::{RuleVerdict, next_rule_id, validate_new_rule};
 use crate::rules_view::{add_rule_overlay, rules_body};
 use crate::section::Section;
@@ -60,6 +61,7 @@ pub struct App {
     alert: Option<ConnectionAlert>,
     log: LogBuffer,
     audit: AuditHost,
+    rss_probe: Option<RssProbeMode>,
     #[cfg(target_os = "linux")]
     tray: Option<TrayHost>,
 }
@@ -85,8 +87,29 @@ impl App {
             alert: None,
             log: LogBuffer::new(),
             audit,
+            rss_probe: None,
             #[cfg(target_os = "linux")]
             tray: TrayHost::try_spawn(tray_state),
+        }
+    }
+
+    /// Stage synthetic load for `make memcheck-ui` (`--rss-probe=…`).
+    pub fn apply_rss_probe(&mut self, mode: RssProbeMode) {
+        self.rss_probe = Some(mode);
+        match mode {
+            RssProbeMode::Idle => {}
+            RssProbeMode::PromptLoad => {
+                let fixture = prompt_load_fixture();
+                self.prompts = fixture.prompts;
+                self.alert = Some(fixture.alert);
+                self.log = fixture.log;
+                self.section = fixture.section;
+                self.tray_state = fixture.tray_state;
+                #[cfg(target_os = "linux")]
+                if let Some(tray) = &self.tray {
+                    tray.set_state(self.tray_state);
+                }
+            }
         }
     }
 
@@ -112,21 +135,23 @@ impl App {
     fn refresh_from_daemon(&mut self) {
         self.drain_audit_events();
         let snapshot = ipc_poll::poll_snapshot(&self.socket);
-        self.link = snapshot.link;
-        self.prompts = snapshot.prompts;
-        self.rules = snapshot.rules;
-        if let Some(id) = self.selected_rule
-            && !self.rules.iter().any(|row| row.id == id)
-        {
-            self.selected_rule = None;
-        }
-        self.alert = ConnectionAlert::advance(self.alert.take(), &self.prompts);
-        let next = TrayState::from_link(&self.link);
-        if next != self.tray_state {
-            self.tray_state = next;
-            #[cfg(target_os = "linux")]
-            if let Some(tray) = &self.tray {
-                tray.set_state(next);
+        self.link = snapshot.link.clone();
+        if self.rss_probe != Some(RssProbeMode::PromptLoad) {
+            self.prompts = snapshot.prompts;
+            self.rules = snapshot.rules;
+            if let Some(id) = self.selected_rule
+                && !self.rules.iter().any(|row| row.id == id)
+            {
+                self.selected_rule = None;
+            }
+            self.alert = ConnectionAlert::advance(self.alert.take(), &self.prompts);
+            let next = TrayState::from_link(&self.link);
+            if next != self.tray_state {
+                self.tray_state = next;
+                #[cfg(target_os = "linux")]
+                if let Some(tray) = &self.tray {
+                    tray.set_state(next);
+                }
             }
         }
     }

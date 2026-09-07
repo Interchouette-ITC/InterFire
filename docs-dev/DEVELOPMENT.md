@@ -36,6 +36,7 @@ make ebpf           # nightly + bpf-linker; refreshes embedded object
 make ui             # build interfire-ui (needs GPUI system libs; see ui-gpui.md)
 make ui-test        # test interfire-ui (same system libs)
 make memcheck       # idle interfired VmRSS vs < 40 MiB (non-root)
+make memcheck-ui    # release UI RSS gates (needs DISPLAY or xvfb-run)
 make integration    # root netns allow/deny (not in make ci)
 ```
 
@@ -82,7 +83,16 @@ cargo run -p interfire-tui -- --socket=/tmp/interfire.sock
 
 ## Idle RSS (`make memcheck`)
 
-Builds `interfired`, starts it with `--no-ebpf --no-nfqueue`, samples `VmRSS`, and fails when the sample exceeds 40960 KiB (40 MiB). Override with `INTERFIRE_MEMCHECK_BUDGET_KIB`.
+Builds `interfired`, starts it with `--no-ebpf --no-nfqueue` and a temp
+`--audit=` path, samples `VmRSS`, and fails when the sample exceeds 40960 KiB
+(40 MiB). Override with `INTERFIRE_MEMCHECK_BUDGET_KIB`.
+
+## UI RSS release gates (`make memcheck-ui`)
+
+Builds release `interfired` + `interfire-ui`, samples idle / prompt-load /
+combined `VmRSS`, and fails when any sample exceeds the ceilings in
+[`ui-gpui.md`](ui-gpui.md). Requires `DISPLAY` or `xvfb-run`. Not part of
+`make ci`; required before a tagged release.
 
 ## NFQUEUE isolated test and enforcement integration (root)
 

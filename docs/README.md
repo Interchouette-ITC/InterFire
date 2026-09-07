@@ -74,6 +74,12 @@ Idle daemon RSS budget (< 40 MiB, non-root):
 make memcheck
 ```
 
+UI RSS release gates (DISPLAY or `xvfb-run`; not in `make ci`):
+
+```bash
+make memcheck-ui
+```
+
 See [`architecture.md`](architecture.md) for the verdict path and how the
 isolated NFQUEUE test is scoped.
 

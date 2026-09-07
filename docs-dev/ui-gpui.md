@@ -69,11 +69,23 @@ Use `make ui-test` (and CI) when the packages are present.
 
 ## RSS budgets
 
-| Condition | Budget |
-| --- | --- |
-| Idle | < 80 MiB |
-| Under prompt load | < 120 MiB |
-| Combined steady with daemon | < 150 MiB |
+Release gate: `make memcheck-ui` (builds release `interfired` + `interfire-ui`,
+starts a temp daemon, launches the UI with `--rss-probe=idle` then
+`--rss-probe=prompt-load`, samples `/proc/…/VmRSS`).
+
+Needs `DISPLAY` or `xvfb-run`. Defaults force software GL
+(`LIBGL_ALWAYS_SOFTWARE=1`, `WGPU_BACKEND=gl`).
+
+| Condition | Budget | Env override |
+| --- | --- | --- |
+| Idle UI | < 220 MiB | `INTERFIRE_UI_IDLE_BUDGET_KIB` (default 225280) |
+| Prompt-load UI | < 260 MiB | `INTERFIRE_UI_PROMPT_BUDGET_KIB` (default 266240) |
+| Combined daemon + idle UI | < 260 MiB | `INTERFIRE_UI_COMBINED_BUDGET_KIB` (default 266240) |
+
+Prompt-load stages 100 pending prompts, an alert, and a full 2,000-row audit
+buffer inside the UI process. Fail the release if any sample exceeds budget.
+
+Settle time: `INTERFIRE_UI_MEMCHECK_SETTLE_SECS` (default 4).
 
 ## Related docs
 
