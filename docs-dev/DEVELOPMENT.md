@@ -8,6 +8,7 @@ crates/interfire-proto/          IPC version + frame bounds
 crates/interfire-daemon/         interfired binary
 crates/interfirectl/             one-shot CLI
 crates/interfire-tui/            ratatui control-plane TUI (`interfire-tui`)
+ui/                              GPUI desktop client (`interfire-ui`)
 crates/interfire-ebpf/           TCP event contract + aya loader
 crates/interfire-ebpf/bpf/       Embedded eBPF object (regenerate with `make ebpf`)
 crates/interfire-ebpf-programs/  aya TCP-connect program (bpfel target)
@@ -32,6 +33,8 @@ make audit          # needs cargo-audit
 make deny           # needs cargo-deny; config deny.toml
 make ci             # lint + test + doc
 make ebpf           # nightly + bpf-linker; refreshes embedded object
+make ui             # build interfire-ui (needs GPUI system libs; see ui-gpui.md)
+make ui-test        # test interfire-ui (same system libs)
 make memcheck       # idle interfired VmRSS vs < 40 MiB (non-root)
 make integration    # root netns allow/deny (not in make ci)
 ```
@@ -61,7 +64,7 @@ Audit: capped on-disk log (`--audit=PATH`, default under `/var/lib/interfire/aud
 | --- | --- |
 | `interfirectl` | **One-shot** only: `ping`, `status`, single `rules` / `prompts` / `dns` / `audit` commands. No REPL, no multi-screen browse loop. |
 | `interfire-tui` | Interactive control plane: tabs Status \| Rules \| Prompts \| Log \| Help, overlays for add-rule and answer-prompt. |
-| GPUI (`ui/`) | Not implemented (empty tree). Same IPC when it ships. |
+| `interfire-ui` (`ui/`) | GPUI desktop shell (scaffold): left nav + Rules-first content. Tray/alert later. |
 
 Use the CLI from scripts and smoke checks. Use the TUI when you need to browse lists, answer prompts, or watch the log. The UX contract (`docs/ux-interfire.md`) locks this split.
 

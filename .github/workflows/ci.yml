@@ -56,9 +56,21 @@ jobs:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
         if: needs.changes.outputs.code == 'true'
+      - name: GPUI system libraries
+        if: needs.changes.outputs.code == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libxkbcommon-dev \
+            libxkbcommon-x11-dev \
+            libxcb1-dev \
+            libxcb-xfixes0-dev \
+            libxcb-shape0-dev \
+            libfontconfig1-dev \
+            libfreetype6-dev
       - name: lint + test + rustdoc
         if: needs.changes.outputs.code == 'true'
-        run: make ci
+        run: make ci && make ui-test
       - name: Github pages
         if: >-
           needs.changes.outputs.code == 'true'
