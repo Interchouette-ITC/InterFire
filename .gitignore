@@ -10,3 +10,11 @@ target/
 coverage/
 /docs/api-rust/**
 !/docs/api-rust/README.md
+
+# Local Kerio / WinRoute reference materials (never commit)
+/docs-dev/*.pdf
+/docs-dev/*.exe
+/docs-dev/kerio*.gif
+/docs-dev/kerio*.png
+/docs-dev/kerio*.webp
+/docs-dev/control-traffic-rules.webp
