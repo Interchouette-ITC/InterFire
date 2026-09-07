@@ -96,14 +96,15 @@ is scoped.
 crates/interfire-rules/          rule matching + TOML persistence
 crates/interfire-proto/          IPC version + frame bounds
 crates/interfire-daemon/         interfired
-crates/interfirectl/             CLI
+crates/interfirectl/             one-shot CLI
+crates/interfire-tui/            ratatui control-plane TUI
 crates/interfire-ebpf/           TCP event contract + aya loader
 crates/interfire-ebpf-programs/  TCP-connect eBPF program (bpfel)
 docs/                            product docs (this hub)
 docs-dev/                        developer notes
 fixtures/                        rule fixtures
 scripts/                         capability probe + NFQUEUE spike
-ui/                              reserved for the tray client
+ui/                              reserved GPUI tray client
 packaging/debian/                reserved for packaging
 ```
 
