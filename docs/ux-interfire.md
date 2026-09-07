@@ -11,7 +11,7 @@ v0.1 clients share the same Unix IPC. What exists today vs what is planned:
 | --- | --- | --- |
 | `interfirectl` | Shipped | One-shot commands only (`ping`, `status`, rules / prompts / dns / audit) |
 | `interfire-tui` | Shipped | Interactive control plane (Status \| Rules \| Prompts \| Log \| Help) |
-| GPUI app under `ui/` | Scaffold + tray states (`interfire-ui`) | Left-nav shell; alert and live Rules CRUD later |
+| GPUI app under `ui/` | Scaffold + tray + connection alert (`interfire-ui`) | Left-nav shell; live Rules CRUD later |
 
 The interactive ops client today is a **ratatui** terminal UI
 (`crates/interfire-tui`). The desktop client, when implemented, is a **GPUI**

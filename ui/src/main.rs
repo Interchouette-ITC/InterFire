@@ -4,6 +4,7 @@
 #![allow(clippy::wildcard_imports)]
 #![forbid(unsafe_code)]
 
+mod alert;
 mod app;
 mod ipc_poll;
 mod section;
