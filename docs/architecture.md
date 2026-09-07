@@ -50,9 +50,24 @@ objects from other projects are linked or shipped.
 
 ## Supported baseline
 
-Initial target: Debian/Ubuntu, x86_64, systemd, a kernel with BTF and usable
-eBPF features, and NFQUEUE support. The exact oldest kernel is deliberately
-uncommitted until the capability probe and controlled verdict test pass there.
+Primary v0.1 targets (install and desktop dogfood):
+
+| Distro / desktop | Role |
+| --- | --- |
+| Debian (stable) with GNOME | Primary |
+| Pop!_OS (current supported release) | Primary |
+
+Architecture: `x86_64`. Runtime assumptions: systemd, a kernel with BTF and
+usable eBPF features, and NFQUEUE support. CI may use Ubuntu runners as a
+compile proxy only; that does not expand the support claim.
+
+Tray icons use StatusNotifierItem. On GNOME, a visible tray needs a shell that
+exposes SNI; when registration fails, Status chrome still reports tray state
+and the UI must not claim a tray is present. Broader distros and desktop
+environments are out of scope until documented later.
+
+The exact oldest kernel is deliberately uncommitted until the capability probe
+and controlled verdict test pass there.
 
 ## Isolated NFQUEUE verdict command
 

@@ -25,6 +25,9 @@ personal-firewall tray/alert path. Same Unix IPC as `interfirectl` /
 
 Tray: protected | prompting | degraded | daemon-unavailable (Linux SNI via
 `ksni`; state also mirrored in Status chrome and the window status bar).
+On Debian GNOME, a visible tray needs a shell that exposes StatusNotifierItem;
+when SNI registration fails, Status still shows tray state and must not claim
+an icon is present. Pop!_OS is a primary verify target alongside Debian GNOME.
 Rules: live list / select / add / delete over Unix IPC (`rule-list`,
 `rule-add`, `rule-delete`). Log: capped at 2,000 rows with a virtualized
 viewport; long-lived `audit-subscribe` id `interfire-ui` (reconnect
@@ -49,7 +52,8 @@ work is blocked by upstream gaps.
 
 ### Linux system packages
 
-Linking `interfire-ui` needs development packages (Debian/Ubuntu):
+Linking `interfire-ui` needs development packages on the primary targets
+(Debian and Pop!_OS both use `apt`):
 
 ```bash
 sudo apt-get install -y \
@@ -65,7 +69,7 @@ Use `make ui-test` (and CI) when the packages are present.
 
 - Binary name: `interfire-ui`
 - Tree: [`ui/`](../ui/) (workspace member)
-- Debian packaging: later packaging work; keep a single installable binary
+- Install matrix for the `.deb`: Debian (stable) GNOME and Pop!_OS (packaging work)
 
 ## RSS budgets
 
