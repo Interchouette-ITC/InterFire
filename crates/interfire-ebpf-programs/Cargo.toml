@@ -14,3 +14,4 @@ bench = false
 
 [dependencies]
 aya-ebpf = { workspace = true }
+interfire-ebpf = { path = "../interfire-ebpf", default-features = false }

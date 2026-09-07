@@ -1,37 +1,65 @@
 #![forbid(unsafe_code)]
 
+mod audit;
+mod dns;
+mod ipc;
+mod nfqueue;
+mod observe;
+mod packet;
+mod pending;
+mod policy;
 mod process;
+mod prompts;
+mod shared;
 
 use std::env;
 use std::fs;
-use std::io::{self, BufRead, BufReader, Write};
+use std::io;
 use std::os::unix::fs::PermissionsExt;
-use std::os::unix::net::{UnixListener, UnixStream};
-use std::path::Path;
+use std::os::unix::net::UnixListener;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::thread;
+use std::time::Duration;
 
-use interfire_proto::{IPC_VERSION, MAX_FRAME_BYTES, Request, Response};
-use interfire_rules::{Direction, Protocol, Rule, RuleSet, RulesStore, Scope, Verdict};
+use interfire_ebpf::Observer;
+use interfire_rules::RulesStore;
+use tracing::{error, info};
+use tracing_subscriber::EnvFilter;
+
+use crate::shared::Shared;
 
 fn main() -> io::Result<()> {
-    let self_pid = std::process::id();
-    let self_start = process::parse_start_ticks(&fs::read_to_string("/proc/self/stat")?)
-        .map_err(io::Error::other)?;
-    let self_identity = process::resolve(self_pid, self_start).map_err(io::Error::other)?;
-    let mut process_cache = process::ProcessCache::new(1_024);
-    process_cache.insert(self_identity);
-    debug_assert!(process_cache.get(self_pid, self_start).is_some());
-    let socket = env::args()
-        .skip(1)
-        .find_map(|argument| argument.strip_prefix("--socket=").map(str::to_owned))
-        .unwrap_or_else(|| "/run/interfire/interfired.sock".into());
-    let rules_path = env::args()
-        .skip(1)
-        .find_map(|argument| argument.strip_prefix("--rules=").map(str::to_owned))
-        .unwrap_or_else(|| "/etc/interfire/rules.toml".into());
-    let store = RulesStore::new(rules_path);
-    let mut rules = store.load().map_err(io::Error::other)?;
+    init_tracing();
+    let options = Options::from_env();
+    let store = RulesStore::new(&options.rules_path);
+    let rules = store.load().map_err(io::Error::other)?;
+    let rule_count = rules.rules().len();
 
-    let path = Path::new(&socket);
+    let (observer, observation) = start_observation(options.skip_ebpf);
+    let shared = Arc::new(Shared::new(
+        rules,
+        store,
+        observation,
+        4_096,
+        Duration::from_secs(5),
+        1_024,
+        options.audit_path.clone(),
+    )?);
+
+    if let Some(observer) = observer {
+        let shared_observe = Arc::clone(&shared);
+        thread::spawn(move || observe::run(observer, &shared_observe));
+    }
+
+    if options.skip_nfqueue {
+        info!("NFQUEUE skipped (--no-nfqueue); enforcement=none");
+    } else {
+        let shared_queue = Arc::clone(&shared);
+        thread::spawn(move || nfqueue::run_or_degrade(&shared_queue));
+    }
+
+    let path = Path::new(&options.socket);
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -40,91 +68,90 @@ fn main() -> io::Result<()> {
     }
 
     let listener = UnixListener::bind(path)?;
-    fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
-    eprintln!("interfired: listening on {}", path.display());
-    eprintln!("interfired: loaded {} rule(s)", rules.rules().len());
-    eprintln!("interfired: process cache capacity {}", 1_024);
+    fs::set_permissions(path, fs::Permissions::from_mode(0o600))?;
+    info!(socket = %path.display(), rules = rule_count, "interfired listening");
+    info!(
+        observation = shared.observation(),
+        enforcement = shared.enforcement(),
+        audit = %options.audit_path.display(),
+        "pipeline status"
+    );
+
     for stream in listener.incoming() {
         match stream {
             Ok(stream) => {
-                if let Err(error) = respond(stream, &mut rules, &store) {
-                    eprintln!("interfired: request failed: {error}");
-                }
+                let shared = Arc::clone(&shared);
+                thread::spawn(move || {
+                    if let Err(error) = ipc::handle(stream, &shared) {
+                        error!(%error, "request failed");
+                    }
+                });
             }
-            Err(error) => eprintln!("interfired: accept failed: {error}"),
+            Err(error) => error!(%error, "accept failed"),
         }
     }
     Ok(())
 }
 
-fn respond(mut stream: UnixStream, rules: &mut RuleSet, store: &RulesStore) -> io::Result<()> {
-    let mut frame = String::new();
-    let bytes = BufReader::new(stream.try_clone()?).read_line(&mut frame)?;
-    let response = if bytes > MAX_FRAME_BYTES {
-        Response::Error("frame_too_large")
-    } else {
-        match Request::parse(&frame) {
-            Ok(Request::Ping) => Response::Pong,
-            Ok(Request::Status) => Response::Status {
-                enforcement: "feasibility-gated",
-                ipc_version: IPC_VERSION,
-            },
-            Ok(Request::RuleList) => Response::Rules(
-                rules
-                    .rules()
-                    .iter()
-                    .map(|rule| {
-                        format!(
-                            "{}|{}|{:?}|{}",
-                            rule.id,
-                            rule.executable,
-                            rule.verdict,
-                            rule.port.unwrap_or(0)
-                        )
-                    })
-                    .collect::<Vec<_>>()
-                    .join(","),
-            ),
-            Ok(Request::RuleDelete { id }) => {
-                if !rules.remove(id) {
-                    Response::Error("rule_not_found")
-                } else if store.save(rules).is_err() {
-                    Response::Error("persistence_failed")
-                } else {
-                    Response::Pong
-                }
+fn init_tracing() {
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(filter)
+        .with_writer(io::stderr)
+        .try_init();
+}
+
+struct Options {
+    socket: String,
+    rules_path: String,
+    audit_path: PathBuf,
+    skip_ebpf: bool,
+    skip_nfqueue: bool,
+}
+
+impl Options {
+    fn from_env() -> Self {
+        let mut socket = "/run/interfire/interfired.sock".to_owned();
+        let mut rules_path = "/etc/interfire/rules.toml".to_owned();
+        let mut audit_path = PathBuf::from("/var/lib/interfire/audit.log");
+        let mut skip_ebpf = false;
+        let mut skip_nfqueue = false;
+        for argument in env::args().skip(1) {
+            if let Some(value) = argument.strip_prefix("--socket=") {
+                value.clone_into(&mut socket);
+            } else if let Some(value) = argument.strip_prefix("--rules=") {
+                value.clone_into(&mut rules_path);
+            } else if let Some(value) = argument.strip_prefix("--audit=") {
+                audit_path = PathBuf::from(value);
+            } else if argument == "--no-ebpf" {
+                skip_ebpf = true;
+            } else if argument == "--no-nfqueue" {
+                skip_nfqueue = true;
             }
-            Ok(Request::RuleAdd {
-                id,
-                executable,
-                verdict,
-                port,
-            }) => {
-                let verdict = match verdict.as_str() {
-                    "allow" => Verdict::Allow,
-                    "deny" => Verdict::Deny,
-                    "prompt" => Verdict::Prompt,
-                    _ => return stream.write_all(b"v1 error invalid_verdict\n"),
-                };
-                let rule = Rule {
-                    id,
-                    executable,
-                    protocol: Some(Protocol::Tcp),
-                    direction: Some(Direction::Outbound),
-                    address: None,
-                    hostname: None,
-                    port: Some(port),
-                    verdict,
-                    scope: Scope::Permanent,
-                };
-                match rules.insert(rule) {
-                    Ok(()) if store.save(rules).is_ok() => Response::Pong,
-                    Ok(()) => Response::Error("persistence_failed"),
-                    Err(_) => Response::Error("invalid_rule"),
-                }
-            }
-            Err(_) => Response::Error("malformed_request"),
         }
-    };
-    stream.write_all(response.encode().as_bytes())
+        Self {
+            socket,
+            rules_path,
+            audit_path,
+            skip_ebpf,
+            skip_nfqueue,
+        }
+    }
+}
+
+fn start_observation(skip_ebpf: bool) -> (Option<Observer>, &'static str) {
+    if skip_ebpf {
+        info!("eBPF skipped (--no-ebpf); observation=degraded");
+        return (None, "degraded");
+    }
+    match Observer::load_embedded_and_attach() {
+        Ok(observer) => {
+            info!("eBPF attached to tcp_v4_connect");
+            (Some(observer), "attached")
+        }
+        Err(error) => {
+            info!(%error, "eBPF unavailable; observation=degraded");
+            (None, "degraded")
+        }
+    }
 }

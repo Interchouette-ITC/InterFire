@@ -4,7 +4,7 @@ CLIPPY_FLAGS := -D warnings -D clippy::all -D clippy::pedantic -D clippy::nurser
 CARGO ?= cargo +stable
 DOC_OUT ?= target/doc
 
-.PHONY: help fmt format lint test coverage audit deny doc doc-open doc-clean ci memcheck
+.PHONY: help fmt format lint test coverage audit deny doc doc-open doc-clean ci memcheck integration ebpf
 
 .DEFAULT_GOAL := help
 
@@ -19,7 +19,9 @@ help:
 	@echo "  make audit          cargo audit"
 	@echo "  make deny           cargo deny check"
 	@echo "  make ci             lint + test + doc"
-	@echo "  make memcheck       placeholder until enforcement runs"
+	@echo "  make ebpf           rebuild embedded TCP-connect eBPF object (nightly)"
+	@echo "  make memcheck       idle interfired RSS vs < 40 MiB budget"
+	@echo "  make integration    root netns allow/deny gate (not part of make ci)"
 
 fmt:
 	$(CARGO) fmt --check
@@ -37,7 +39,7 @@ test:
 coverage:
 	mkdir -p coverage
 	RUSTUP_TOOLCHAIN=stable $(CARGO) llvm-cov --workspace --lcov \
-		--ignore-filename-regex 'scripts/|fixtures/|crates/interfire-ebpf-programs/|crates/interfire-daemon/src/main\.rs|crates/interfirectl/src/main\.rs' \
+		--ignore-filename-regex 'scripts/|fixtures/|crates/interfire-ebpf-programs/|crates/interfire-daemon/src/main\.rs|crates/interfirectl/src/main\.rs|crates/interfire-tui/src/main\.rs' \
 		--output-path coverage/lcov.info
 
 ## Requires `cargo install cargo-audit`.
@@ -50,7 +52,7 @@ deny:
 
 ## rustdoc → `docs/api-rust/` (gitignored except README).
 doc:
-	RUSTDOCFLAGS='-D warnings' $(CARGO) doc --workspace --no-deps
+	RUSTDOCFLAGS='-D warnings' $(CARGO) doc --workspace --no-deps --exclude interfire-ebpf-programs
 	@test -d "$(DOC_OUT)" || (echo "missing $(DOC_OUT)"; exit 1)
 	@rm -rf docs/api-rust
 	@mkdir -p docs/api-rust
@@ -61,7 +63,8 @@ doc:
 		'Generate with `make doc`, then open [`index.html`](index.html).' \
 		'' \
 		'Workspace crates include `interfire-rules`, `interfire-proto`, `interfire-daemon`' \
-		'(`interfired`), `interfirectl`, and the eBPF stubs.' \
+		'(`interfired`), `interfirectl`, `interfire-tui`, and `interfire-ebpf` (loader). The BPF program' \
+		'crate is built with `make ebpf`, not rustdoc.' \
 		> docs/api-rust/README.md
 	@touch docs/api-rust/.nojekyll
 
@@ -79,5 +82,18 @@ doc-clean:
 
 ci: lint test doc
 
+## Rebuild `crates/interfire-ebpf/bpf/interfire-ebpf-programs` (needs nightly + bpf-linker).
+ebpf:
+	cargo +nightly build -Z build-std=core --target bpfel-unknown-none \
+		-p interfire-ebpf-programs --release
+	cp -f target/bpfel-unknown-none/release/interfire-ebpf-programs \
+		crates/interfire-ebpf/bpf/interfire-ebpf-programs
+
 memcheck:
-	@echo "No long-running enforcement process to measure yet."
+	$(CARGO) build -p interfire-daemon
+	bash scripts/memcheck-daemon.sh
+
+## Root-only: controlled allow/deny in a temporary network namespace.
+integration:
+	$(CARGO) build -p interfire-daemon -p interfirectl
+	bash scripts/enforcement-allow-deny.sh

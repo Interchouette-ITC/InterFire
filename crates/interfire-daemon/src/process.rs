@@ -45,6 +45,9 @@ impl std::error::Error for AttributionError {}
 /// Resolve immediately after receiving an event. A start-tick mismatch means
 /// the PID was reused and must never inherit the previous process's policy.
 ///
+/// When `expected_start_ticks` is `0` (kernel program does not yet emit ticks),
+/// the live `/proc` start time is accepted without a reuse check.
+///
 /// # Errors
 ///
 /// Returns I/O failures, malformed `/proc` records, or
@@ -52,7 +55,7 @@ impl std::error::Error for AttributionError {}
 pub fn resolve(pid: u32, expected_start_ticks: u64) -> Result<ProcessIdentity, AttributionError> {
     let root = PathBuf::from("/proc").join(pid.to_string());
     let start_ticks = parse_start_ticks(&fs::read_to_string(root.join("stat"))?)?;
-    if start_ticks != expected_start_ticks {
+    if expected_start_ticks != 0 && start_ticks != expected_start_ticks {
         return Err(AttributionError::PidReused {
             expected: expected_start_ticks,
             actual: start_ticks,

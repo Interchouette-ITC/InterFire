@@ -1,0 +1,17 @@
+[package]
+name = "interfire-tui"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "interfire-tui"
+path = "src/main.rs"
+
+[dependencies]
+crossterm = { workspace = true }
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
+interfire-proto = { path = "../interfire-proto" }
+ratatui = { workspace = true }
+tokio = { workspace = true }

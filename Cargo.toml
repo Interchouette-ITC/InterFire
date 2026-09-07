@@ -6,6 +6,7 @@ members = [
   "crates/interfire-ebpf",
   "crates/interfire-ebpf-programs",
   "crates/interfirectl",
+  "crates/interfire-tui",
 ]
 resolver = "2"
 
@@ -17,4 +18,12 @@ rust-version = "1.85"
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }
 toml = "1"
+aya = "0.13"
 aya-ebpf = "0.2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+nfq = "0.2.5"
+nix = { version = "0.29", features = ["net", "poll", "user"] }
+ratatui = "0.30"
+crossterm = { version = "0.29", features = ["event-stream"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "sync", "time", "io-util"] }
