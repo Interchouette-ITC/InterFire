@@ -1,12 +1,12 @@
-//! App chrome: tabs, pane focus, overlay, IPC-backed status/log state.
+//! App chrome: tabs, pane focus, overlay, IPC-backed status/rules/log state.
 #![forbid(unsafe_code)]
 
 use std::collections::VecDeque;
 
 use crossterm::event::KeyCode;
-use interfire_proto::DaemonStatus;
+use interfire_proto::{DaemonStatus, RuleRow};
 
-use crate::ipc::IpcEvent;
+use crate::ipc::{IpcCommand, IpcEvent};
 
 pub const DEFAULT_SOCKET: &str = "/run/interfire/interfired.sock";
 pub const MAX_AUDIT_LINES: usize = 200;
@@ -68,10 +68,103 @@ pub enum Pane {
     Detail,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AddField {
+    Id,
+    Executable,
+    Verdict,
+    Port,
+}
+
+impl AddField {
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Id => "id",
+            Self::Executable => "executable",
+            Self::Verdict => "verdict",
+            Self::Port => "port",
+        }
+    }
+
+    const fn next(self) -> Self {
+        match self {
+            Self::Id => Self::Executable,
+            Self::Executable => Self::Verdict,
+            Self::Verdict => Self::Port,
+            Self::Port => Self::Id,
+        }
+    }
+
+    const fn prev(self) -> Self {
+        match self {
+            Self::Id => Self::Port,
+            Self::Executable => Self::Id,
+            Self::Verdict => Self::Executable,
+            Self::Port => Self::Verdict,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AddRuleForm {
+    pub id: String,
+    pub executable: String,
+    pub verdict: String,
+    pub port: String,
+    pub focus: AddField,
+}
+
+impl AddRuleForm {
+    fn new() -> Self {
+        Self {
+            id: String::new(),
+            executable: String::new(),
+            verdict: "deny".into(),
+            port: "443".into(),
+            focus: AddField::Id,
+        }
+    }
+
+    const fn focused_mut(&mut self) -> &mut String {
+        match self.focus {
+            AddField::Id => &mut self.id,
+            AddField::Executable => &mut self.executable,
+            AddField::Verdict => &mut self.verdict,
+            AddField::Port => &mut self.port,
+        }
+    }
+
+    fn to_command(&self) -> Result<IpcCommand, String> {
+        let id = self
+            .id
+            .parse::<u64>()
+            .map_err(|_| "id must be an integer".to_owned())?;
+        if self.executable.is_empty() || !self.executable.starts_with('/') {
+            return Err("executable must be an absolute path".into());
+        }
+        let verdict = self.verdict.to_ascii_lowercase();
+        if !matches!(verdict.as_str(), "allow" | "deny" | "prompt") {
+            return Err("verdict must be allow|deny|prompt".into());
+        }
+        let port = self
+            .port
+            .parse::<u16>()
+            .map_err(|_| "port must be 0..65535".to_owned())?;
+        Ok(IpcCommand::AddRule {
+            id,
+            executable: self.executable.clone(),
+            verdict,
+            port,
+        })
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Overlay {
     None,
-    Notice(&'static str),
+    Notice(String),
+    AddRule(AddRuleForm),
 }
 
 #[derive(Clone, Debug)]
@@ -81,16 +174,26 @@ pub enum Link {
     Up(DaemonStatus),
 }
 
+/// Result of handling a key press.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum KeyAction {
+    None,
+    Quit,
+    Command(IpcCommand),
+}
+
 #[derive(Clone, Debug)]
 pub struct App {
     pub socket: String,
     pub link: Link,
     pub audit: VecDeque<String>,
+    pub rules: Vec<RuleRow>,
     pub subscribed: bool,
     pub tab: Tab,
     pub pane: Pane,
     pub list_selected: usize,
     pub overlay: Overlay,
+    pub status_message: Option<String>,
 }
 
 impl App {
@@ -100,11 +203,13 @@ impl App {
             socket,
             link: Link::Connecting,
             audit: VecDeque::new(),
+            rules: Vec::new(),
             subscribed: false,
             tab: Tab::Status,
             pane: Pane::List,
             list_selected: 0,
             overlay: Overlay::None,
+            status_message: None,
         }
     }
 
@@ -128,6 +233,17 @@ impl App {
             IpcEvent::SubscriptionReady => {
                 self.subscribed = true;
             }
+            IpcEvent::Rules(rules) => {
+                self.rules = rules;
+                self.clamp_selection();
+            }
+            IpcEvent::ActionOk(message) => {
+                self.status_message = Some(message);
+            }
+            IpcEvent::ActionError(message) => {
+                self.overlay = Overlay::Notice(format!("error: {message}"));
+                self.status_message = Some(format!("error: {message}"));
+            }
         }
     }
 
@@ -145,33 +261,134 @@ impl App {
         }
     }
 
-    /// Handle a key at root chrome. Returns `true` when the app should quit.
-    pub fn handle_key(&mut self, code: KeyCode) -> bool {
-        if self.overlay != Overlay::None {
-            if matches!(code, KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q')) {
-                self.overlay = Overlay::None;
+    /// Handle a key at root chrome or overlay.
+    pub fn handle_key(&mut self, code: KeyCode) -> KeyAction {
+        match self.overlay {
+            Overlay::None => self.handle_root_key(code),
+            Overlay::Notice(_) => {
+                if matches!(code, KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q')) {
+                    self.overlay = Overlay::None;
+                }
+                KeyAction::None
             }
-            return false;
+            Overlay::AddRule(_) => self.handle_add_overlay_key(code),
         }
+    }
+
+    fn handle_add_overlay_key(&mut self, code: KeyCode) -> KeyAction {
         match code {
-            KeyCode::Char('q' | 'Q') => return true,
-            KeyCode::Char('?') => {
-                self.overlay = Overlay::Notice("Press Esc to dismiss this overlay.");
+            KeyCode::Esc => {
+                self.overlay = Overlay::None;
+                return KeyAction::None;
             }
-            KeyCode::Left | KeyCode::BackTab => self.prev_tab(),
-            KeyCode::Right | KeyCode::Tab => self.next_tab(),
-            KeyCode::Char('1') => self.set_tab(Tab::Status),
-            KeyCode::Char('2') => self.set_tab(Tab::Rules),
-            KeyCode::Char('3') => self.set_tab(Tab::Prompts),
-            KeyCode::Char('4') => self.set_tab(Tab::Log),
-            KeyCode::Char('5') => self.set_tab(Tab::Help),
-            KeyCode::Char('h') if self.tab.has_split() => self.pane = Pane::List,
-            KeyCode::Char('l') if self.tab.has_split() => self.pane = Pane::Detail,
-            KeyCode::Char('j') | KeyCode::Down if self.pane == Pane::List => self.move_list(1),
-            KeyCode::Char('k') | KeyCode::Up if self.pane == Pane::List => self.move_list(-1),
+            KeyCode::Enter => {
+                let command = match &self.overlay {
+                    Overlay::AddRule(form) => form.to_command(),
+                    Overlay::None | Overlay::Notice(_) => return KeyAction::None,
+                };
+                return match command {
+                    Ok(command) => {
+                        self.overlay = Overlay::None;
+                        KeyAction::Command(command)
+                    }
+                    Err(message) => {
+                        self.status_message = Some(message);
+                        KeyAction::None
+                    }
+                };
+            }
             _ => {}
         }
-        false
+        let Overlay::AddRule(form) = &mut self.overlay else {
+            return KeyAction::None;
+        };
+        match code {
+            KeyCode::Tab => {
+                form.focus = form.focus.next();
+            }
+            KeyCode::BackTab => {
+                form.focus = form.focus.prev();
+            }
+            KeyCode::Backspace => {
+                form.focused_mut().pop();
+            }
+            KeyCode::Char(ch) if !ch.is_control() => {
+                form.focused_mut().push(ch);
+            }
+            _ => {}
+        }
+        KeyAction::None
+    }
+
+    fn handle_root_key(&mut self, code: KeyCode) -> KeyAction {
+        match code {
+            KeyCode::Char('q' | 'Q') => KeyAction::Quit,
+            KeyCode::Char('?') => {
+                self.overlay = Overlay::Notice("Press Esc to dismiss this overlay.".into());
+                KeyAction::None
+            }
+            KeyCode::Left | KeyCode::BackTab => {
+                self.prev_tab();
+                KeyAction::None
+            }
+            KeyCode::Right | KeyCode::Tab => {
+                self.next_tab();
+                KeyAction::None
+            }
+            KeyCode::Char('1') => {
+                self.set_tab(Tab::Status);
+                KeyAction::None
+            }
+            KeyCode::Char('2') => {
+                self.set_tab(Tab::Rules);
+                KeyAction::None
+            }
+            KeyCode::Char('3') => {
+                self.set_tab(Tab::Prompts);
+                KeyAction::None
+            }
+            KeyCode::Char('4') => {
+                self.set_tab(Tab::Log);
+                KeyAction::None
+            }
+            KeyCode::Char('5') => {
+                self.set_tab(Tab::Help);
+                KeyAction::None
+            }
+            KeyCode::Char('h') if self.tab.has_split() => {
+                self.pane = Pane::List;
+                KeyAction::None
+            }
+            KeyCode::Char('l') if self.tab.has_split() => {
+                self.pane = Pane::Detail;
+                KeyAction::None
+            }
+            KeyCode::Char('j') | KeyCode::Down if self.pane == Pane::List => {
+                self.move_list(1);
+                KeyAction::None
+            }
+            KeyCode::Char('k') | KeyCode::Up if self.pane == Pane::List => {
+                self.move_list(-1);
+                KeyAction::None
+            }
+            KeyCode::Char('a') if self.tab == Tab::Rules => {
+                self.overlay = Overlay::AddRule(AddRuleForm::new());
+                KeyAction::None
+            }
+            KeyCode::Char('d') if self.tab == Tab::Rules => self.delete_selected_rule(),
+            KeyCode::Char('r') if self.tab == Tab::Rules => {
+                KeyAction::Command(IpcCommand::RefreshRules)
+            }
+            _ => KeyAction::None,
+        }
+    }
+
+    fn delete_selected_rule(&self) -> KeyAction {
+        self.rules
+            .get(self.list_selected)
+            .map_or(KeyAction::None, |rule| {
+                KeyAction::Command(IpcCommand::DeleteRule { id: rule.id })
+            })
     }
 
     fn set_tab(&mut self, tab: Tab) {
@@ -218,7 +435,8 @@ impl App {
     pub fn list_len(&self) -> usize {
         match self.tab {
             Tab::Log => self.audit.len(),
-            Tab::Rules | Tab::Prompts | Tab::Status | Tab::Help => 0,
+            Tab::Rules => self.rules.len(),
+            Tab::Prompts | Tab::Status | Tab::Help => 0,
         }
     }
 
@@ -226,7 +444,8 @@ impl App {
     pub fn list_items(&self) -> Vec<String> {
         match self.tab {
             Tab::Log => self.audit.iter().cloned().collect(),
-            Tab::Rules | Tab::Prompts | Tab::Status | Tab::Help => Vec::new(),
+            Tab::Rules => self.rules.iter().map(RuleRow::list_label).collect(),
+            Tab::Prompts | Tab::Status | Tab::Help => Vec::new(),
         }
     }
 
@@ -234,10 +453,7 @@ impl App {
     pub fn detail_lines(&self) -> Vec<String> {
         match self.tab {
             Tab::Status => self.status_detail_lines(),
-            Tab::Rules => vec![
-                "Rules browser chrome is ready.".into(),
-                "List + detail CRUD actions are not wired yet.".into(),
-            ],
+            Tab::Rules => self.rule_detail_lines(),
             Tab::Prompts => vec![
                 "Prompts browser chrome is ready.".into(),
                 "Allow/Deny overlays are not wired yet.".into(),
@@ -249,6 +465,22 @@ impl App {
                 .map_or_else(|| vec!["no audit frame selected".into()], |line| vec![line]),
             Tab::Help => help_lines(),
         }
+    }
+
+    fn rule_detail_lines(&self) -> Vec<String> {
+        self.rules.get(self.list_selected).map_or_else(
+            || vec!["no rules loaded".into(), "a add · r refresh".into()],
+            |rule| {
+                vec![
+                    format!("id: {}", rule.id),
+                    format!("executable: {}", rule.executable),
+                    format!("verdict: {}", rule.verdict),
+                    format!("port: {}", rule.port),
+                    String::new(),
+                    "a add · d delete · r refresh".into(),
+                ]
+            },
+        )
     }
 
     fn status_detail_lines(&self) -> Vec<String> {
@@ -284,6 +516,8 @@ pub fn help_lines() -> Vec<String> {
         "Tabs: Left/Right or 1..5  (Status Rules Prompts Log Help)".into(),
         "Panes: h list · l detail  (Rules / Prompts / Log)".into(),
         "List: j/k or Up/Down".into(),
+        "Rules: a add · d delete · r refresh".into(),
+        "Add overlay: Tab fields · Enter submit · Esc cancel".into(),
         "Overlay: ? opens · Esc dismisses (Esc never quits root)".into(),
         "Quit: q".into(),
     ]
@@ -291,8 +525,12 @@ pub fn help_lines() -> Vec<String> {
 
 #[must_use]
 pub fn footer_hints(app: &App) -> String {
-    if app.overlay != Overlay::None {
-        return "Esc dismiss overlay".into();
+    if !matches!(app.overlay, Overlay::None) {
+        return match &app.overlay {
+            Overlay::AddRule(_) => "Tab fields  Enter submit  Esc cancel".into(),
+            Overlay::Notice(_) => "Esc dismiss overlay".into(),
+            Overlay::None => String::new(),
+        };
     }
     let mut parts = vec![
         format!("{} · {}", app.chrome_title(), app.tab.label()),
@@ -303,23 +541,31 @@ pub fn footer_hints(app: &App) -> String {
         parts.insert(1, "h/l panes".into());
         parts.insert(2, "j/k list".into());
     }
+    if app.tab == Tab::Rules {
+        parts.insert(1, "a/d/r rules".into());
+    }
+    if let Some(message) = &app.status_message {
+        parts.push(message.clone());
+    }
     parts.join("  │  ")
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{App, IpcEvent, Link, Overlay, Pane, Tab};
+    use super::{App, IpcEvent, KeyAction, Link, Overlay, Pane, Tab};
     use crossterm::event::KeyCode;
-    use interfire_proto::DaemonStatus;
+    use interfire_proto::{DaemonStatus, RuleRow};
+
+    use crate::ipc::IpcCommand;
 
     #[test]
     fn esc_dismisses_overlay_and_never_quits() {
         let mut app = App::new("/tmp/x.sock".into());
-        assert!(!app.handle_key(KeyCode::Char('?')));
-        assert_ne!(app.overlay, Overlay::None);
-        assert!(!app.handle_key(KeyCode::Esc));
+        assert_eq!(app.handle_key(KeyCode::Char('?')), KeyAction::None);
+        assert!(matches!(app.overlay, Overlay::Notice(_)));
+        assert_eq!(app.handle_key(KeyCode::Esc), KeyAction::None);
         assert_eq!(app.overlay, Overlay::None);
-        assert!(!app.handle_key(KeyCode::Esc));
+        assert_eq!(app.handle_key(KeyCode::Esc), KeyAction::None);
     }
 
     #[test]
@@ -335,6 +581,49 @@ mod tests {
         assert_eq!(app.pane, Pane::List);
         app.handle_key(KeyCode::Right);
         assert_eq!(app.tab, Tab::Prompts);
+    }
+
+    #[test]
+    fn rules_list_detail_and_delete_command() {
+        let mut app = App::new("/tmp/x.sock".into());
+        app.handle_key(KeyCode::Char('2'));
+        app.apply(IpcEvent::Rules(vec![RuleRow {
+            id: 9,
+            executable: "/bin/curl".into(),
+            verdict: "Allow".into(),
+            port: 443,
+        }]));
+        assert_eq!(app.list_items()[0], "9  /bin/curl  Allow  :443");
+        assert!(app.detail_lines().iter().any(|line| line.contains("id: 9")));
+        assert_eq!(
+            app.handle_key(KeyCode::Char('d')),
+            KeyAction::Command(IpcCommand::DeleteRule { id: 9 })
+        );
+    }
+
+    #[test]
+    fn add_overlay_submits_rule_command() {
+        let mut app = App::new("/tmp/x.sock".into());
+        app.handle_key(KeyCode::Char('2'));
+        app.handle_key(KeyCode::Char('a'));
+        assert!(matches!(app.overlay, Overlay::AddRule(_)));
+        for ch in "7".chars() {
+            app.handle_key(KeyCode::Char(ch));
+        }
+        app.handle_key(KeyCode::Tab);
+        for ch in "/bin/curl".chars() {
+            app.handle_key(KeyCode::Char(ch));
+        }
+        assert_eq!(
+            app.handle_key(KeyCode::Enter),
+            KeyAction::Command(IpcCommand::AddRule {
+                id: 7,
+                executable: "/bin/curl".into(),
+                verdict: "deny".into(),
+                port: 443,
+            })
+        );
+        assert_eq!(app.overlay, Overlay::None);
     }
 
     #[test]
