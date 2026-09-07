@@ -11,7 +11,10 @@ recent connect decisions keyed by destination IPv4 and port, and accepts or
 drops queued packets. Prompt (no UI yet), unattributed events, and packets
 without a pending decision are **deny**. Production rollout still needs a
 controlled allow/deny integration test, latency/coexistence measurements, and
-documented install of the InterFire-owned nftables queue rule.
+documented install of the InterFire-owned nftables queue rule. A root network-
+namespace gate (`make integration` / `scripts/enforcement-allow-deny.sh`) proves
+controlled allow and deny. Idle daemon RSS is checked with `make memcheck`
+against the < 40 MiB budget.
 
 ## Event and identity flow
 

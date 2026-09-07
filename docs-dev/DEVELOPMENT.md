@@ -31,6 +31,8 @@ make audit          # needs cargo-audit
 make deny           # needs cargo-deny; config deny.toml
 make ci             # lint + test + doc
 make ebpf           # nightly + bpf-linker; refreshes embedded object
+make memcheck       # idle interfired VmRSS vs < 40 MiB (non-root)
+make integration    # root netns allow/deny (not in make ci)
 ```
 
 CI mirrors `make ci`, plus coverage upload to Codecov and a supply-chain job. Live eBPF attach needs root (or `CAP_BPF` / `CAP_PERFMON`) and is not required for `make ci`.
@@ -45,11 +47,17 @@ cargo run -p interfirectl -- --socket=/tmp/interfire.sock status
 
 Without `--no-ebpf`, the daemon tries to attach the embedded TCP-connect program and reports `observation=attached` or `observation=degraded`. Without `--no-nfqueue`, it tries to bind NFQUEUE 4242 and reports `enforcement=nfqueue` or `enforcement=degraded`.
 
-## NFQUEUE spike (root)
+## Idle RSS (`make memcheck`)
+
+Builds `interfired`, starts it with `--no-ebpf --no-nfqueue`, samples `VmRSS`, and fails when the sample exceeds 40960 KiB (40 MiB). Override with `INTERFIRE_MEMCHECK_BUDGET_KIB`.
+
+## NFQUEUE spike and enforcement integration (root)
 
 ```bash
 sudo scripts/phase0-nfqueue-spike.sh
+sudo make integration
 ```
 
-Creates state only inside a temporary network namespace, then tears it down.
+`make integration` runs `scripts/enforcement-allow-deny.sh`: temporary network namespace, InterFire-owned nft queue 4242, daemon with live observation + NFQUEUE, controlled `python3` client allow then deny. Failures print daemon/client logs. Not part of `make ci` (requires root and eBPF attach).
+
 See [`../docs/architecture.md`](../docs/architecture.md).

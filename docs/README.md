@@ -34,8 +34,8 @@ and/or `--no-nfqueue` for non-root smoke.
 | `interfire-ebpf*` | TCP-connect observation program + aya loader                         |
 | Docs              | Architecture, threat model, UX contract and studies                  |
 
-Still building toward: controlled allow/deny integration test, tray UI, and
-Debian packaging.
+Still building toward: tray UI, Debian packaging, and production latency
+measurements.
 
 ## Quick start
 
@@ -57,6 +57,18 @@ Isolated NFQUEUE accept/drop spike (root, temporary network namespace only):
 
 ```bash
 sudo scripts/phase0-nfqueue-spike.sh
+```
+
+Daemon allow/deny integration (root; builds debug binaries first via Make):
+
+```bash
+sudo make integration
+```
+
+Idle daemon RSS budget (< 40 MiB, non-root):
+
+```bash
+make memcheck
 ```
 
 See [`architecture.md`](architecture.md) for the verdict path and how the spike
