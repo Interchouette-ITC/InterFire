@@ -11,7 +11,7 @@ use tracing::{debug, info, warn};
 use crate::packet;
 use crate::shared::Shared;
 
-/// Default NFQUEUE number (matches the isolated spike).
+/// Default NFQUEUE number (matches the isolated NFQUEUE test).
 pub const QUEUE_NUM: u16 = 4242;
 
 /// Bind queue `QUEUE_NUM` and apply pending / default-deny verdicts.

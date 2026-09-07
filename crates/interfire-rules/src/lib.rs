@@ -149,36 +149,27 @@ impl RuleSet {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum RuleError {
+    #[error("duplicate rule id {0}")]
     DuplicateId(u64),
+    #[error("executable path must be absolute")]
     ExecutableMustBeAbsolute,
 }
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum PersistenceError {
-    Io(std::io::Error),
-    Parse(toml::de::Error),
-    Serialize(toml::ser::Error),
+    #[error("I/O error: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("invalid TOML: {0}")]
+    Parse(#[from] toml::de::Error),
+    #[error("cannot serialize rules: {0}")]
+    Serialize(#[from] toml::ser::Error),
+    #[error("unsupported schema version {0}")]
     UnsupportedSchema(u32),
-    InvalidRule(RuleError),
+    #[error("invalid rule: {0}")]
+    InvalidRule(#[from] RuleError),
 }
-
-impl std::fmt::Display for PersistenceError {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Io(error) => write!(formatter, "I/O error: {error}"),
-            Self::Parse(error) => write!(formatter, "invalid TOML: {error}"),
-            Self::Serialize(error) => write!(formatter, "cannot serialize rules: {error}"),
-            Self::UnsupportedSchema(version) => {
-                write!(formatter, "unsupported schema version {version}")
-            }
-            Self::InvalidRule(error) => write!(formatter, "invalid rule: {error:?}"),
-        }
-    }
-}
-
-impl std::error::Error for PersistenceError {}
 
 #[derive(Deserialize, Serialize)]
 struct RulesDocument {

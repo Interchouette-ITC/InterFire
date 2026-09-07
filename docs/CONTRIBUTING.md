@@ -7,7 +7,9 @@
 - Conventional commits: `feat: …`, `fix: …`, `docs: …`, `ci: …`, etc.
 - PR body follows [`pull_request_template.md`](pull_request_template.md) (**Summary** + **Test plan** only).
 - Follow the [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) and [`SECURITY.md`](SECURITY.md).
-- Do not claim network enforcement until the verdict path is wired and measured.
+- Keep enforcement claims honest: the NFQUEUE path is wired; do not imply
+  production-ready protection without operator nft, caps, and measured behavior
+  on supported kernels. See [`architecture.md`](architecture.md).
 
 ## Local gates
 
@@ -21,6 +23,11 @@
 | `make deny` | `cargo deny check` |
 | `make doc` | rustdoc → `docs/api-rust/` |
 | `make ci` | `lint` + `test` + `doc` |
+| `make ebpf` | Rebuild embedded eBPF object (nightly + bpf-linker) |
+| `make memcheck` | Idle `interfired` RSS vs < 40 MiB (non-root) |
+| `make integration` | Root netns allow/deny gate (not in `make ci`) |
+
+Extra operator scripts and smoke recipes: [`../docs-dev/DEVELOPMENT.md`](../docs-dev/DEVELOPMENT.md).
 
 ## Questions
 

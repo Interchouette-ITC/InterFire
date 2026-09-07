@@ -51,9 +51,11 @@ pub struct Answered {
     pub duplicate: bool,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum AnswerError {
+    #[error("prompt not found")]
     NotFound,
+    #[error("prompt expired")]
     Expired,
 }
 

@@ -14,60 +14,23 @@ pub const PROGRAM_NAME: &str = "interfire_tcp_connect";
 pub const EVENT_MAP: &str = "EVENTS";
 
 /// Why observation could not start.
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum LoadError {
     /// Embedded or on-disk bytecode was missing or unreadable.
-    Bytecode(io::Error),
+    #[error("eBPF bytecode unavailable: {0}")]
+    Bytecode(#[source] io::Error),
     /// `aya` rejected the object (BTF, verifier, or format).
-    Ebpf(EbpfError),
+    #[error("eBPF load failed: {0}")]
+    Ebpf(#[from] EbpfError),
     /// Map conversion failed.
-    Map(MapError),
+    #[error("eBPF map error: {0}")]
+    Map(#[from] MapError),
     /// Required map or program name was absent from the object.
+    #[error("eBPF object missing {0}")]
     MissingSymbol(&'static str),
     /// Attach failed (capabilities, kprobe symbol, or permissions).
-    Attach(ProgramError),
-}
-
-impl std::fmt::Display for LoadError {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Bytecode(error) => write!(formatter, "eBPF bytecode unavailable: {error}"),
-            Self::Ebpf(error) => write!(formatter, "eBPF load failed: {error}"),
-            Self::Map(error) => write!(formatter, "eBPF map error: {error}"),
-            Self::MissingSymbol(name) => write!(formatter, "eBPF object missing {name}"),
-            Self::Attach(error) => write!(formatter, "eBPF attach failed: {error}"),
-        }
-    }
-}
-
-impl std::error::Error for LoadError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Self::Bytecode(error) => Some(error),
-            Self::Ebpf(error) => Some(error),
-            Self::Map(error) => Some(error),
-            Self::Attach(error) => Some(error),
-            Self::MissingSymbol(_) => None,
-        }
-    }
-}
-
-impl From<EbpfError> for LoadError {
-    fn from(error: EbpfError) -> Self {
-        Self::Ebpf(error)
-    }
-}
-
-impl From<ProgramError> for LoadError {
-    fn from(error: ProgramError) -> Self {
-        Self::Attach(error)
-    }
-}
-
-impl From<MapError> for LoadError {
-    fn from(error: MapError) -> Self {
-        Self::Map(error)
-    }
+    #[error("eBPF attach failed: {0}")]
+    Attach(#[from] ProgramError),
 }
 
 /// High-level observation readiness for status / CLI.

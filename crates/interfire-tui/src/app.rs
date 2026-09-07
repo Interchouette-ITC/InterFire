@@ -8,7 +8,7 @@ use interfire_proto::{DaemonStatus, MAX_LOG_RECORDS_PER_SUBSCRIBER, PromptRow, R
 
 use crate::ipc::{IpcCommand, IpcEvent};
 
-pub const DEFAULT_SOCKET: &str = "/run/interfire/interfired.sock";
+pub use interfire_proto::DEFAULT_SOCKET_PATH as DEFAULT_SOCKET;
 /// Cap aligned with `MAX_LOG_RECORDS_PER_SUBSCRIBER` (product UX contract).
 pub const MAX_AUDIT_LINES: usize = MAX_LOG_RECORDS_PER_SUBSCRIBER;
 

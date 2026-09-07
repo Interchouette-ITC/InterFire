@@ -8,13 +8,13 @@ observation alone is not the verdict path.
 
 The primary verdict path is NFQUEUE: the daemon binds queue **4242**, stores
 recent connect decisions keyed by destination IPv4 and port, and accepts or
-drops queued packets. Prompt (no UI yet), unattributed events, and packets
-without a pending decision are **deny**. Production rollout still needs a
-controlled allow/deny integration test, latency/coexistence measurements, and
-documented install of the InterFire-owned nftables queue rule. A root network-
-namespace gate (`make integration` / `scripts/enforcement-allow-deny.sh`) proves
-controlled allow and deny. Idle daemon RSS is checked with `make memcheck`
-against the < 40 MiB budget.
+drops queued packets. Prompt verdicts stay **deny** until answered over IPC
+(`interfire-tui` or `interfirectl`). Unattributed events and packets without a
+pending decision are **deny**. Open gaps: production latency/coexistence
+measurements and documented install of the InterFire-owned nftables queue rule.
+A root network-namespace gate (`make integration` /
+`scripts/enforcement-allow-deny.sh`) proves controlled allow and deny. Idle
+daemon RSS is checked with `make memcheck` against the < 40 MiB budget.
 
 ## Event and identity flow
 
@@ -25,7 +25,8 @@ against the < 40 MiB budget.
    updates a bounded process cache, and rejects reuse when start ticks are
    present and mismatched.
 3. The rules engine returns allow, deny, or prompt. Prompt maps to deny until
-   a prompt UI exists. Unattributed events never allow.
+   a client answers via IPC (TUI or one-shot CLI). Unattributed events never
+   allow.
 4. The decision is stored briefly; the NFQUEUE thread applies it to matching
    IPv4 TCP packets, or drops when no match / unparseable payload.
 
@@ -56,7 +57,7 @@ uncommitted until the capability probe and controlled verdict test pass there.
 ## Isolated NFQUEUE verdict command
 
 After installing `libnetfilter-queue-dev`, run
-`sudo scripts/phase0-nfqueue-spike.sh`. The test creates a temporary network
+`sudo scripts/nfqueue-spike.sh`. The test creates a temporary network
 namespace, a loopback-only HTTP server, and an nftables table solely inside that
 namespace. It verifies an NFQUEUE listener can accept one connection and drop
 one connection, then removes the namespace and all its firewall state. Queue

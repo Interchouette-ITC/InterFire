@@ -1,4 +1,4 @@
-//! Stable, dependency-free IPC framing for the first daemon/CLI slice.
+//! Versioned, bounded Unix-socket IPC framing for daemon and clients.
 #![forbid(unsafe_code)]
 
 pub const IPC_VERSION: u16 = 1;
@@ -8,36 +8,12 @@ pub const MAX_PENDING_PROMPTS: usize = 100;
 pub const MAX_DNS_ENTRIES: usize = 2_048;
 pub const MAX_AUDIT_FILE_BYTES: u64 = 1_048_576;
 
-/// PID is never a durable identity: the daemon pairs it with start ticks read
-/// from `/proc/<pid>/stat` before retaining a process record.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ProcessIdentity {
-    pub pid: u32,
-    pub start_ticks: u64,
-    pub executable: String,
-    pub uid: u32,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum TransportProtocol {
-    Tcp,
-    Udp,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Destination {
-    pub address: String,
-    pub hostname: Option<String>,
-    pub port: u16,
-    pub protocol: TransportProtocol,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ConnectionEvent {
-    pub process: ProcessIdentity,
-    pub destination: Destination,
-    pub observed_at_millis: u64,
-}
+/// Default daemon listen path.
+pub const DEFAULT_SOCKET_PATH: &str = "/run/interfire/interfired.sock";
+/// Default durable rules path.
+pub const DEFAULT_RULES_PATH: &str = "/etc/interfire/rules.toml";
+/// Default on-disk audit log path.
+pub const DEFAULT_AUDIT_PATH: &str = "/var/lib/interfire/audit.log";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RuleScope {
@@ -51,13 +27,6 @@ pub enum PromptState {
     Pending,
     Answered,
     Expired,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum DaemonState {
-    FeasibilityGated,
-    Protected,
-    Degraded,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -481,9 +450,11 @@ pub fn parse_error_message(frame: &str) -> Option<String> {
     line.strip_prefix("v1 error ").map(str::to_owned)
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum ProtocolError {
+    #[error("malformed IPC frame")]
     Malformed,
+    #[error("unsupported IPC version")]
     UnsupportedVersion,
 }
 

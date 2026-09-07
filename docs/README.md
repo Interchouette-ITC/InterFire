@@ -10,33 +10,33 @@
 </p>
 
 Linux-first **application firewall** in Rust: attribute outbound connections to
-processes, match durable rules, and (when the verdict path is live) accept or
-drop before the connect completes.
+processes, match durable rules, and accept or drop via NFQUEUE when the
+operator installs the InterFire-owned queue rule and the daemon has caps.
 
 Canonical repo: [Interchouette-ITC/InterFire](https://github.com/Interchouette-ITC/InterFire).
 
-**Status today:** workspace foundation plus an enforcement MVP path. The daemon
-and CLI speak a versioned Unix-socket protocol, persist TOML rules, resolve
-process identity via `/proc`, attach a TCP-connect eBPF observer when
-capabilities allow, consume ring-buffer events, and can bind NFQUEUE **4242**
-for allow/deny (prompt and unattributed → deny). Live packet filtering still
-needs an InterFire-owned nftables queue rule and root/caps; use `--no-ebpf`
-and/or `--no-nfqueue` for non-root smoke.
+**Status today:** The daemon and CLI speak a versioned Unix-socket protocol,
+persist TOML rules, resolve process identity via `/proc`, attach a TCP-connect
+eBPF observer when capabilities allow, consume ring-buffer events, and can bind
+NFQUEUE **4242** for allow/deny (prompt and unattributed → deny until answered
+over IPC). Live filtering needs an InterFire-owned nftables queue rule and
+root/caps; use `--no-ebpf` and/or `--no-nfqueue` for non-root smoke. Interactive
+ops use `interfire-tui`. GPUI tray and Debian packaging are not shipped.
+Production latency/coexistence measurements remain open.
 
 ## What you get today
 
-| Piece             | Role                                                                 |
-| ----------------- | -------------------------------------------------------------------- |
-| `interfire-rules` | Deterministic application-rule matching + TOML store                 |
-| `interfire-proto` | Versioned, bounded Unix-socket framing                               |
-| `interfired`      | Daemon: IPC, rules, ringbuf → `/proc` → rules → NFQUEUE           |
-| `interfirectl`    | One-shot CLI: `ping`, `status`, rules / prompts / dns / audit        |
-| `interfire-tui`   | ratatui control-plane TUI (interactive status / rules / prompts / log) |
-| `interfire-ebpf*` | TCP-connect observation program + aya loader                         |
-| Docs              | Architecture, threat model, UX contract and studies                  |
+| Piece | Role |
+| --- | --- |
+| `interfire-rules` | Deterministic application-rule matching + TOML store |
+| `interfire-proto` | Versioned, bounded Unix-socket framing |
+| `interfired` | Daemon: IPC, rules, ringbuf → `/proc` → rules → NFQUEUE |
+| `interfirectl` | One-shot CLI: `ping`, `status`, rules / prompts / dns / audit |
+| `interfire-tui` | ratatui control-plane TUI (interactive status / rules / prompts / log) |
+| `interfire-ebpf*` | TCP-connect observation program + aya loader |
+| Docs | Architecture, threat model, UX contract and studies |
 
-Still building toward: tray UI, Debian packaging, and production latency
-measurements.
+Not present yet: GPUI tray client, Debian packaging.
 
 ## Quick start
 
@@ -54,10 +54,10 @@ cargo run -p interfirectl -- --socket=/tmp/interfire.sock ping
 cargo run -p interfirectl -- --socket=/tmp/interfire.sock status
 ```
 
-Isolated NFQUEUE accept/drop spike (root, temporary network namespace only):
+Isolated NFQUEUE accept/drop test (root, temporary network namespace only):
 
 ```bash
-sudo scripts/phase0-nfqueue-spike.sh
+sudo scripts/nfqueue-spike.sh
 ```
 
 Daemon allow/deny integration (root; builds debug binaries first via Make):
@@ -72,23 +72,24 @@ Idle daemon RSS budget (< 40 MiB, non-root):
 make memcheck
 ```
 
-See [`architecture.md`](architecture.md) for the verdict path and how the spike
-is scoped.
+See [`architecture.md`](architecture.md) for the verdict path and how the
+isolated NFQUEUE test is scoped.
 
 ## Docs
 
-| Doc                                              | Topic                                      |
-| ------------------------------------------------ | ------------------------------------------ |
-| [`architecture.md`](architecture.md)             | Event flow, NFQUEUE verdict path, baseline |
-| [`threat-model.md`](threat-model.md)             | Assets, trust boundaries, controls         |
-| [`ux-interfire.md`](ux-interfire.md)             | Locked UI contract                         |
-| [`ux-opensnitch.md`](ux-opensnitch.md)           | OpenSnitch interaction study               |
-| [`ux-kerio.md`](ux-kerio.md)                     | Kerio-era interaction study                |
-| [`CONTRIBUTING.md`](CONTRIBUTING.md)             | Lint bar, Make targets, PR habits          |
-| [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md)       | Community standards                        |
-| [`SECURITY.md`](SECURITY.md)                     | Vulnerability reporting                    |
-| [`../docs-dev/README.md`](../docs-dev/README.md) | Developer docs index                       |
-| [`api-rust/`](api-rust/)                         | rustdoc after `make doc`                   |
+| Doc | Topic |
+| --- | --- |
+| [`architecture.md`](architecture.md) | Event flow, NFQUEUE verdict path, baseline |
+| [`threat-model.md`](threat-model.md) | Assets, trust boundaries, controls |
+| [`ux-interfire.md`](ux-interfire.md) | Locked UI contract |
+| [`ux-opensnitch.md`](ux-opensnitch.md) | OpenSnitch interaction study |
+| [`ux-kerio.md`](ux-kerio.md) | Kerio-era interaction study |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | Lint bar, Make targets, PR habits |
+| [`pull_request_template.md`](pull_request_template.md) | PR Summary + Test plan template |
+| [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) | Community standards |
+| [`SECURITY.md`](SECURITY.md) | Vulnerability reporting |
+| [`../docs-dev/README.md`](../docs-dev/README.md) | Developer docs index |
+| [`api-rust/`](api-rust/) | rustdoc after `make doc` |
 
 ## Layout
 
@@ -103,9 +104,9 @@ crates/interfire-ebpf-programs/  TCP-connect eBPF program (bpfel)
 docs/                            product docs (this hub)
 docs-dev/                        developer notes
 fixtures/                        rule fixtures
-scripts/                         capability probe + NFQUEUE spike
-ui/                              reserved GPUI tray client
-packaging/debian/                reserved for packaging
+scripts/                         capability probe + NFQUEUE test helpers
+ui/                              empty (GPUI tray not implemented)
+packaging/debian/                empty (Debian packaging not implemented)
 ```
 
 ## Contributing
@@ -113,7 +114,8 @@ packaging/debian/                reserved for packaging
 1. Read [`CONTRIBUTING.md`](CONTRIBUTING.md) and [`../docs-dev/DEVELOPMENT.md`](../docs-dev/DEVELOPMENT.md).
 2. Prefer Make targets (`make ci`) over ad-hoc cargo lines.
 3. One concern per PR. Commits and docs in **English**.
-4. Do not claim enforcement until the verdict path is wired and measured.
+4. Keep enforcement claims honest: the verdict path is wired; operator nft,
+   caps, and production measurements still matter.
 
 ## License
 

@@ -4,8 +4,10 @@ use std::env;
 use std::io::{self, BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
 
+use interfire_proto::DEFAULT_SOCKET_PATH;
+
 fn main() -> io::Result<()> {
-    let mut socket = "/run/interfire/interfired.sock".to_owned();
+    let mut socket = DEFAULT_SOCKET_PATH.to_owned();
     let mut arguments = Vec::new();
     for argument in env::args().skip(1) {
         if let Some(value) = argument.strip_prefix("--socket=") {
