@@ -113,6 +113,22 @@ impl ConnectionAlert {
         !self.stale && self.prompt.can_answer()
     }
 
+    /// Encode `v1 prompt-answer …` when the alert may still be answered.
+    ///
+    /// Returns `None` when the prompt is stale or expired so Allow/Deny stay disabled.
+    #[must_use]
+    pub fn answer_frame(&self, verdict: AlertVerdict) -> Option<String> {
+        if !self.can_submit() {
+            return None;
+        }
+        Some(format!(
+            "v1 prompt-answer {} {} {}\n",
+            self.prompt.id,
+            verdict.as_str(),
+            self.scope.as_str()
+        ))
+    }
+
     /// Pick the next answerable prompt, or keep a stale card when the queue is empty.
     pub fn advance(current: Option<Self>, prompts: &[PromptRow]) -> Option<Self> {
         let answerable = prompts.iter().find(|row| row.can_answer()).cloned();
@@ -187,5 +203,37 @@ mod tests {
     fn permanent_scope_notes_durable_rule() {
         assert!(AlertScope::Permanent.rule_note().contains("durable"));
         assert!(AlertScope::Once.rule_note().contains("no durable"));
+    }
+
+    #[test]
+    fn allow_and_deny_frames_encode_with_scope() {
+        let mut alert = ConnectionAlert::from_prompt(prompt(9, 15));
+        assert_eq!(
+            alert.answer_frame(AlertVerdict::Allow).as_deref(),
+            Some("v1 prompt-answer 9 allow once\n")
+        );
+        alert.scope = AlertScope::Session;
+        assert_eq!(
+            alert.answer_frame(AlertVerdict::Deny).as_deref(),
+            Some("v1 prompt-answer 9 deny session\n")
+        );
+        alert.scope = AlertScope::Permanent;
+        assert_eq!(
+            alert.answer_frame(AlertVerdict::Allow).as_deref(),
+            Some("v1 prompt-answer 9 allow permanent\n")
+        );
+    }
+
+    #[test]
+    fn stale_and_expired_disable_allow_deny_frames() {
+        let expired = ConnectionAlert::from_prompt(prompt(3, 0));
+        assert!(expired.answer_frame(AlertVerdict::Allow).is_none());
+        assert!(expired.answer_frame(AlertVerdict::Deny).is_none());
+
+        let mut missing = ConnectionAlert::from_prompt(prompt(4, 20));
+        missing.sync_from_list(&[]);
+        assert!(missing.stale);
+        assert!(missing.answer_frame(AlertVerdict::Allow).is_none());
+        assert!(missing.answer_frame(AlertVerdict::Deny).is_none());
     }
 }

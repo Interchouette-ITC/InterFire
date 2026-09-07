@@ -157,4 +157,18 @@ mod tests {
         }
         assert!(buf.visible_window(DEFAULT_VIEWPORT_ROWS).total <= MAX_AUDIT_LINES);
     }
+
+    #[test]
+    fn reconnect_ready_keeps_buffer_and_resubscribes() {
+        let mut buf = LogBuffer::new();
+        buf.set_subscribed(true);
+        buf.push_line(1, "before");
+        buf.set_subscribed(false);
+        assert!(!buf.subscribed());
+        assert_eq!(buf.selected_line(), Some("1|before"));
+        buf.set_subscribed(true);
+        buf.push_line(2, "after");
+        assert!(buf.subscribed());
+        assert_eq!(buf.visible_window(10).total, 2);
+    }
 }

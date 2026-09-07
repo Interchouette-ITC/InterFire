@@ -43,14 +43,17 @@ pub fn poll_snapshot(socket: &str) -> PollSnapshot {
     }
 }
 
-/// Answer a pending prompt (`v1 prompt-answer …`). Success replies with `v1 pong`.
+/// Send one control frame and require a `v1 pong` reply.
 ///
 /// # Errors
 ///
 /// Returns a daemon error message or transport failure text.
-pub fn answer_prompt(socket: &str, id: u64, verdict: &str, scope: &str) -> Result<(), String> {
-    let request = format!("v1 prompt-answer {id} {verdict} {scope}\n");
-    expect_pong(socket, &request)
+pub fn send_expect_pong(socket: &str, request: &str) -> Result<(), String> {
+    let frame = one_shot(socket, request).map_err(|e| e.to_string())?;
+    if frame.starts_with("v1 pong") {
+        return Ok(());
+    }
+    Err(parse_error_message(&frame).unwrap_or_else(|| frame.trim().to_owned()))
 }
 
 /// Add a durable rule (`v1 rule-add …`).
@@ -66,7 +69,7 @@ pub fn add_rule(
     port: u16,
 ) -> Result<(), String> {
     let request = format!("v1 rule-add {id} {executable} {verdict} {port}\n");
-    expect_pong(socket, &request)
+    send_expect_pong(socket, &request)
 }
 
 /// Delete a durable rule (`v1 rule-delete …`).
@@ -76,15 +79,7 @@ pub fn add_rule(
 /// Returns a daemon error message or transport failure text.
 pub fn delete_rule(socket: &str, id: u64) -> Result<(), String> {
     let request = format!("v1 rule-delete {id}\n");
-    expect_pong(socket, &request)
-}
-
-fn expect_pong(socket: &str, request: &str) -> Result<(), String> {
-    let frame = one_shot(socket, request).map_err(|e| e.to_string())?;
-    if frame.starts_with("v1 pong") {
-        return Ok(());
-    }
-    Err(parse_error_message(&frame).unwrap_or_else(|| frame.trim().to_owned()))
+    send_expect_pong(socket, &request)
 }
 
 fn fetch_status(socket: &str) -> Result<DaemonStatus, String> {
