@@ -133,7 +133,10 @@ impl Request {
 pub enum Response {
     Pong,
     Status {
+        /// Verdict path state (`none` until NFQUEUE is live).
         enforcement: &'static str,
+        /// eBPF observation state (`attached` or `degraded`).
+        observation: &'static str,
         ipc_version: u16,
     },
     Error(&'static str),
@@ -148,8 +151,11 @@ impl Response {
             Self::Pong => "v1 pong\n".into(),
             Self::Status {
                 enforcement,
+                observation,
                 ipc_version,
-            } => format!("v1 status enforcement={enforcement} ipc_version={ipc_version}\n"),
+            } => format!(
+                "v1 status enforcement={enforcement} observation={observation} ipc_version={ipc_version}\n"
+            ),
             Self::Error(message) => format!("v1 error {message}\n"),
             Self::Rules(value) => format!("v1 rules {value}\n"),
         }
@@ -184,5 +190,19 @@ mod tests {
     fn ping_fixture_is_stable() {
         let fixture = include_str!("../../../fixtures/ipc/v1-ping.request");
         assert_eq!(Request::parse(fixture), Ok(Request::Ping));
+    }
+
+    #[test]
+    fn status_response_includes_observation() {
+        let frame = Response::Status {
+            enforcement: "none",
+            observation: "degraded",
+            ipc_version: IPC_VERSION,
+        }
+        .encode();
+        assert_eq!(
+            frame,
+            "v1 status enforcement=none observation=degraded ipc_version=1\n"
+        );
     }
 }

@@ -4,7 +4,7 @@ CLIPPY_FLAGS := -D warnings -D clippy::all -D clippy::pedantic -D clippy::nurser
 CARGO ?= cargo +stable
 DOC_OUT ?= target/doc
 
-.PHONY: help fmt format lint test coverage audit deny doc doc-open doc-clean ci memcheck
+.PHONY: help fmt format lint test coverage audit deny doc doc-open doc-clean ci memcheck ebpf
 
 .DEFAULT_GOAL := help
 
@@ -19,6 +19,7 @@ help:
 	@echo "  make audit          cargo audit"
 	@echo "  make deny           cargo deny check"
 	@echo "  make ci             lint + test + doc"
+	@echo "  make ebpf           rebuild embedded TCP-connect eBPF object (nightly)"
 	@echo "  make memcheck       placeholder until enforcement runs"
 
 fmt:
@@ -50,7 +51,7 @@ deny:
 
 ## rustdoc → `docs/api-rust/` (gitignored except README).
 doc:
-	RUSTDOCFLAGS='-D warnings' $(CARGO) doc --workspace --no-deps
+	RUSTDOCFLAGS='-D warnings' $(CARGO) doc --workspace --no-deps --exclude interfire-ebpf-programs
 	@test -d "$(DOC_OUT)" || (echo "missing $(DOC_OUT)"; exit 1)
 	@rm -rf docs/api-rust
 	@mkdir -p docs/api-rust
@@ -61,7 +62,8 @@ doc:
 		'Generate with `make doc`, then open [`index.html`](index.html).' \
 		'' \
 		'Workspace crates include `interfire-rules`, `interfire-proto`, `interfire-daemon`' \
-		'(`interfired`), `interfirectl`, and the eBPF stubs.' \
+		'(`interfired`), `interfirectl`, and `interfire-ebpf` (loader). The BPF program' \
+		'crate is built with `make ebpf`, not rustdoc.' \
 		> docs/api-rust/README.md
 	@touch docs/api-rust/.nojekyll
 
@@ -78,6 +80,13 @@ doc-clean:
 		> docs/api-rust/README.md
 
 ci: lint test doc
+
+## Rebuild `crates/interfire-ebpf/bpf/interfire-ebpf-programs` (needs nightly + bpf-linker).
+ebpf:
+	cargo +nightly build -Z build-std=core --target bpfel-unknown-none \
+		-p interfire-ebpf-programs --release
+	cp -f target/bpfel-unknown-none/release/interfire-ebpf-programs \
+		crates/interfire-ebpf/bpf/interfire-ebpf-programs
 
 memcheck:
 	@echo "No long-running enforcement process to measure yet."
