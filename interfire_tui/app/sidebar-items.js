@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"constant":["DEFAULT_SOCKET","MAX_AUDIT_LINES"],"enum":["AddField","KeyAction","Link","Overlay","Pane","Tab"],"fn":["footer_hints","help_lines"],"struct":["AddRuleForm","App"]};
+window.SIDEBAR_ITEMS = {"constant":["DEFAULT_SOCKET","MAX_AUDIT_LINES"],"enum":["AddField","AnswerScope","AnswerVerdict","KeyAction","Link","Overlay","Pane","Tab"],"fn":["footer_hints","help_lines"],"struct":["AddRuleForm","AnswerPromptForm","App"]};
