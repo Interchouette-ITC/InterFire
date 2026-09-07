@@ -21,9 +21,10 @@ eBPF observer when capabilities allow, consume ring-buffer events, and can bind
 NFQUEUE **4242** for allow/deny (prompt and unattributed → deny until answered
 over IPC). Live filtering needs an InterFire-owned nftables queue rule and
 root/caps; use `--no-ebpf` and/or `--no-nfqueue` for non-root smoke. Interactive
-ops use `interfire-tui`. GPUI desktop shell (`interfire-ui`) includes tray
-states; Debian packaging is not shipped.
-Production latency/coexistence measurements remain open.
+ops use `interfire-tui`. GPUI desktop shell (`interfire-ui`) includes tray,
+connection alert, Rules, Log, and RSS gates; Debian packaging is not shipped.
+Primary targets: Debian (stable) with GNOME, and Pop!_OS. Production
+latency/coexistence measurements remain open.
 
 ## What you get today
 
@@ -35,10 +36,11 @@ Production latency/coexistence measurements remain open.
 | `interfirectl` | One-shot CLI: `ping`, `status`, rules / prompts / dns / audit |
 | `interfire-tui` | ratatui control-plane TUI (interactive status / rules / prompts / log) |
 | `interfire-ebpf*` | TCP-connect observation program + aya loader |
-| `interfire-ui` | GPUI desktop shell: rules-first nav + tray states |
+| `interfire-ui` | GPUI desktop shell: tray, alert, Rules, Log, RSS gates |
 | Docs | Architecture, threat model, UX contract and studies |
 
-Not present yet: Debian packaging. Connection alert and Rules CRUD polish land next.
+Not present yet: Debian packaging (systemd unit, `.deb`, install matrix on
+Debian GNOME and Pop!_OS).
 
 ## Quick start
 
@@ -106,14 +108,13 @@ crates/interfire-proto/          IPC version + frame bounds
 crates/interfire-daemon/         interfired
 crates/interfirectl/             one-shot CLI
 crates/interfire-tui/            ratatui control-plane TUI
-ui/                              interfire-ui (GPUI desktop; scaffold)
+ui/                              interfire-ui (GPUI desktop)
 crates/interfire-ebpf/           TCP event contract + aya loader
 crates/interfire-ebpf-programs/  TCP-connect eBPF program (bpfel)
 docs/                            product docs (this hub)
 docs-dev/                        developer notes
 fixtures/                        rule fixtures
 scripts/                         capability probe + NFQUEUE test helpers
-ui/                              interfire-ui (GPUI desktop scaffold)
 packaging/debian/                empty (Debian packaging not implemented)
 ```
 

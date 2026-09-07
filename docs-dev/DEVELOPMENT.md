@@ -16,10 +16,16 @@ docs/                            product hub + community health
 docs-dev/                        developer notes (this tree)
 fixtures/                        IPC and rules fixtures
 scripts/                         capability probe + NFQUEUE test helpers
-ui/                              empty (GPUI tray not implemented)
 packaging/debian/                empty (Debian packaging not implemented)
 .github/workflows/               CI
 ```
+
+## Supported desktops (v0.1)
+
+Dogfood and packaging gates target **Debian (stable) with GNOME** and
+**Pop!_OS** (current supported), `x86_64`. See
+[`../docs/architecture.md`](../docs/architecture.md) (Supported baseline).
+Build and link notes for `interfire-ui` are in [`ui-gpui.md`](ui-gpui.md).
 
 ## Gates
 
@@ -65,7 +71,7 @@ Audit: capped on-disk log (`--audit=PATH`, default under `/var/lib/interfire/aud
 | --- | --- |
 | `interfirectl` | **One-shot** only: `ping`, `status`, single `rules` / `prompts` / `dns` / `audit` commands. No REPL, no multi-screen browse loop. |
 | `interfire-tui` | Interactive control plane: tabs Status \| Rules \| Prompts \| Log \| Help, overlays for add-rule and answer-prompt. |
-| `interfire-ui` (`ui/`) | GPUI desktop shell (scaffold): left nav + Rules-first content. Tray/alert later. |
+| `interfire-ui` (`ui/`) | GPUI desktop shell: tray, alert, Rules, Log, RSS gates (same IPC). |
 
 Use the CLI from scripts and smoke checks. Use the TUI when you need to browse lists, answer prompts, or watch the log. The UX contract (`docs/ux-interfire.md`) locks this split.
 

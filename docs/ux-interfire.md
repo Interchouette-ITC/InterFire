@@ -5,7 +5,7 @@ explicit update to this document.
 
 ## Shell
 
-v0.1 clients share the same Unix IPC. What exists today vs what is planned:
+v0.1 clients share the same Unix IPC:
 
 | Surface | Status | Role |
 | --- | --- | --- |
@@ -13,13 +13,16 @@ v0.1 clients share the same Unix IPC. What exists today vs what is planned:
 | `interfire-tui` | Shipped | Interactive control plane (Status \| Rules \| Prompts \| Log \| Help) |
 | GPUI app under `ui/` | Shipped (`interfire-ui`: tray, alert, Rules, Log, harness, RSS gates) | - |
 
-The interactive ops client today is a **ratatui** terminal UI
-(`crates/interfire-tui`). The desktop client, when implemented, is a **GPUI**
-native Rust app under `ui/` (`interfire-ui`). There is no web UI and no hybrid
-web+native shell for v0.1. Hard RSS budgets for UI clients are release gates.
-Do not grow `interfirectl` into a multi-screen interactive client; scripted and
-one-command checks stay on the CLI, browse/answer flows stay in the TUI (and
-the desktop client once it ships).
+The interactive ops client is a **ratatui** terminal UI (`crates/interfire-tui`).
+The desktop client is a **GPUI** native Rust app under `ui/` (`interfire-ui`).
+There is no web UI and no hybrid web+native shell for v0.1. Hard RSS budgets
+for UI clients are release gates. Do not grow `interfirectl` into a multi-screen
+interactive client; scripted and one-command checks stay on the CLI,
+browse/answer flows stay in the TUI and desktop UI.
+
+Primary desktop targets: Debian (stable) with GNOME, and Pop!_OS. Tray uses
+StatusNotifierItem; when the shell does not expose SNI, Status chrome still
+reports state.
 
 ## Design references (structure only)
 
