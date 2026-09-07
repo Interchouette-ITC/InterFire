@@ -18,55 +18,103 @@ use tracing::{debug, warn};
 use crate::prompts::{AnswerError, PromptQueue};
 use crate::shared::Shared;
 
-/// Handle one client connection.
+/// Handle one client connection (one-shot or audit stream).
 ///
 /// # Errors
 ///
 /// Returns I/O failures while reading or writing the frame.
-pub fn respond(mut stream: UnixStream, shared: &Arc<Shared>) -> io::Result<()> {
+pub fn handle(mut stream: UnixStream, shared: &Arc<Shared>) -> io::Result<()> {
     let mut frame = String::new();
     let bytes = BufReader::new(stream.try_clone()?).read_line(&mut frame)?;
-    let response = if bytes > MAX_FRAME_BYTES {
-        Response::Error("frame_too_large")
-    } else {
-        match Request::parse(&frame) {
-            Ok(Request::Ping) => Response::Pong,
-            Ok(Request::Status) => Response::Status {
-                enforcement: shared.enforcement(),
-                observation: shared.observation(),
-                ipc_version: IPC_VERSION,
-            },
-            Ok(Request::RuleList) => rule_list(shared),
-            Ok(Request::RuleDelete { id }) => mutate(shared, &stream, Mutate::Delete { id }),
-            Ok(Request::RuleAdd {
+    if bytes > MAX_FRAME_BYTES {
+        return stream.write_all(Response::Error("frame_too_large").encode().as_bytes());
+    }
+    match Request::parse(&frame) {
+        Ok(Request::AuditSubscribe { id, since }) => audit_subscribe(stream, shared, id, since),
+        Ok(request) => {
+            let response = dispatch(request, shared, &stream);
+            stream.write_all(response.encode().as_bytes())
+        }
+        Err(_) => stream.write_all(Response::Error("malformed_request").encode().as_bytes()),
+    }
+}
+
+fn dispatch(request: Request, shared: &Shared, stream: &UnixStream) -> Response {
+    match request {
+        Request::Ping => Response::Pong,
+        Request::Status => Response::Status {
+            enforcement: shared.enforcement(),
+            observation: shared.observation(),
+            ipc_version: IPC_VERSION,
+        },
+        Request::RuleList => rule_list(shared),
+        Request::RuleDelete { id } => mutate(shared, stream, Mutate::Delete { id }),
+        Request::RuleAdd {
+            id,
+            executable,
+            verdict,
+            port,
+        } => mutate(
+            shared,
+            stream,
+            Mutate::Add {
                 id,
                 executable,
                 verdict,
                 port,
-            }) => mutate(
-                shared,
-                &stream,
-                Mutate::Add {
-                    id,
-                    executable,
-                    verdict,
-                    port,
-                },
-            ),
-            Ok(Request::PromptList) => prompt_list(shared),
-            Ok(Request::PromptAnswer { id, verdict, scope }) => {
-                prompt_answer(shared, &stream, id, &verdict, &scope)
-            }
-            Ok(Request::DnsList) => dns_list(shared),
-            Ok(Request::DnsNote {
-                hostname,
-                ipv4,
-                ttl_secs,
-            }) => dns_note(shared, &stream, &hostname, &ipv4, ttl_secs),
-            Err(_) => Response::Error("malformed_request"),
+            },
+        ),
+        Request::PromptList => prompt_list(shared),
+        Request::PromptAnswer { id, verdict, scope } => {
+            prompt_answer(shared, stream, id, &verdict, &scope)
         }
+        Request::DnsList => dns_list(shared),
+        Request::DnsNote {
+            hostname,
+            ipv4,
+            ttl_secs,
+        } => dns_note(shared, stream, &hostname, &ipv4, ttl_secs),
+        Request::AuditTail { limit } => audit_tail(shared, limit),
+        Request::AuditSubscribe { .. } => Response::Error("malformed_request"),
+    }
+}
+
+fn audit_tail(shared: &Shared, limit: usize) -> Response {
+    let Ok(audit) = shared.audit.lock() else {
+        return Response::Error("lock_poisoned");
     };
-    stream.write_all(response.encode().as_bytes())
+    Response::Audit(
+        audit
+            .tail(limit)
+            .into_iter()
+            .map(|record| format!("{}|{}", record.sequence, record.message))
+            .collect::<Vec<_>>()
+            .join(","),
+    )
+}
+
+fn audit_subscribe(
+    mut stream: UnixStream,
+    shared: &Arc<Shared>,
+    id: String,
+    since: u64,
+) -> io::Result<()> {
+    if id.is_empty() || id.contains('|') || id.contains(' ') {
+        return stream.write_all(Response::Error("invalid_subscriber").encode().as_bytes());
+    }
+    {
+        let Ok(mut audit) = shared.audit.lock() else {
+            return stream.write_all(Response::Error("lock_poisoned").encode().as_bytes());
+        };
+        stream.write_all(Response::Subscribed(id.clone()).encode().as_bytes())?;
+        let shared_exit = Arc::clone(shared);
+        audit.attach_subscriber(id, since, stream, move |subscriber| {
+            if let Ok(mut audit) = shared_exit.audit.lock() {
+                audit.remove_subscriber(subscriber);
+            }
+        });
+    }
+    Ok(())
 }
 
 enum Mutate {

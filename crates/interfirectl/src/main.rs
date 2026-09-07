@@ -54,6 +54,25 @@ fn main() -> io::Result<()> {
         {
             format!("dns-note {hostname} {ipv4} {ttl}")
         }
+        [audit, tail] if audit == "audit" && tail == "tail" => "audit-tail".to_owned(),
+        [audit, tail, limit]
+            if audit == "audit" && tail == "tail" && limit.parse::<usize>().is_ok() =>
+        {
+            format!("audit-tail {limit}")
+        }
+        [audit, subscribe, id]
+            if audit == "audit" && subscribe == "subscribe" && !id.is_empty() =>
+        {
+            format!("audit-subscribe {id}")
+        }
+        [audit, subscribe, id, since]
+            if audit == "audit"
+                && subscribe == "subscribe"
+                && !id.is_empty()
+                && since.starts_with("since=") =>
+        {
+            format!("audit-subscribe {id} {since}")
+        }
         _ => return usage(),
     };
 
@@ -67,7 +86,7 @@ fn main() -> io::Result<()> {
 
 fn usage() -> io::Result<()> {
     eprintln!(
-        "usage: interfirectl [--socket=PATH] <ping|status|rules …|prompts …|dns list|dns note HOST IPV4 [TTL]>"
+        "usage: interfirectl [--socket=PATH] <ping|status|rules …|prompts …|dns …|audit tail [N]|audit subscribe ID [since=N]>"
     );
     Err(io::Error::new(
         io::ErrorKind::InvalidInput,
