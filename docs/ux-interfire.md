@@ -11,7 +11,7 @@ v0.1 clients share the same Unix IPC. What exists today vs what is planned:
 | --- | --- | --- |
 | `interfirectl` | Shipped | One-shot commands only (`ping`, `status`, rules / prompts / dns / audit) |
 | `interfire-tui` | Shipped | Interactive control plane (Status \| Rules \| Prompts \| Log \| Help) |
-| GPUI app under `ui/` | Tray + alert + Rules + Log + UI harness tests (`interfire-ui`) | RSS gates later |
+| GPUI app under `ui/` | Shipped (`interfire-ui`: tray, alert, Rules, Log, harness, RSS gates) | - |
 
 The interactive ops client today is a **ratatui** terminal UI
 (`crates/interfire-tui`). The desktop client, when implemented, is a **GPUI**
@@ -99,7 +99,15 @@ diagnostics. Desktop prompts are alert-first; the TUI retains a Prompts tab.
 
 ### RSS budgets (release gates)
 
+Release profile, sampled with `make memcheck-ui` (DISPLAY or `xvfb-run`,
+software GL). GPUI + wgpu baseline on Linux is about 190 MiB idle; the
+original sketch ceilings (80 / 120 / 150 MiB) are retired.
+
 | Client | Idle | Under prompt load |
 | --- | --- | --- |
-| GPUI `interfire-ui` | < 80 MiB | < 120 MiB |
-| Combined steady (daemon + one UI) | < 150 MiB | - |
+| GPUI `interfire-ui` | < 220 MiB | < 260 MiB |
+| Combined steady (daemon + one UI) | < 260 MiB | - |
+
+Override ceilings with `INTERFIRE_UI_IDLE_BUDGET_KIB`,
+`INTERFIRE_UI_PROMPT_BUDGET_KIB`, and `INTERFIRE_UI_COMBINED_BUDGET_KIB`.
+A tagged release must pass `make memcheck-ui`.

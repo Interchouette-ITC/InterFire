@@ -4,7 +4,7 @@ CLIPPY_FLAGS := -D warnings -D clippy::all -D clippy::pedantic -D clippy::nurser
 CARGO ?= cargo +stable
 DOC_OUT ?= target/doc
 
-.PHONY: help fmt format lint test coverage audit deny doc doc-open doc-clean ci memcheck integration ebpf ui
+.PHONY: help fmt format lint test coverage audit deny doc doc-open doc-clean ci memcheck memcheck-ui integration ebpf ui
 
 .DEFAULT_GOAL := help
 
@@ -23,6 +23,7 @@ help:
 	@echo "  make ui-test        test interfire-ui (needs X11/Wayland UI libs)"
 	@echo "  make ebpf           rebuild embedded TCP-connect eBPF object (nightly)"
 	@echo "  make memcheck       idle interfired RSS vs < 40 MiB budget"
+	@echo "  make memcheck-ui    release UI RSS gates (idle / prompt-load / combined)"
 	@echo "  make integration    root netns allow/deny gate (not part of make ci)"
 
 fmt:
@@ -103,6 +104,11 @@ ebpf:
 memcheck:
 	$(CARGO) build -p interfire-daemon
 	bash scripts/memcheck-daemon.sh
+
+## Release gate: GPUI UI RSS (needs DISPLAY or xvfb-run). Not part of `make ci`.
+memcheck-ui:
+	$(CARGO) build -p interfire-daemon -p interfire-ui --release
+	bash scripts/memcheck-ui.sh
 
 ## Root-only: controlled allow/deny in a temporary network namespace.
 integration:

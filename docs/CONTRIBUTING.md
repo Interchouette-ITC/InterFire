@@ -25,6 +25,7 @@
 | `make ci` | `lint` + `test` + `doc` |
 | `make ebpf` | Rebuild embedded eBPF object (nightly + bpf-linker) |
 | `make memcheck` | Idle `interfired` RSS vs < 40 MiB (non-root) |
+| `make memcheck-ui` | Release UI RSS gates (idle / prompt-load / combined) |
 | `make integration` | Root netns allow/deny gate (not in `make ci`) |
 
 Extra operator scripts and smoke recipes: [`../docs-dev/DEVELOPMENT.md`](../docs-dev/DEVELOPMENT.md).

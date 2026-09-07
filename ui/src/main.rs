@@ -11,6 +11,7 @@ mod audit_host;
 mod ipc_poll;
 mod log_buf;
 mod log_view;
+mod rss_probe;
 mod rules;
 mod rules_view;
 mod section;
@@ -25,9 +26,10 @@ use gpui_kit::*;
 use interfire_proto::DEFAULT_SOCKET_PATH;
 
 use crate::app::App;
+use crate::rss_probe::RssProbeMode;
 
 fn main() {
-    let socket = parse_socket(env::args().skip(1));
+    let (socket, probe) = parse_args(env::args().skip(1));
 
     gpui_kit::application().run(move |cx| {
         gpui_kit::init(cx);
@@ -42,7 +44,10 @@ fn main() {
                 },
                 |window, cx| {
                     let view = cx.new(|cx| {
-                        let app = App::new(socket.clone());
+                        let mut app = App::new(socket.clone());
+                        if let Some(mode) = probe {
+                            app.apply_rss_probe(mode);
+                        }
                         App::start_watchers(cx);
                         app
                     });
@@ -55,27 +60,35 @@ fn main() {
     });
 }
 
-fn parse_socket(args: impl IntoIterator<Item = String>) -> String {
+fn parse_args(args: impl IntoIterator<Item = String>) -> (String, Option<RssProbeMode>) {
     let mut socket = DEFAULT_SOCKET_PATH.to_owned();
+    let mut probe = None;
     for argument in args {
         if let Some(value) = argument.strip_prefix("--socket=") {
             value.clone_into(&mut socket);
+        } else if let Some(value) = argument.strip_prefix("--rss-probe=") {
+            probe = RssProbeMode::parse(value);
         }
     }
-    socket
+    (socket, probe)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::parse_socket;
+    use super::parse_args;
+    use crate::rss_probe::RssProbeMode;
     use interfire_proto::DEFAULT_SOCKET_PATH;
 
     #[test]
-    fn parse_socket_defaults_and_overrides() {
-        assert_eq!(parse_socket(Vec::<String>::new()), DEFAULT_SOCKET_PATH);
-        assert_eq!(
-            parse_socket(vec!["--socket=/tmp/interfire.sock".into()]),
-            "/tmp/interfire.sock"
-        );
+    fn parse_args_defaults_and_overrides() {
+        let (socket, probe) = parse_args(Vec::<String>::new());
+        assert_eq!(socket, DEFAULT_SOCKET_PATH);
+        assert_eq!(probe, None);
+        let (socket, probe) = parse_args(vec![
+            "--socket=/tmp/interfire.sock".into(),
+            "--rss-probe=prompt-load".into(),
+        ]);
+        assert_eq!(socket, "/tmp/interfire.sock");
+        assert_eq!(probe, Some(RssProbeMode::PromptLoad));
     }
 }

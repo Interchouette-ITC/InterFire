@@ -33,9 +33,10 @@ cat >"${rules_path}" <<'EOF'
 schema_version = 1
 EOF
 
-RUST_LOG=error "${daemon_bin}" \
+  RUST_LOG=error "${daemon_bin}" \
   --socket="${socket}" \
   --rules="${rules_path}" \
+  --audit="${work_dir}/audit.log" \
   --no-ebpf \
   --no-nfqueue \
   >"${work_dir}/daemon.log" 2>&1 &
