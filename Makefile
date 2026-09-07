@@ -39,7 +39,7 @@ test:
 coverage:
 	mkdir -p coverage
 	RUSTUP_TOOLCHAIN=stable $(CARGO) llvm-cov --workspace --lcov \
-		--ignore-filename-regex 'scripts/|fixtures/|crates/interfire-ebpf-programs/|crates/interfire-daemon/src/main\.rs|crates/interfirectl/src/main\.rs' \
+		--ignore-filename-regex 'scripts/|fixtures/|crates/interfire-ebpf-programs/|crates/interfire-daemon/src/main\.rs|crates/interfirectl/src/main\.rs|crates/interfire-tui/src/main\.rs' \
 		--output-path coverage/lcov.info
 
 ## Requires `cargo install cargo-audit`.
@@ -63,7 +63,7 @@ doc:
 		'Generate with `make doc`, then open [`index.html`](index.html).' \
 		'' \
 		'Workspace crates include `interfire-rules`, `interfire-proto`, `interfire-daemon`' \
-		'(`interfired`), `interfirectl`, and `interfire-ebpf` (loader). The BPF program' \
+		'(`interfired`), `interfirectl`, `interfire-tui`, and `interfire-ebpf` (loader). The BPF program' \
 		'crate is built with `make ebpf`, not rustdoc.' \
 		> docs/api-rust/README.md
 	@touch docs/api-rust/.nojekyll
