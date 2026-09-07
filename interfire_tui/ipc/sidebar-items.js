@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"constant":["AUDIT_SUBSCRIBER_ID","RECONNECT_BACKOFF","STATUS_INTERVAL"],"enum":["IpcEvent"],"fn":["audit_loop","fetch_status","spawn","status_loop","subscribe_session"]};
+window.SIDEBAR_ITEMS = {"constant":["AUDIT_SUBSCRIBER_ID","RECONNECT_BACKOFF","RULES_INTERVAL","STATUS_INTERVAL"],"enum":["IpcCommand","IpcEvent"],"fn":["audit_loop","fetch_rules","fetch_status","handle_command","one_shot","rules_poll_loop","spawn","status_loop","subscribe_session"]};

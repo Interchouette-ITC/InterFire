@@ -24,7 +24,7 @@
 <a href=#24 id=24 data-nosnippet>24</a><span class="kw">use </span>tokio::sync::mpsc;
 <a href=#25 id=25 data-nosnippet>25</a><span class="kw">use </span>tokio::time;
 <a href=#26 id=26 data-nosnippet>26</a>
-<a href=#27 id=27 data-nosnippet>27</a><span class="kw">use </span><span class="kw">crate</span>::app::{App, DEFAULT_SOCKET};
+<a href=#27 id=27 data-nosnippet>27</a><span class="kw">use </span><span class="kw">crate</span>::app::{App, DEFAULT_SOCKET, KeyAction};
 <a href=#28 id=28 data-nosnippet>28</a><span class="kw">use </span><span class="kw">crate</span>::ipc::spawn <span class="kw">as </span>spawn_ipc;
 <a href=#29 id=29 data-nosnippet>29</a>
 <a href=#30 id=30 data-nosnippet>30</a><span class="attr">#[tokio::main]
@@ -73,43 +73,48 @@
 <a href=#73 id=73 data-nosnippet>73</a>) -&gt; io::Result&lt;()&gt; {
 <a href=#74 id=74 data-nosnippet>74</a>    <span class="kw">let </span><span class="kw-2">mut </span>app = App::new(socket.clone());
 <a href=#75 id=75 data-nosnippet>75</a>    <span class="kw">let </span>(tx, <span class="kw-2">mut </span>rx) = mpsc::unbounded_channel();
-<a href=#76 id=76 data-nosnippet>76</a>    spawn_ipc(socket, tx);
-<a href=#77 id=77 data-nosnippet>77</a>    <span class="kw">let </span><span class="kw-2">mut </span>events = EventStream::new();
-<a href=#78 id=78 data-nosnippet>78</a>    <span class="kw">let </span><span class="kw-2">mut </span>tick = time::interval(Duration::from_millis(<span class="number">100</span>));
-<a href=#79 id=79 data-nosnippet>79</a>    <span class="kw">loop </span>{
-<a href=#80 id=80 data-nosnippet>80</a>        terminal.draw(|frame| ui::draw(frame, <span class="kw-2">&amp;</span>app))<span class="question-mark">?</span>;
-<a href=#81 id=81 data-nosnippet>81</a>        <span class="macro">tokio::select!</span> {
-<a href=#82 id=82 data-nosnippet>82</a>            maybe = events.next() =&gt; {
-<a href=#83 id=83 data-nosnippet>83</a>                <span class="kw">match </span>maybe {
-<a href=#84 id=84 data-nosnippet>84</a>                    <span class="prelude-val">Some</span>(<span class="prelude-val">Ok</span>(Event::Key(key))) <span class="kw">if </span>key.kind == KeyEventKind::Press =&gt; {
-<a href=#85 id=85 data-nosnippet>85</a>                        <span class="kw">if </span>app.handle_key(key.code) {
-<a href=#86 id=86 data-nosnippet>86</a>                            <span class="kw">return </span><span class="prelude-val">Ok</span>(());
-<a href=#87 id=87 data-nosnippet>87</a>                        }
-<a href=#88 id=88 data-nosnippet>88</a>                    }
-<a href=#89 id=89 data-nosnippet>89</a>                    <span class="prelude-val">Some</span>(<span class="prelude-val">Err</span>(error)) =&gt; <span class="kw">return </span><span class="prelude-val">Err</span>(error),
-<a href=#90 id=90 data-nosnippet>90</a>                    <span class="prelude-val">None </span>=&gt; <span class="kw">return </span><span class="prelude-val">Ok</span>(()),
-<a href=#91 id=91 data-nosnippet>91</a>                    <span class="kw">_ </span>=&gt; {}
-<a href=#92 id=92 data-nosnippet>92</a>                }
-<a href=#93 id=93 data-nosnippet>93</a>            }
-<a href=#94 id=94 data-nosnippet>94</a>            <span class="prelude-val">Some</span>(event) = rx.recv() =&gt; {
-<a href=#95 id=95 data-nosnippet>95</a>                app.apply(event);
-<a href=#96 id=96 data-nosnippet>96</a>            }
-<a href=#97 id=97 data-nosnippet>97</a>            <span class="kw">_ </span>= tick.tick() =&gt; {}
-<a href=#98 id=98 data-nosnippet>98</a>        }
-<a href=#99 id=99 data-nosnippet>99</a>    }
-<a href=#100 id=100 data-nosnippet>100</a>}
-<a href=#101 id=101 data-nosnippet>101</a>
-<a href=#102 id=102 data-nosnippet>102</a><span class="attr">#[cfg(test)]
-<a href=#103 id=103 data-nosnippet>103</a></span><span class="kw">mod </span>tests {
-<a href=#104 id=104 data-nosnippet>104</a>    <span class="kw">use super</span>::{DEFAULT_SOCKET, parse_socket};
-<a href=#105 id=105 data-nosnippet>105</a>
-<a href=#106 id=106 data-nosnippet>106</a>    <span class="attr">#[test]
-<a href=#107 id=107 data-nosnippet>107</a>    </span><span class="kw">fn </span>parse_socket_defaults_and_overrides() {
-<a href=#108 id=108 data-nosnippet>108</a>        <span class="macro">assert_eq!</span>(parse_socket(Vec::&lt;String&gt;::new()), DEFAULT_SOCKET);
-<a href=#109 id=109 data-nosnippet>109</a>        <span class="macro">assert_eq!</span>(
-<a href=#110 id=110 data-nosnippet>110</a>            parse_socket(<span class="macro">vec!</span>[<span class="string">"--socket=/tmp/interfire.sock"</span>.into()]),
-<a href=#111 id=111 data-nosnippet>111</a>            <span class="string">"/tmp/interfire.sock"
-<a href=#112 id=112 data-nosnippet>112</a>        </span>);
-<a href=#113 id=113 data-nosnippet>113</a>    }
-<a href=#114 id=114 data-nosnippet>114</a>}
+<a href=#76 id=76 data-nosnippet>76</a>    <span class="kw">let </span>(cmd_tx, cmd_rx) = mpsc::unbounded_channel();
+<a href=#77 id=77 data-nosnippet>77</a>    spawn_ipc(socket, tx, cmd_rx);
+<a href=#78 id=78 data-nosnippet>78</a>    <span class="kw">let </span><span class="kw-2">mut </span>events = EventStream::new();
+<a href=#79 id=79 data-nosnippet>79</a>    <span class="kw">let </span><span class="kw-2">mut </span>tick = time::interval(Duration::from_millis(<span class="number">100</span>));
+<a href=#80 id=80 data-nosnippet>80</a>    <span class="kw">loop </span>{
+<a href=#81 id=81 data-nosnippet>81</a>        terminal.draw(|frame| ui::draw(frame, <span class="kw-2">&amp;</span>app))<span class="question-mark">?</span>;
+<a href=#82 id=82 data-nosnippet>82</a>        <span class="macro">tokio::select!</span> {
+<a href=#83 id=83 data-nosnippet>83</a>            maybe = events.next() =&gt; {
+<a href=#84 id=84 data-nosnippet>84</a>                <span class="kw">match </span>maybe {
+<a href=#85 id=85 data-nosnippet>85</a>                    <span class="prelude-val">Some</span>(<span class="prelude-val">Ok</span>(Event::Key(key))) <span class="kw">if </span>key.kind == KeyEventKind::Press =&gt; {
+<a href=#86 id=86 data-nosnippet>86</a>                        <span class="kw">match </span>app.handle_key(key.code) {
+<a href=#87 id=87 data-nosnippet>87</a>                            KeyAction::Quit =&gt; <span class="kw">return </span><span class="prelude-val">Ok</span>(()),
+<a href=#88 id=88 data-nosnippet>88</a>                            KeyAction::Command(command) =&gt; {
+<a href=#89 id=89 data-nosnippet>89</a>                                <span class="kw">let _ </span>= cmd_tx.send(command);
+<a href=#90 id=90 data-nosnippet>90</a>                            }
+<a href=#91 id=91 data-nosnippet>91</a>                            KeyAction::None =&gt; {}
+<a href=#92 id=92 data-nosnippet>92</a>                        }
+<a href=#93 id=93 data-nosnippet>93</a>                    }
+<a href=#94 id=94 data-nosnippet>94</a>                    <span class="prelude-val">Some</span>(<span class="prelude-val">Err</span>(error)) =&gt; <span class="kw">return </span><span class="prelude-val">Err</span>(error),
+<a href=#95 id=95 data-nosnippet>95</a>                    <span class="prelude-val">None </span>=&gt; <span class="kw">return </span><span class="prelude-val">Ok</span>(()),
+<a href=#96 id=96 data-nosnippet>96</a>                    <span class="kw">_ </span>=&gt; {}
+<a href=#97 id=97 data-nosnippet>97</a>                }
+<a href=#98 id=98 data-nosnippet>98</a>            }
+<a href=#99 id=99 data-nosnippet>99</a>            <span class="prelude-val">Some</span>(event) = rx.recv() =&gt; {
+<a href=#100 id=100 data-nosnippet>100</a>                app.apply(event);
+<a href=#101 id=101 data-nosnippet>101</a>            }
+<a href=#102 id=102 data-nosnippet>102</a>            <span class="kw">_ </span>= tick.tick() =&gt; {}
+<a href=#103 id=103 data-nosnippet>103</a>        }
+<a href=#104 id=104 data-nosnippet>104</a>    }
+<a href=#105 id=105 data-nosnippet>105</a>}
+<a href=#106 id=106 data-nosnippet>106</a>
+<a href=#107 id=107 data-nosnippet>107</a><span class="attr">#[cfg(test)]
+<a href=#108 id=108 data-nosnippet>108</a></span><span class="kw">mod </span>tests {
+<a href=#109 id=109 data-nosnippet>109</a>    <span class="kw">use super</span>::{DEFAULT_SOCKET, parse_socket};
+<a href=#110 id=110 data-nosnippet>110</a>
+<a href=#111 id=111 data-nosnippet>111</a>    <span class="attr">#[test]
+<a href=#112 id=112 data-nosnippet>112</a>    </span><span class="kw">fn </span>parse_socket_defaults_and_overrides() {
+<a href=#113 id=113 data-nosnippet>113</a>        <span class="macro">assert_eq!</span>(parse_socket(Vec::&lt;String&gt;::new()), DEFAULT_SOCKET);
+<a href=#114 id=114 data-nosnippet>114</a>        <span class="macro">assert_eq!</span>(
+<a href=#115 id=115 data-nosnippet>115</a>            parse_socket(<span class="macro">vec!</span>[<span class="string">"--socket=/tmp/interfire.sock"</span>.into()]),
+<a href=#116 id=116 data-nosnippet>116</a>            <span class="string">"/tmp/interfire.sock"
+<a href=#117 id=117 data-nosnippet>117</a>        </span>);
+<a href=#118 id=118 data-nosnippet>118</a>    }
+<a href=#119 id=119 data-nosnippet>119</a>}
 </code></pre></div></section></main></body></html>
