@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 
+mod dns;
 mod ipc;
 mod nfqueue;
 mod observe;

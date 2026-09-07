@@ -46,7 +46,11 @@ fn handle_event(event: TcpConnectEvent, shared: &Shared) {
     let Ok(mut prompts) = shared.prompts.lock() else {
         return;
     };
-    let decision = policy::decide(event, &rules, &mut cache, &mut prompts);
+    let Ok(mut dns) = shared.dns.lock() else {
+        return;
+    };
+    let decision = policy::decide(event, &rules, &mut cache, &mut prompts, &mut dns);
+    drop(dns);
     drop(prompts);
     drop(cache);
     drop(rules);

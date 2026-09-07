@@ -5,6 +5,7 @@ pub const IPC_VERSION: u16 = 1;
 pub const MAX_FRAME_BYTES: usize = 8 * 1024;
 pub const MAX_LOG_RECORDS_PER_SUBSCRIBER: usize = 2_000;
 pub const MAX_PENDING_PROMPTS: usize = 100;
+pub const MAX_DNS_ENTRIES: usize = 2_048;
 
 /// PID is never a durable identity: the daemon pairs it with start ticks read
 /// from `/proc/<pid>/stat` before retaining a process record.
@@ -84,6 +85,12 @@ pub enum Request {
         verdict: String,
         scope: String,
     },
+    DnsList,
+    DnsNote {
+        hostname: String,
+        ipv4: String,
+        ttl_secs: Option<u64>,
+    },
 }
 
 impl Request {
@@ -145,6 +152,26 @@ impl Request {
                     _ => Err(ProtocolError::Malformed),
                 }
             }
+            Some("dns-list") if fields.next().is_none() => Ok(Self::DnsList),
+            Some("dns-note") => {
+                let hostname = fields.next().map(str::to_owned);
+                let ipv4 = fields.next().map(str::to_owned);
+                let ttl_secs = match fields.next() {
+                    Some(value) => Some(value.parse().map_err(|_| ProtocolError::Malformed)?),
+                    None => None,
+                };
+                if fields.next().is_some() {
+                    return Err(ProtocolError::Malformed);
+                }
+                match (hostname, ipv4) {
+                    (Some(hostname), Some(ipv4)) => Ok(Self::DnsNote {
+                        hostname,
+                        ipv4,
+                        ttl_secs,
+                    }),
+                    _ => Err(ProtocolError::Malformed),
+                }
+            }
             _ => Err(ProtocolError::Malformed),
         }
     }
@@ -163,6 +190,7 @@ pub enum Response {
     Error(&'static str),
     Rules(String),
     Prompts(String),
+    Dns(String),
 }
 
 impl Response {
@@ -181,6 +209,7 @@ impl Response {
             Self::Error(message) => format!("v1 error {message}\n"),
             Self::Rules(value) => format!("v1 rules {value}\n"),
             Self::Prompts(value) => format!("v1 prompts {value}\n"),
+            Self::Dns(value) => format!("v1 dns {value}\n"),
         }
     }
 }
@@ -247,6 +276,19 @@ mod tests {
         assert_eq!(
             Response::Prompts("1|/bin/curl|127.0.0.1|443".into()).encode(),
             "v1 prompts 1|/bin/curl|127.0.0.1|443\n"
+        );
+    }
+
+    #[test]
+    fn parses_dns_frames() {
+        assert_eq!(Request::parse("v1 dns-list\n"), Ok(Request::DnsList));
+        assert_eq!(
+            Request::parse("v1 dns-note example.test 203.0.113.1 30\n"),
+            Ok(Request::DnsNote {
+                hostname: "example.test".into(),
+                ipv4: "203.0.113.1".into(),
+                ttl_secs: Some(30),
+            })
         );
     }
 }
