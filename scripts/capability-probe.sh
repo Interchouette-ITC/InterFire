@@ -25,7 +25,6 @@ printf 'kernel: %s\n' "$(uname -r)"
 check 'BTF vmlinux is readable' test -r /sys/kernel/btf/vmlinux
 check 'bpffs path exists' test -d /sys/fs/bpf
 check 'NFQUEUE module is loaded' sh -c "grep -q '^nfnetlink_queue ' /proc/modules"
-check 'OpenSnitch reference daemon is installed (optional)' command -v opensnitchd
 
 if command -v bpftool >/dev/null 2>&1; then
   printf 'INFO  bpftool is available\n'

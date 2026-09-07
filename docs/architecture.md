@@ -41,12 +41,12 @@ backend error, incompatible kernel, or missing eBPF/NFQUEUE capability
 produces a visible degraded state. Missing attribution or missing pending
 decision fails closed (drop).
 
-## Comparison with the reference model
+## Observation and attribution model
 
-Like OpenSnitch, InterFire separates kernel observations from `/proc`-based
-application attribution and handles process lifecycle events separately. Unlike
-the reference implementation, InterFire reimplements those components in Rust
-and does not link or distribute its Go daemon or object files.
+InterFire separates kernel observations (eBPF TCP-connect events) from
+`/proc`-based application attribution and handles process lifecycle separately.
+The userspace stack is Rust end-to-end: no foreign daemon or prebuilt eBPF
+objects from other projects are linked or shipped.
 
 ## Supported baseline
 

@@ -82,7 +82,6 @@ isolated NFQUEUE test is scoped.
 | [`architecture.md`](architecture.md) | Event flow, NFQUEUE verdict path, baseline |
 | [`threat-model.md`](threat-model.md) | Assets, trust boundaries, controls |
 | [`ux-interfire.md`](ux-interfire.md) | Locked UI contract |
-| [`ux-opensnitch.md`](ux-opensnitch.md) | OpenSnitch interaction study |
 | [`ux-kerio.md`](ux-kerio.md) | Kerio-era interaction study |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | Lint bar, Make targets, PR habits |
 | [`pull_request_template.md`](pull_request_template.md) | PR Summary + Test plan template |
