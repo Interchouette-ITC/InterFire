@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["AnswerError","EnqueueOutcome"],"struct":["Answered","Prompt","PromptKey","PromptQueue"]};

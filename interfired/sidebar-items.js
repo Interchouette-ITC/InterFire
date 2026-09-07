@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"fn":["init_tracing","main","start_observation"],"mod":["ipc","nfqueue","observe","packet","pending","policy","process","shared"],"struct":["Options"]};
+window.SIDEBAR_ITEMS = {"fn":["init_tracing","main","start_observation"],"mod":["ipc","nfqueue","observe","packet","pending","policy","process","prompts","shared"],"struct":["Options"]};

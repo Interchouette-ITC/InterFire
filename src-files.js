@@ -1,2 +1,2 @@
-createSrcSidebar('[["interfire_ebpf",["",[],["lib.rs","loader.rs"]]],["interfire_proto",["",[],["lib.rs"]]],["interfire_rules",["",[],["lib.rs"]]],["interfirectl",["",[],["main.rs"]]],["interfired",["",[],["ipc.rs","main.rs","nfqueue.rs","observe.rs","packet.rs","pending.rs","policy.rs","process.rs","shared.rs"]]]]');
-//{"start":19,"fragment_lengths":[49,39,39,37,132]}
+createSrcSidebar('[["interfire_ebpf",["",[],["lib.rs","loader.rs"]]],["interfire_proto",["",[],["lib.rs"]]],["interfire_rules",["",[],["lib.rs"]]],["interfirectl",["",[],["main.rs"]]],["interfired",["",[],["ipc.rs","main.rs","nfqueue.rs","observe.rs","packet.rs","pending.rs","policy.rs","process.rs","prompts.rs","shared.rs"]]]]');
+//{"start":19,"fragment_lengths":[49,39,39,37,145]}

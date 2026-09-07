@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"enum":["Mutate"],"fn":["mutate","peer_may_mutate","respond","rule_list"]};
+window.SIDEBAR_ITEMS = {"enum":["Mutate"],"fn":["encode_prompts","mutate","peer_may_mutate","persist_answered_rule","prompt_answer","prompt_list","respond","rule_list"]};
