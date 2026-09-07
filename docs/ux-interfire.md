@@ -3,14 +3,21 @@
 This contract locks the initial UI behavior. A later design change requires an
 explicit update to this document.
 
+## Shell
+
+The v0.1 desktop client is a **GPUI** native Rust app (Kerio-first information
+architecture). It talks to `interfired` over the existing Unix IPC. There is no
+web UI and no hybrid web+native shell for v0.1. Hard RSS budgets for the UI
+client are release gates.
+
 ## States
 
-| State | Tray | Main window | Enforcement |
-| --- | --- | --- | --- |
-| Protected | enabled | normal status | rules and prompt policy active |
-| Prompting | attention state | pending alert count | bounded prompt queue active |
-| Degraded | warning state | reason and recovery action | documented fail-closed policy |
-| Daemon unavailable | warning state | reconnect guidance | UI makes no policy claim |
+| State              | Tray            | Main window                | Enforcement                    |
+| ------------------ | --------------- | -------------------------- | ------------------------------ |
+| Protected          | enabled         | normal status              | rules and prompt policy active |
+| Prompting          | attention state | pending alert count        | bounded prompt queue active    |
+| Degraded           | warning state   | reason and recovery action | documented fail-closed policy  |
+| Daemon unavailable | warning state   | reconnect guidance         | UI makes no policy claim       |
 
 ## Alert rules
 
@@ -33,4 +40,3 @@ Applications lists observed identities and their effective rule. Rules is the
 authoritative editable policy view. Log is a capped audit stream. Network only
 shows Interfire-owned nftables state. Settings exposes daemon health, retention,
 and diagnostic information.
-
