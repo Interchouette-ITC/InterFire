@@ -1,11 +1,11 @@
-//! Async Unix IPC client: status, audit stream, rules list/mutate.
+//! Async Unix IPC client: status, audit stream, rules/prompts list/mutate.
 #![forbid(unsafe_code)]
 
 use std::io;
 use std::time::Duration;
 
 use interfire_proto::{
-    AuditStreamRecord, DaemonStatus, MAX_FRAME_BYTES, RuleRow, parse_error_message,
+    AuditStreamRecord, DaemonStatus, MAX_FRAME_BYTES, PromptRow, RuleRow, parse_error_message,
 };
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
@@ -16,7 +16,7 @@ use tokio::time;
 pub const AUDIT_SUBSCRIBER_ID: &str = "interfire-tui";
 
 const STATUS_INTERVAL: Duration = Duration::from_secs(1);
-const RULES_INTERVAL: Duration = Duration::from_secs(2);
+const LIST_INTERVAL: Duration = Duration::from_secs(2);
 const RECONNECT_BACKOFF: Duration = Duration::from_millis(500);
 
 /// Events pushed to the UI from background IPC tasks.
@@ -27,6 +27,7 @@ pub enum IpcEvent {
     Audit(AuditStreamRecord),
     SubscriptionReady,
     Rules(Vec<RuleRow>),
+    Prompts(Vec<PromptRow>),
     ActionOk(String),
     ActionError(String),
 }
@@ -35,6 +36,7 @@ pub enum IpcEvent {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum IpcCommand {
     RefreshRules,
+    RefreshPrompts,
     DeleteRule {
         id: u64,
     },
@@ -44,9 +46,14 @@ pub enum IpcCommand {
         verdict: String,
         port: u16,
     },
+    AnswerPrompt {
+        id: u64,
+        verdict: String,
+        scope: String,
+    },
 }
 
-/// Spawn non-blocking status, audit, rules poll, and command loops.
+/// Spawn non-blocking status, audit, list poll, and command loops.
 pub fn spawn(
     socket: String,
     tx: mpsc::UnboundedSender<IpcEvent>,
@@ -62,10 +69,10 @@ pub fn spawn(
     tokio::spawn(async move {
         audit_loop(audit_socket, audit_tx).await;
     });
-    let rules_socket = socket.clone();
-    let rules_tx = tx.clone();
+    let lists_socket = socket.clone();
+    let lists_tx = tx.clone();
     tokio::spawn(async move {
-        rules_poll_loop(rules_socket, rules_tx).await;
+        lists_poll_loop(lists_socket, lists_tx).await;
     });
     tokio::spawn(async move {
         while let Some(command) = commands.recv().await {
@@ -93,14 +100,19 @@ async fn status_loop(socket: String, tx: mpsc::UnboundedSender<IpcEvent>) {
     }
 }
 
-async fn rules_poll_loop(socket: String, tx: mpsc::UnboundedSender<IpcEvent>) {
-    let mut interval = time::interval(RULES_INTERVAL);
+async fn lists_poll_loop(socket: String, tx: mpsc::UnboundedSender<IpcEvent>) {
+    let mut interval = time::interval(LIST_INTERVAL);
     loop {
         interval.tick().await;
-        if let Ok(rules) = fetch_rules(&socket).await {
-            if tx.send(IpcEvent::Rules(rules)).is_err() {
-                return;
-            }
+        if let Ok(rules) = fetch_rules(&socket).await
+            && tx.send(IpcEvent::Rules(rules)).is_err()
+        {
+            return;
+        }
+        if let Ok(prompts) = fetch_prompts(&socket).await
+            && tx.send(IpcEvent::Prompts(prompts)).is_err()
+        {
+            return;
         }
     }
 }
@@ -125,23 +137,22 @@ async fn handle_command(socket: &str, tx: &mpsc::UnboundedSender<IpcEvent>, comm
                 let _ = tx.send(IpcEvent::ActionError(error.to_string()));
             }
         },
-        IpcCommand::DeleteRule { id } => {
-            match one_shot(socket, &format!("v1 rule-delete {id}\n")).await {
-                Ok(frame) if frame.starts_with("v1 pong") => {
-                    let _ = tx.send(IpcEvent::ActionOk(format!("deleted rule {id}")));
-                    if let Ok(rules) = fetch_rules(socket).await {
-                        let _ = tx.send(IpcEvent::Rules(rules));
-                    }
-                }
-                Ok(frame) => {
-                    let message =
-                        parse_error_message(&frame).unwrap_or_else(|| frame.trim().to_owned());
-                    let _ = tx.send(IpcEvent::ActionError(message));
-                }
-                Err(error) => {
-                    let _ = tx.send(IpcEvent::ActionError(error.to_string()));
-                }
+        IpcCommand::RefreshPrompts => match fetch_prompts(socket).await {
+            Ok(prompts) => {
+                let _ = tx.send(IpcEvent::Prompts(prompts));
             }
+            Err(error) => {
+                let _ = tx.send(IpcEvent::ActionError(error.to_string()));
+            }
+        },
+        IpcCommand::DeleteRule { id } => {
+            mutate_then_refresh_rules(
+                socket,
+                tx,
+                &format!("v1 rule-delete {id}\n"),
+                format!("deleted rule {id}"),
+            )
+            .await;
         }
         IpcCommand::AddRule {
             id,
@@ -150,11 +161,17 @@ async fn handle_command(socket: &str, tx: &mpsc::UnboundedSender<IpcEvent>, comm
             port,
         } => {
             let request = format!("v1 rule-add {id} {executable} {verdict} {port}\n");
+            mutate_then_refresh_rules(socket, tx, &request, format!("added rule {id}")).await;
+        }
+        IpcCommand::AnswerPrompt { id, verdict, scope } => {
+            let request = format!("v1 prompt-answer {id} {verdict} {scope}\n");
             match one_shot(socket, &request).await {
                 Ok(frame) if frame.starts_with("v1 pong") => {
-                    let _ = tx.send(IpcEvent::ActionOk(format!("added rule {id}")));
-                    if let Ok(rules) = fetch_rules(socket).await {
-                        let _ = tx.send(IpcEvent::Rules(rules));
+                    let _ = tx.send(IpcEvent::ActionOk(format!(
+                        "answered prompt {id} {verdict}/{scope}"
+                    )));
+                    if let Ok(prompts) = fetch_prompts(socket).await {
+                        let _ = tx.send(IpcEvent::Prompts(prompts));
                     }
                 }
                 Ok(frame) => {
@@ -170,6 +187,29 @@ async fn handle_command(socket: &str, tx: &mpsc::UnboundedSender<IpcEvent>, comm
     }
 }
 
+async fn mutate_then_refresh_rules(
+    socket: &str,
+    tx: &mpsc::UnboundedSender<IpcEvent>,
+    request: &str,
+    ok: String,
+) {
+    match one_shot(socket, request).await {
+        Ok(frame) if frame.starts_with("v1 pong") => {
+            let _ = tx.send(IpcEvent::ActionOk(ok));
+            if let Ok(rules) = fetch_rules(socket).await {
+                let _ = tx.send(IpcEvent::Rules(rules));
+            }
+        }
+        Ok(frame) => {
+            let message = parse_error_message(&frame).unwrap_or_else(|| frame.trim().to_owned());
+            let _ = tx.send(IpcEvent::ActionError(message));
+        }
+        Err(error) => {
+            let _ = tx.send(IpcEvent::ActionError(error.to_string()));
+        }
+    }
+}
+
 async fn fetch_status(socket: &str) -> io::Result<DaemonStatus> {
     let frame = one_shot(socket, "v1 status\n").await?;
     DaemonStatus::parse(&frame)
@@ -180,6 +220,12 @@ async fn fetch_rules(socket: &str) -> io::Result<Vec<RuleRow>> {
     let frame = one_shot(socket, "v1 rule-list\n").await?;
     RuleRow::parse_frame(&frame)
         .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "malformed_rules"))
+}
+
+async fn fetch_prompts(socket: &str) -> io::Result<Vec<PromptRow>> {
+    let frame = one_shot(socket, "v1 prompt-list\n").await?;
+    PromptRow::parse_frame(&frame)
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "malformed_prompts"))
 }
 
 async fn one_shot(socket: &str, request: &str) -> io::Result<String> {

@@ -394,6 +394,86 @@ impl RuleRow {
     }
 }
 
+/// One pending prompt row as returned by `v1 prompts …`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PromptRow {
+    pub id: u64,
+    pub executable: String,
+    pub destination: String,
+    pub port: u16,
+    pub protocol: String,
+    pub remaining_secs: u64,
+}
+
+impl PromptRow {
+    /// Parse a `v1 prompts …` response frame into rows.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ProtocolError`] when the frame is not a well-formed prompts list.
+    pub fn parse_frame(frame: &str) -> Result<Vec<Self>, ProtocolError> {
+        let line = frame.trim_end_matches(['\r', '\n']);
+        let mut fields = line.splitn(3, ' ');
+        match fields.next() {
+            Some("v1") => {}
+            Some(token) if token.starts_with('v') => return Err(ProtocolError::UnsupportedVersion),
+            _ => return Err(ProtocolError::Malformed),
+        }
+        if fields.next() != Some("prompts") {
+            return Err(ProtocolError::Malformed);
+        }
+        let payload = fields.next().unwrap_or("");
+        if payload.is_empty() {
+            return Ok(Vec::new());
+        }
+        payload.split(',').map(Self::parse_row).collect()
+    }
+
+    fn parse_row(row: &str) -> Result<Self, ProtocolError> {
+        let parts: Vec<&str> = row.split('|').collect();
+        if parts.len() < 4 {
+            return Err(ProtocolError::Malformed);
+        }
+        let id = parts[0].parse().map_err(|_| ProtocolError::Malformed)?;
+        let executable = parts[1].to_owned();
+        let destination = parts[2].to_owned();
+        let port = parts[3].parse().map_err(|_| ProtocolError::Malformed)?;
+        let protocol = parts.get(4).copied().unwrap_or("tcp").to_owned();
+        let remaining_secs = parts
+            .get(5)
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(0);
+        Ok(Self {
+            id,
+            executable,
+            destination,
+            port,
+            protocol,
+            remaining_secs,
+        })
+    }
+
+    /// Compact list label.
+    #[must_use]
+    pub fn list_label(&self) -> String {
+        format!(
+            "{}  {}  {}:{} {}  {}s",
+            self.id,
+            self.executable,
+            self.destination,
+            self.port,
+            self.protocol,
+            self.remaining_secs
+        )
+    }
+
+    /// Whether the TUI should allow answering this prompt.
+    #[must_use]
+    pub const fn can_answer(&self) -> bool {
+        self.remaining_secs > 0
+    }
+}
+
 /// Parse `v1 error …` into the message body.
 #[must_use]
 pub fn parse_error_message(frame: &str) -> Option<String> {
@@ -506,8 +586,30 @@ mod tests {
     #[test]
     fn encodes_prompts_response() {
         assert_eq!(
-            Response::Prompts("1|/bin/curl|127.0.0.1|443".into()).encode(),
-            "v1 prompts 1|/bin/curl|127.0.0.1|443\n"
+            Response::Prompts("1|/bin/curl|127.0.0.1|443|tcp|12".into()).encode(),
+            "v1 prompts 1|/bin/curl|127.0.0.1|443|tcp|12\n"
+        );
+        assert_eq!(
+            PromptRow::parse_frame("v1 prompts 1|/bin/curl|127.0.0.1|443|tcp|12\n"),
+            Ok(vec![PromptRow {
+                id: 1,
+                executable: "/bin/curl".into(),
+                destination: "127.0.0.1".into(),
+                port: 443,
+                protocol: "tcp".into(),
+                remaining_secs: 12,
+            }])
+        );
+        assert!(
+            !PromptRow {
+                id: 1,
+                executable: "/bin/curl".into(),
+                destination: "127.0.0.1".into(),
+                port: 443,
+                protocol: "tcp".into(),
+                remaining_secs: 0,
+            }
+            .can_answer()
         );
     }
 

@@ -61,7 +61,7 @@ Audit: capped on-disk log (`--audit=PATH`, default under `/var/lib/interfire/aud
 
 The TUI polls `status` on a timer and keeps a long-lived `audit-subscribe` with id `interfire-tui` (reconnect replaces that subscription). When the daemon socket is missing, the status chrome shows **daemon unavailable** instead of an empty UI. Observation and enforcement fields are shown as reported by the daemon.
 
-Tabs: Status | Rules | Prompts | Log | Help. Left/Right or `1`..`5` change tabs; `h`/`l` move list/detail focus; `j`/`k` move the list. On Rules: `a` opens add overlay, `d` deletes the selected rule, `r` refreshes via IPC. `Esc` dismisses an overlay and never quits from root chrome (`q` quits). Help documents the keys.
+Tabs: Status | Rules | Prompts | Log | Help. Left/Right or `1`..`5` change tabs; `h`/`l` move list/detail focus; `j`/`k` move the list. On Rules: `a` opens add overlay, `d` deletes the selected rule, `r` refreshes via IPC. On Prompts: `a`/`Enter` opens the answer overlay (Allow/Deny + once|session|permanent); expired/stale prompts disable answer. `Esc` dismisses an overlay and never quits from root chrome (`q` quits). Help documents the keys.
 
 ```bash
 cargo run -p interfire-tui -- --socket=/tmp/interfire.sock

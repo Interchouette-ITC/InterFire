@@ -8,7 +8,7 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap};
 
-use crate::app::{AddField, AddRuleForm, App, Overlay, Pane, Tab};
+use crate::app::{AddField, AddRuleForm, AnswerPromptForm, AnswerVerdict, App, Overlay, Pane, Tab};
 
 pub fn draw(frame: &mut Frame<'_>, app: &App) {
     let chunks = Layout::vertical([
@@ -24,6 +24,7 @@ pub fn draw(frame: &mut Frame<'_>, app: &App) {
         Overlay::None => {}
         Overlay::Notice(message) => draw_notice(frame, message),
         Overlay::AddRule(form) => draw_add_rule(frame, form),
+        Overlay::AnswerPrompt(form) => draw_answer_prompt(frame, form),
     }
 }
 
@@ -128,6 +129,51 @@ fn draw_add_rule(frame: &mut Frame<'_>, form: &AddRuleForm) {
     ];
     frame.render_widget(
         Paragraph::new(lines).block(Block::default().borders(Borders::ALL).title("add rule")),
+        area,
+    );
+}
+
+fn draw_answer_prompt(frame: &mut Frame<'_>, form: &AnswerPromptForm) {
+    let area = centered_rect(70, 60, frame.area());
+    frame.render_widget(Clear, area);
+    let prompt = &form.prompt;
+    let allow_style = if form.verdict == AnswerVerdict::Allow {
+        Style::default().add_modifier(Modifier::REVERSED | Modifier::BOLD)
+    } else {
+        Style::default()
+    };
+    let deny_style = if form.verdict == AnswerVerdict::Deny {
+        Style::default().add_modifier(Modifier::REVERSED | Modifier::BOLD)
+    } else {
+        Style::default()
+    };
+    let lines = vec![
+        Line::from(format!("prompt #{}", prompt.id)),
+        Line::from(format!("path: {}", prompt.executable)),
+        Line::from(format!(
+            "dest: {}:{} ({})",
+            prompt.destination, prompt.port, prompt.protocol
+        )),
+        Line::from(format!("remaining: {}s", prompt.remaining_secs)),
+        Line::from(""),
+        Line::from(vec![
+            Span::raw("verdict: "),
+            Span::styled(" allow ", allow_style),
+            Span::styled(" deny ", deny_style),
+        ]),
+        Line::from(format!(
+            "scope:   {}  (Tab cycles once|session|permanent)",
+            form.scope.as_str()
+        )),
+        Line::from(""),
+        Line::from("a/d or Left/Right verdict · Enter submit · Esc cancel"),
+    ];
+    frame.render_widget(
+        Paragraph::new(lines).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("answer prompt"),
+        ),
         area,
     );
 }

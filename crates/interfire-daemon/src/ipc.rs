@@ -159,16 +159,19 @@ fn prompt_list(shared: &Shared) -> Response {
 }
 
 fn encode_prompts(prompts: &mut PromptQueue) -> String {
+    let now = std::time::Instant::now();
     prompts
         .list_pending()
         .into_iter()
         .map(|prompt| {
+            let remaining = prompt.expires_at.saturating_duration_since(now).as_secs();
             format!(
-                "{}|{}|{}|{}",
+                "{}|{}|{}|{}|tcp|{}",
                 prompt.id,
                 prompt.key.executable,
                 prompt.key.ipv4_display(),
-                prompt.key.port
+                prompt.key.port,
+                remaining
             )
         })
         .collect::<Vec<_>>()
