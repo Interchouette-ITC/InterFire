@@ -59,6 +59,8 @@ Audit: capped on-disk log (`--audit=PATH`, default under `/var/lib/interfire/aud
 
 `interfire-tui` enables raw mode and the alternate screen. On normal exit it restores both. A panic hook also restores the terminal before the default panic printer runs, so a crash should not leave the tty stuck. Prefer quitting with `q` during development; do not kill `-9` the process if you can avoid it.
 
+The TUI polls `status` on a timer and keeps a long-lived `audit-subscribe` with id `interfire-tui` (reconnect replaces that subscription). When the daemon socket is missing, the status chrome shows **daemon unavailable** instead of an empty UI. Observation and enforcement fields are shown as reported by the daemon.
+
 ```bash
 cargo run -p interfire-tui -- --socket=/tmp/interfire.sock
 ```
