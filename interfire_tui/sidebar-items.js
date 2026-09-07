@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"constant":["DEFAULT_SOCKET","MAX_AUDIT_LINES"],"enum":["Link"],"fn":["audit_panel","draw","install_panic_hook","main","parse_socket","restore_terminal","run","setup_terminal","status_panel"],"mod":["ipc"],"struct":["App"]};
+window.SIDEBAR_ITEMS = {"fn":["install_panic_hook","main","parse_socket","restore_terminal","run","setup_terminal"],"mod":["app","ipc","ui"]};
