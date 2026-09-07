@@ -251,6 +251,86 @@ impl Response {
     }
 }
 
+/// Parsed daemon status fields (owned; for clients).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DaemonStatus {
+    pub enforcement: String,
+    pub observation: String,
+    pub ipc_version: u16,
+}
+
+impl DaemonStatus {
+    /// Parse a `v1 status …` response frame.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ProtocolError`] when the frame is not a well-formed status line.
+    pub fn parse(frame: &str) -> Result<Self, ProtocolError> {
+        let line = frame.trim_end_matches(['\r', '\n']);
+        let mut fields = line.split_whitespace();
+        match fields.next() {
+            Some("v1") => {}
+            Some(token) if token.starts_with('v') => return Err(ProtocolError::UnsupportedVersion),
+            _ => return Err(ProtocolError::Malformed),
+        }
+        if fields.next() != Some("status") {
+            return Err(ProtocolError::Malformed);
+        }
+        let mut enforcement = None;
+        let mut observation = None;
+        let mut ipc_version = None;
+        for field in fields {
+            if let Some(value) = field.strip_prefix("enforcement=") {
+                enforcement = Some(value.to_owned());
+            } else if let Some(value) = field.strip_prefix("observation=") {
+                observation = Some(value.to_owned());
+            } else if let Some(value) = field.strip_prefix("ipc_version=") {
+                ipc_version = Some(value.parse().map_err(|_| ProtocolError::Malformed)?);
+            } else {
+                return Err(ProtocolError::Malformed);
+            }
+        }
+        Ok(Self {
+            enforcement: enforcement.ok_or(ProtocolError::Malformed)?,
+            observation: observation.ok_or(ProtocolError::Malformed)?,
+            ipc_version: ipc_version.ok_or(ProtocolError::Malformed)?,
+        })
+    }
+}
+
+/// One streamed audit record (`v1 audit SEQ|message`).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AuditStreamRecord {
+    pub sequence: u64,
+    pub message: String,
+}
+
+impl AuditStreamRecord {
+    /// Parse a streamed audit frame.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ProtocolError`] when the frame is not `v1 audit SEQ|message`.
+    pub fn parse(frame: &str) -> Result<Self, ProtocolError> {
+        let line = frame.trim_end_matches(['\r', '\n']);
+        let mut fields = line.splitn(3, ' ');
+        match fields.next() {
+            Some("v1") => {}
+            Some(token) if token.starts_with('v') => return Err(ProtocolError::UnsupportedVersion),
+            _ => return Err(ProtocolError::Malformed),
+        }
+        if fields.next() != Some("audit") {
+            return Err(ProtocolError::Malformed);
+        }
+        let payload = fields.next().ok_or(ProtocolError::Malformed)?;
+        let (sequence, message) = payload.split_once('|').ok_or(ProtocolError::Malformed)?;
+        Ok(Self {
+            sequence: sequence.parse().map_err(|_| ProtocolError::Malformed)?,
+            message: message.to_owned(),
+        })
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ProtocolError {
     Malformed,
@@ -292,6 +372,25 @@ mod tests {
         assert_eq!(
             frame,
             "v1 status enforcement=none observation=degraded ipc_version=1\n"
+        );
+        assert_eq!(
+            DaemonStatus::parse(&frame),
+            Ok(DaemonStatus {
+                enforcement: "none".into(),
+                observation: "degraded".into(),
+                ipc_version: 1,
+            })
+        );
+    }
+
+    #[test]
+    fn parses_audit_stream_record() {
+        assert_eq!(
+            AuditStreamRecord::parse("v1 audit 9|allow curl\n"),
+            Ok(AuditStreamRecord {
+                sequence: 9,
+                message: "allow curl".into(),
+            })
         );
     }
 
