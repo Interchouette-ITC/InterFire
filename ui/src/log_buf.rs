@@ -5,7 +5,7 @@ use std::collections::VecDeque;
 
 use interfire_proto::MAX_LOG_RECORDS_PER_SUBSCRIBER;
 
-/// Cap aligned with `MAX_LOG_RECORDS_PER_SUBSCRIBER` (product UX contract).
+/// Cap aligned with `MAX_LOG_RECORDS_PER_SUBSCRIBER`.
 pub const MAX_AUDIT_LINES: usize = MAX_LOG_RECORDS_PER_SUBSCRIBER;
 
 /// Default Log pane viewport height in rows.
