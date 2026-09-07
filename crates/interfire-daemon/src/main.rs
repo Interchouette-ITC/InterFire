@@ -9,6 +9,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::Path;
 
+use interfire_ebpf::Observer;
 use interfire_proto::{IPC_VERSION, MAX_FRAME_BYTES, Request, Response};
 use interfire_rules::{Direction, Protocol, Rule, RuleSet, RulesStore, Scope, Verdict};
 
@@ -28,8 +29,11 @@ fn main() -> io::Result<()> {
         .skip(1)
         .find_map(|argument| argument.strip_prefix("--rules=").map(str::to_owned))
         .unwrap_or_else(|| "/etc/interfire/rules.toml".into());
+    let skip_ebpf = env::args().skip(1).any(|argument| argument == "--no-ebpf");
     let store = RulesStore::new(rules_path);
     let mut rules = store.load().map_err(io::Error::other)?;
+
+    let (_observer, observation) = start_observation(skip_ebpf);
 
     let path = Path::new(&socket);
     if let Some(parent) = path.parent() {
@@ -44,10 +48,11 @@ fn main() -> io::Result<()> {
     eprintln!("interfired: listening on {}", path.display());
     eprintln!("interfired: loaded {} rule(s)", rules.rules().len());
     eprintln!("interfired: process cache capacity {}", 1_024);
+    eprintln!("interfired: observation={observation} enforcement=none");
     for stream in listener.incoming() {
         match stream {
             Ok(stream) => {
-                if let Err(error) = respond(stream, &mut rules, &store) {
+                if let Err(error) = respond(stream, &mut rules, &store, observation) {
                     eprintln!("interfired: request failed: {error}");
                 }
             }
@@ -57,7 +62,29 @@ fn main() -> io::Result<()> {
     Ok(())
 }
 
-fn respond(mut stream: UnixStream, rules: &mut RuleSet, store: &RulesStore) -> io::Result<()> {
+fn start_observation(skip_ebpf: bool) -> (Option<Observer>, &'static str) {
+    if skip_ebpf {
+        eprintln!("interfired: eBPF skipped (--no-ebpf); observation=degraded");
+        return (None, "degraded");
+    }
+    match Observer::load_embedded_and_attach() {
+        Ok(observer) => {
+            eprintln!("interfired: eBPF attached to tcp_v4_connect");
+            (Some(observer), "attached")
+        }
+        Err(error) => {
+            eprintln!("interfired: eBPF unavailable ({error}); observation=degraded");
+            (None, "degraded")
+        }
+    }
+}
+
+fn respond(
+    mut stream: UnixStream,
+    rules: &mut RuleSet,
+    store: &RulesStore,
+    observation: &'static str,
+) -> io::Result<()> {
     let mut frame = String::new();
     let bytes = BufReader::new(stream.try_clone()?).read_line(&mut frame)?;
     let response = if bytes > MAX_FRAME_BYTES {
@@ -66,7 +93,8 @@ fn respond(mut stream: UnixStream, rules: &mut RuleSet, store: &RulesStore) -> i
         match Request::parse(&frame) {
             Ok(Request::Ping) => Response::Pong,
             Ok(Request::Status) => Response::Status {
-                enforcement: "feasibility-gated",
+                enforcement: "none",
+                observation,
                 ipc_version: IPC_VERSION,
             },
             Ok(Request::RuleList) => Response::Rules(

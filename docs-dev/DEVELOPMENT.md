@@ -7,8 +7,9 @@ crates/interfire-rules/          rule matching + TOML persistence
 crates/interfire-proto/          IPC version + frame bounds
 crates/interfire-daemon/         interfired binary
 crates/interfirectl/             CLI
-crates/interfire-ebpf/           eBPF loader stub
-crates/interfire-ebpf-programs/  eBPF program stub
+crates/interfire-ebpf/           TCP event contract + aya loader
+crates/interfire-ebpf/bpf/       Embedded eBPF object (regenerate with `make ebpf`)
+crates/interfire-ebpf-programs/  aya TCP-connect program (bpfel target)
 docs/                            product hub + community health
 docs-dev/                        developer notes (this tree)
 fixtures/                        IPC and rules fixtures
@@ -29,16 +30,20 @@ make coverage       # needs cargo-llvm-cov + llvm-tools-preview
 make audit          # needs cargo-audit
 make deny           # needs cargo-deny; config deny.toml
 make ci             # lint + test + doc
+make ebpf           # nightly + bpf-linker; refreshes embedded object
 ```
 
-CI mirrors `make ci`, plus coverage upload to Codecov and a supply-chain job.
+CI mirrors `make ci`, plus coverage upload to Codecov and a supply-chain job. Live eBPF attach needs root (or `CAP_BPF` / `CAP_PERFMON`) and is not required for `make ci`.
 
 ## Smoke (non-root)
 
 ```bash
-cargo run -p interfire-daemon -- --socket=/tmp/interfire.sock
+cargo run -p interfire-daemon -- --socket=/tmp/interfire.sock --no-ebpf
 cargo run -p interfirectl -- --socket=/tmp/interfire.sock ping
+cargo run -p interfirectl -- --socket=/tmp/interfire.sock status
 ```
+
+Without `--no-ebpf`, the daemon tries to attach the embedded TCP-connect program and reports `observation=attached` or `observation=degraded`. Verdict enforcement remains `none` until the NFQUEUE path is wired.
 
 ## NFQUEUE spike (root)
 

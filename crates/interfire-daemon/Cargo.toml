@@ -10,5 +10,6 @@ name = "interfired"
 path = "src/main.rs"
 
 [dependencies]
+interfire-ebpf = { path = "../interfire-ebpf" }
 interfire-proto = { path = "../interfire-proto" }
 interfire-rules = { path = "../interfire-rules" }
