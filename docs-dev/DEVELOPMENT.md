@@ -55,11 +55,21 @@ DNS names are optional metadata: `dns-note` / `dns-list` (and `interfirectl dns 
 
 Audit: capped on-disk log (`--audit=PATH`, default under `/var/lib/interfire/audit.log`, `MAX_AUDIT_FILE_BYTES`) plus in-memory ring (`MAX_LOG_RECORDS_PER_SUBSCRIBER`). `audit-tail` is one-shot; `audit-subscribe ID [since=N]` streams frames and **replaces** any prior subscription with the same `ID` on reconnect.
 
+## CLI vs TUI
+
+| Client | Role |
+| --- | --- |
+| `interfirectl` | **One-shot** only: `ping`, `status`, single `rules` / `prompts` / `dns` / `audit` commands. No REPL, no multi-screen browse loop. |
+| `interfire-tui` | Interactive control plane: tabs Status \| Rules \| Prompts \| Log \| Help, overlays for add-rule and answer-prompt. |
+| GPUI (`ui/`) | Desktop tray / alerts (later). Same IPC. |
+
+Use the CLI from scripts and smoke checks. Use the TUI when you need to browse lists, answer prompts, or watch the log. The UX contract (`docs/ux-interfire.md`) locks this split.
+
 ## TUI terminal hygiene
 
 `interfire-tui` enables raw mode and the alternate screen. On normal exit it restores both. A panic hook also restores the terminal before the default panic printer runs, so a crash should not leave the tty stuck. Prefer quitting with `q` during development; do not kill `-9` the process if you can avoid it.
 
-The TUI polls `status` on a timer and keeps a long-lived `audit-subscribe` with id `interfire-tui` (reconnect replaces that subscription). When the daemon socket is missing, the status chrome shows **daemon unavailable** instead of an empty UI. Observation and enforcement fields are shown as reported by the daemon.
+The TUI polls `status` on a timer and keeps a long-lived `audit-subscribe` with id `interfire-tui` (reconnect replaces that subscription). The Log tab keeps at most `MAX_LOG_RECORDS_PER_SUBSCRIBER` (2,000) rows and renders a virtualized viewport around the selection. When the daemon socket is missing, the status chrome shows **daemon unavailable** instead of an empty UI. Observation and enforcement fields are shown as reported by the daemon.
 
 Tabs: Status | Rules | Prompts | Log | Help. Left/Right or `1`..`5` change tabs; `h`/`l` move list/detail focus; `j`/`k` move the list. On Rules: `a` opens add overlay, `d` deletes the selected rule, `r` refreshes via IPC. On Prompts: `a`/`Enter` opens the answer overlay (Allow/Deny + once|session|permanent); expired/stale prompts disable answer. `Esc` dismisses an overlay and never quits from root chrome (`q` quits). Help documents the keys.
 

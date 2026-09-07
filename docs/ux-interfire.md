@@ -9,14 +9,16 @@ v0.1 has three client surfaces over the same Unix IPC:
 
 | Surface | Role |
 | --- | --- |
-| `interfirectl` | One-shot commands only (`ping`, `status`, single rule CRUD) |
+| `interfirectl` | One-shot commands only (`ping`, `status`, rules / prompts / dns / audit) |
 | `interfire-tui` | Interactive control plane (status, rules, prompts, logs) |
 | GPUI app under `ui/` | Desktop tray, alerts, Kerio-style tabs |
 
 The desktop shell is a **GPUI** native Rust app. The interactive ops client is a
 **ratatui** terminal UI (`crates/interfire-tui`). There is no web UI and no
 hybrid web+native shell for v0.1. Hard RSS budgets for UI clients are release
-gates. Do not grow `interfirectl` into a multi-screen interactive client.
+gates. Do not grow `interfirectl` into a multi-screen interactive client;
+scripted and one-command checks stay on the CLI, browse/answer flows stay in
+the TUI (and later the tray).
 
 ## States
 
