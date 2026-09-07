@@ -38,6 +38,28 @@ impl TcpConnectEvent {
     pub const fn destination_octets(self) -> [u8; 4] {
         self.destination_ipv4.to_ne_bytes()
     }
+
+    /// Parse a ring-buffer record into a [`TcpConnectEvent`].
+    ///
+    /// Expects the 24-byte `repr(C)` layout used by the eBPF program.
+    #[must_use]
+    pub fn try_from_bytes(bytes: &[u8]) -> Option<Self> {
+        if bytes.len() < 24 {
+            return None;
+        }
+        let pid = u32::from_ne_bytes(bytes[0..4].try_into().ok()?);
+        let process_start_ticks = u64::from_ne_bytes(bytes[8..16].try_into().ok()?);
+        let destination_ipv4 = u32::from_ne_bytes(bytes[16..20].try_into().ok()?);
+        let destination_port = u16::from_ne_bytes(bytes[20..22].try_into().ok()?);
+        let reserved = u16::from_ne_bytes(bytes[22..24].try_into().ok()?);
+        Some(Self {
+            pid,
+            process_start_ticks,
+            destination_ipv4,
+            destination_port,
+            reserved,
+        })
+    }
 }
 
 #[cfg(test)]
@@ -60,5 +82,20 @@ mod tests {
             reserved: 0,
         };
         assert_eq!(event.destination_octets(), [127, 0, 0, 1]);
+    }
+
+    #[test]
+    fn try_from_bytes_reads_repr_c_layout_with_padding() {
+        let mut bytes = [0_u8; 24];
+        bytes[0..4].copy_from_slice(&42_u32.to_ne_bytes());
+        bytes[8..16].copy_from_slice(&99_u64.to_ne_bytes());
+        bytes[16..20].copy_from_slice(&u32::from_ne_bytes([10, 0, 0, 2]).to_ne_bytes());
+        bytes[20..22].copy_from_slice(&8080_u16.to_ne_bytes());
+        let event = TcpConnectEvent::try_from_bytes(&bytes).unwrap();
+        assert_eq!(event.pid, 42);
+        assert_eq!(event.process_start_ticks, 99);
+        assert_eq!(event.destination_octets(), [10, 0, 0, 2]);
+        assert_eq!(event.destination_port, 8080);
+        assert!(TcpConnectEvent::try_from_bytes(&bytes[..23]).is_none());
     }
 }

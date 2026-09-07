@@ -15,11 +15,13 @@ drop before the connect completes.
 
 Canonical repo: [Interchouette-ITC/InterFire](https://github.com/Interchouette-ITC/InterFire).
 
-**Status today:** workspace foundation and control plane. The daemon and CLI
-speak a versioned Unix-socket protocol, persist TOML rules, resolve process
-identity via `/proc`, and can attach a TCP-connect eBPF observer when
-capabilities allow. They do **not** enforce network policy yet (NFQUEUE verdict
-path not live).
+**Status today:** workspace foundation plus an enforcement MVP path. The daemon
+and CLI speak a versioned Unix-socket protocol, persist TOML rules, resolve
+process identity via `/proc`, attach a TCP-connect eBPF observer when
+capabilities allow, consume ring-buffer events, and can bind NFQUEUE **4242**
+for allow/deny (prompt and unattributed → deny). Live packet filtering still
+needs an InterFire-owned nftables queue rule and root/caps; use `--no-ebpf`
+and/or `--no-nfqueue` for non-root smoke.
 
 ## What you get today
 
@@ -27,13 +29,13 @@ path not live).
 | ----------------- | -------------------------------------------------------------------- |
 | `interfire-rules` | Deterministic application-rule matching + TOML store                 |
 | `interfire-proto` | Versioned, bounded Unix-socket framing                               |
-| `interfired`      | Daemon skeleton (rules load, process cache, IPC)                     |
+| `interfired`      | Daemon: IPC, rules, ringbuf → `/proc` → rules → NFQUEUE           |
 | `interfirectl`    | CLI: `ping`, `status`, `rules list` / `add` / `delete`               |
-| `interfire-ebpf*` | TCP-connect observation program + aya loader (verdict path not live) |
+| `interfire-ebpf*` | TCP-connect observation program + aya loader                         |
 | Docs              | Architecture, threat model, UX contract and studies                  |
 
-Still building toward: ringbuf consumption, NFQUEUE verdicts, tray UI, and Debian
-packaging.
+Still building toward: controlled allow/deny integration test, tray UI, and
+Debian packaging.
 
 ## Quick start
 
@@ -46,7 +48,7 @@ make ci
 Non-root smoke (daemon + CLI on a temp socket):
 
 ```bash
-cargo run -p interfire-daemon -- --socket=/tmp/interfire.sock
+cargo run -p interfire-daemon -- --socket=/tmp/interfire.sock --no-ebpf --no-nfqueue
 cargo run -p interfirectl -- --socket=/tmp/interfire.sock ping
 cargo run -p interfirectl -- --socket=/tmp/interfire.sock status
 ```
