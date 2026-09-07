@@ -6,6 +6,8 @@ all-features = false
 
 [advisories]
 yanked = "warn"
+# Fail only if a direct workspace crate is unmaintained (GPUI pulls several).
+unmaintained = "workspace"
 
 [licenses]
 unused-allowed-license = "allow"
@@ -19,6 +21,11 @@ allow = [
     "Zlib",
     "OpenSSL",
     "CDLA-Permissive-2.0",
+    # GPUI transitive (ahash / tiny-keccak, webbrowser, bzip2, etc.).
+    "CC0-1.0",
+    "MPL-2.0",
+    "0BSD",
+    "bzip2-1.0.6",
 ]
 confidence-threshold = 0.8
 

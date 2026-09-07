@@ -39,9 +39,10 @@ test:
 	$(CARGO) test --workspace --exclude interfire-ui
 
 ## Requires cargo-llvm-cov + llvm-tools-preview. Writes coverage/lcov.info.
+## Exclude interfire-ui: GPUI needs system fontconfig/xkb; covered by `make ui-test` in CI.
 coverage:
 	mkdir -p coverage
-	RUSTUP_TOOLCHAIN=stable $(CARGO) llvm-cov --workspace --lcov \
+	RUSTUP_TOOLCHAIN=stable $(CARGO) llvm-cov --workspace --exclude interfire-ui --lcov \
 		--ignore-filename-regex 'scripts/|fixtures/|crates/interfire-ebpf-programs/|crates/interfire-daemon/src/main\.rs|crates/interfirectl/src/main\.rs|crates/interfire-tui/src/main\.rs|ui/src/main\.rs' \
 		--output-path coverage/lcov.info
 
