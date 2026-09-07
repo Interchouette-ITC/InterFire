@@ -15,25 +15,25 @@ drop before the connect completes.
 
 Canonical repo: [Interchouette-ITC/InterFire](https://github.com/Interchouette-ITC/InterFire).
 
-**Status today:** workspace foundation and control plane only. The daemon and
-CLI speak a versioned Unix-socket protocol, persist TOML rules, and resolve
-process identity via `/proc`. They do **not** enforce network policy yet.
-Pre-connect enforcement stays gated on the documented isolated NFQUEUE
-feasibility path.
+**Status today:** workspace foundation and control plane. The daemon and CLI
+speak a versioned Unix-socket protocol, persist TOML rules, resolve process
+identity via `/proc`, and can attach a TCP-connect eBPF observer when
+capabilities allow. They do **not** enforce network policy yet (NFQUEUE verdict
+path not live).
 
 ## What you get today
 
-| Piece | Role |
-| --- | --- |
-| `interfire-rules` | Deterministic application-rule matching + TOML store |
-| `interfire-proto` | Versioned, bounded Unix-socket framing |
-| `interfired` | Daemon skeleton (rules load, process cache, IPC) |
-| `interfirectl` | CLI: `ping`, `status`, `rules list` / `add` / `delete` |
-| `interfire-ebpf*` | Placeholders for observation programs (not attached yet) |
-| Docs | Architecture, threat model, UX contract and studies |
+| Piece             | Role                                                                 |
+| ----------------- | -------------------------------------------------------------------- |
+| `interfire-rules` | Deterministic application-rule matching + TOML store                 |
+| `interfire-proto` | Versioned, bounded Unix-socket framing                               |
+| `interfired`      | Daemon skeleton (rules load, process cache, IPC)                     |
+| `interfirectl`    | CLI: `ping`, `status`, `rules list` / `add` / `delete`               |
+| `interfire-ebpf*` | TCP-connect observation program + aya loader (verdict path not live) |
+| Docs              | Architecture, threat model, UX contract and studies                  |
 
-Still building toward: eBPF observation, NFQUEUE verdicts, tray UI, and Debian
-packaging.
+Still building toward: ringbuf consumption, NFQUEUE verdicts, ratatui TUI,
+tray UI, and Debian packaging.
 
 ## Quick start
 
@@ -62,18 +62,18 @@ is scoped.
 
 ## Docs
 
-| Doc | Topic |
-| --- | --- |
-| [`architecture.md`](architecture.md) | Event flow, NFQUEUE verdict path, baseline |
-| [`threat-model.md`](threat-model.md) | Assets, trust boundaries, controls |
-| [`ux-interfire.md`](ux-interfire.md) | Locked UI contract |
-| [`ux-opensnitch.md`](ux-opensnitch.md) | OpenSnitch interaction study |
-| [`ux-kerio.md`](ux-kerio.md) | Kerio-era interaction study |
-| [`CONTRIBUTING.md`](CONTRIBUTING.md) | Lint bar, Make targets, PR habits |
-| [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) | Community standards |
-| [`SECURITY.md`](SECURITY.md) | Vulnerability reporting |
-| [`../docs-dev/README.md`](../docs-dev/README.md) | Developer docs index |
-| [`api-rust/`](api-rust/) | rustdoc after `make doc` |
+| Doc                                              | Topic                                      |
+| ------------------------------------------------ | ------------------------------------------ |
+| [`architecture.md`](architecture.md)             | Event flow, NFQUEUE verdict path, baseline |
+| [`threat-model.md`](threat-model.md)             | Assets, trust boundaries, controls         |
+| [`ux-interfire.md`](ux-interfire.md)             | Locked UI contract                         |
+| [`ux-opensnitch.md`](ux-opensnitch.md)           | OpenSnitch interaction study               |
+| [`ux-kerio.md`](ux-kerio.md)                     | Kerio-era interaction study                |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md)             | Lint bar, Make targets, PR habits          |
+| [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md)       | Community standards                        |
+| [`SECURITY.md`](SECURITY.md)                     | Vulnerability reporting                    |
+| [`../docs-dev/README.md`](../docs-dev/README.md) | Developer docs index                       |
+| [`api-rust/`](api-rust/)                         | rustdoc after `make doc`                   |
 
 ## Layout
 
@@ -82,8 +82,8 @@ crates/interfire-rules/          rule matching + TOML persistence
 crates/interfire-proto/          IPC version + frame bounds
 crates/interfire-daemon/         interfired
 crates/interfirectl/             CLI
-crates/interfire-ebpf/           eBPF loader stub
-crates/interfire-ebpf-programs/  eBPF program stub
+crates/interfire-ebpf/           TCP event contract + aya loader
+crates/interfire-ebpf-programs/  TCP-connect eBPF program (bpfel)
 docs/                            product docs (this hub)
 docs-dev/                        developer notes
 fixtures/                        rule fixtures
