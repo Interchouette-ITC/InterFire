@@ -23,7 +23,8 @@ personal-firewall tray/alert path. Same Unix IPC as `interfirectl` /
 +---------------------------------------------------+
 ```
 
-Tray: protected | prompting | degraded | daemon-unavailable.
+Tray: protected | prompting | degraded | daemon-unavailable (Linux SNI via
+`ksni`; state also mirrored in Status chrome and the window status bar).
 Alert: modal over tray/main with countdown and once|session|permanent.
 
 ## Stack pin
