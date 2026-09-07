@@ -7,6 +7,7 @@ use std::time::Duration;
 
 use interfire_rules::{RuleSet, RulesStore};
 
+use crate::dns::DnsCache;
 use crate::pending::PendingTable;
 use crate::process::ProcessCache;
 use crate::prompts::PromptQueue;
@@ -25,6 +26,7 @@ pub struct Shared {
     pub pending: Mutex<PendingTable>,
     pub process_cache: Mutex<ProcessCache>,
     pub prompts: Mutex<PromptQueue>,
+    pub dns: Mutex<DnsCache>,
     enforcement: AtomicU8,
     observation: AtomicU8,
 }
@@ -45,6 +47,7 @@ impl Shared {
             pending: Mutex::new(PendingTable::new(pending_capacity, pending_ttl)),
             process_cache: Mutex::new(ProcessCache::new(process_capacity)),
             prompts: Mutex::new(PromptQueue::with_defaults()),
+            dns: Mutex::new(DnsCache::with_defaults()),
             enforcement: AtomicU8::new(ENFORCEMENT_NONE),
             observation: AtomicU8::new(observation_code(observation)),
         }

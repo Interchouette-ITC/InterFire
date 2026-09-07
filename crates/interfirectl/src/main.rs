@@ -42,6 +42,18 @@ fn main() -> io::Result<()> {
         {
             format!("prompt-answer {id} {verdict} {scope}")
         }
+        [dns, list] if dns == "dns" && list == "list" => "dns-list".to_owned(),
+        [dns, note, hostname, ipv4] if dns == "dns" && note == "note" && !hostname.is_empty() => {
+            format!("dns-note {hostname} {ipv4}")
+        }
+        [dns, note, hostname, ipv4, ttl]
+            if dns == "dns"
+                && note == "note"
+                && !hostname.is_empty()
+                && ttl.parse::<u64>().is_ok() =>
+        {
+            format!("dns-note {hostname} {ipv4} {ttl}")
+        }
         _ => return usage(),
     };
 
@@ -55,7 +67,7 @@ fn main() -> io::Result<()> {
 
 fn usage() -> io::Result<()> {
     eprintln!(
-        "usage: interfirectl [--socket=PATH] <ping|status|rules list|rules add ID PATH allow|deny|prompt PORT|rules delete ID|prompts list|prompts answer ID allow|deny once|session|permanent>"
+        "usage: interfirectl [--socket=PATH] <ping|status|rules …|prompts …|dns list|dns note HOST IPV4 [TTL]>"
     );
     Err(io::Error::new(
         io::ErrorKind::InvalidInput,

@@ -2,9 +2,12 @@
 #![forbid(unsafe_code)]
 
 use std::io::{self, BufRead, BufReader, Write};
+use std::net::Ipv4Addr;
 use std::os::fd::AsFd;
 use std::os::unix::net::UnixStream;
+use std::str::FromStr;
 use std::sync::Arc;
+use std::time::Duration;
 
 use interfire_proto::{IPC_VERSION, MAX_FRAME_BYTES, Request, Response, RuleScope};
 use interfire_rules::{Direction, Protocol, Rule, Scope, Verdict};
@@ -54,6 +57,12 @@ pub fn respond(mut stream: UnixStream, shared: &Arc<Shared>) -> io::Result<()> {
             Ok(Request::PromptAnswer { id, verdict, scope }) => {
                 prompt_answer(shared, &stream, id, &verdict, &scope)
             }
+            Ok(Request::DnsList) => dns_list(shared),
+            Ok(Request::DnsNote {
+                hostname,
+                ipv4,
+                ttl_secs,
+            }) => dns_note(shared, &stream, &hostname, &ipv4, ttl_secs),
             Err(_) => Response::Error("malformed_request"),
         }
     };
@@ -116,6 +125,48 @@ fn encode_prompts(prompts: &mut PromptQueue) -> String {
         })
         .collect::<Vec<_>>()
         .join(",")
+}
+
+fn dns_list(shared: &Shared) -> Response {
+    let Ok(mut dns) = shared.dns.lock() else {
+        return Response::Error("lock_poisoned");
+    };
+    Response::Dns(
+        dns.list_fresh()
+            .into_iter()
+            .map(|(hostname, ipv4, ttl)| {
+                format!("{hostname}|{}|{ttl}", Ipv4Addr::from(ipv4.to_ne_bytes()))
+            })
+            .collect::<Vec<_>>()
+            .join(","),
+    )
+}
+
+fn dns_note(
+    shared: &Shared,
+    stream: &UnixStream,
+    hostname: &str,
+    ipv4: &str,
+    ttl_secs: Option<u64>,
+) -> Response {
+    if !peer_may_mutate(stream) {
+        warn!("rejected DNS note without peer credentials");
+        return Response::Error("unauthorized");
+    }
+    if hostname.is_empty() || hostname.contains('|') {
+        return Response::Error("invalid_hostname");
+    }
+    let Ok(addr) = Ipv4Addr::from_str(ipv4) else {
+        return Response::Error("invalid_ipv4");
+    };
+    let ipv4 = u32::from_ne_bytes(addr.octets());
+    let ttl = ttl_secs.map(Duration::from_secs);
+    let Ok(mut dns) = shared.dns.lock() else {
+        return Response::Error("lock_poisoned");
+    };
+    dns.observe(hostname, ipv4, ttl);
+    debug!(%hostname, %addr, "DNS observation noted");
+    Response::Pong
 }
 
 fn prompt_answer(

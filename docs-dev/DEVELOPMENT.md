@@ -50,6 +50,8 @@ Without `--no-ebpf`, the daemon tries to attach the embedded TCP-connect program
 
 Default rule miss is **prompt**: the daemon enqueues a bounded pending prompt (cap `MAX_PENDING_PROMPTS`), drops the packet, and exposes `prompt-list` / `prompt-answer` over IPC for the TUI (and one-shot `interfirectl prompts …`). Full queue or expiry stays deny. Answer scopes: `once` | `session` | `permanent`.
 
+DNS names are optional metadata: `dns-note` / `dns-list` (and `interfirectl dns …`) feed a bounded TTL cache (`MAX_DNS_ENTRIES`). Fresh names may annotate connections for hostname rules; **stale or missing names stay unset** so the destination IP remains authoritative.
+
 ## Idle RSS (`make memcheck`)
 
 Builds `interfired`, starts it with `--no-ebpf --no-nfqueue`, samples `VmRSS`, and fails when the sample exceeds 40960 KiB (40 MiB). Override with `INTERFIRE_MEMCHECK_BUDGET_KIB`.
