@@ -25,9 +25,9 @@ personal-firewall tray/alert path. Same Unix IPC as `interfirectl` /
 
 Tray: protected | prompting | degraded | daemon-unavailable (Linux SNI via
 `ksni`; state also mirrored in Status chrome and the window status bar).
-Alert: modal over the main window with path, dest:port/proto, countdown,
-once|session|permanent scopes, Allow/Deny (default Deny), Details, and stale
-controls when expired or resolved elsewhere.
+Rules: live list / select / add / delete over Unix IPC (`rule-list`,
+`rule-add`, `rule-delete`). Other left-nav sections stay thin shells until
+their dedicated slices.
 
 ## Stack pin
 
