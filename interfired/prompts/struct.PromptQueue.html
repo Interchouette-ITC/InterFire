@@ -18,7 +18,7 @@
 </div></details><details class="toggle method-toggle" open><summary><section id="method.answer" class="method"><a class="src rightside" href="../../src/interfired/prompts.rs.html#165-206">Source</a><h4 class="code-header">pub fn <a href="#method.answer" class="fn">answer</a>(
     &amp;mut self,
     id: <a class="primitive" href="https://doc.rust-lang.org/1.98.1/std/primitive.u64.html">u64</a>,
-    verdict: <a class="enum" href="../../interfire_rules/enum.Verdict.html" title="enum interfire_rules::Verdict">Verdict</a>,
+    verdict: Verdict,
     scope: <a class="enum" href="../../interfire_proto/enum.RuleScope.html" title="enum interfire_proto::RuleScope">RuleScope</a>,
 ) -&gt; <a class="enum" href="https://doc.rust-lang.org/1.98.1/core/result/enum.Result.html" title="enum core::result::Result">Result</a>&lt;<a class="struct" href="struct.Answered.html" title="struct interfired::prompts::Answered">Answered</a>, <a class="enum" href="enum.AnswerError.html" title="enum interfired::prompts::AnswerError">AnswerError</a>&gt;</h4></section></summary><div class="docblock"><p>Answer a prompt. Duplicate answers return the prior decision.</p>
 <h5 id="errors"><a class="doc-anchor" href="#errors">§</a>Errors</h5>
