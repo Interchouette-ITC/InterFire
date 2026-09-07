@@ -43,7 +43,11 @@ fn handle_event(event: TcpConnectEvent, shared: &Shared) {
     let Ok(mut cache) = shared.process_cache.lock() else {
         return;
     };
-    let decision = policy::decide(event, &rules, &mut cache);
+    let Ok(mut prompts) = shared.prompts.lock() else {
+        return;
+    };
+    let decision = policy::decide(event, &rules, &mut cache, &mut prompts);
+    drop(prompts);
     drop(cache);
     drop(rules);
     if let Ok(mut pending) = shared.pending.lock() {
@@ -51,6 +55,7 @@ fn handle_event(event: TcpConnectEvent, shared: &Shared) {
         debug!(
             attributed = decision.attributed,
             port = decision.key.port,
+            prompt_id = ?decision.prompt_id,
             "pending verdict stored"
         );
     }

@@ -32,6 +32,16 @@ fn main() -> io::Result<()> {
         {
             format!("rule-delete {id}")
         }
+        [prompts, list] if prompts == "prompts" && list == "list" => "prompt-list".to_owned(),
+        [prompts, answer, id, verdict, scope]
+            if prompts == "prompts"
+                && answer == "answer"
+                && id.parse::<u64>().is_ok()
+                && matches!(verdict.as_str(), "allow" | "deny")
+                && matches!(scope.as_str(), "once" | "session" | "permanent") =>
+        {
+            format!("prompt-answer {id} {verdict} {scope}")
+        }
         _ => return usage(),
     };
 
@@ -45,7 +55,7 @@ fn main() -> io::Result<()> {
 
 fn usage() -> io::Result<()> {
     eprintln!(
-        "usage: interfirectl [--socket=PATH] <ping|status|rules list|rules add ID PATH allow|deny|prompt PORT|rules delete ID>"
+        "usage: interfirectl [--socket=PATH] <ping|status|rules list|rules add ID PATH allow|deny|prompt PORT|rules delete ID|prompts list|prompts answer ID allow|deny once|session|permanent>"
     );
     Err(io::Error::new(
         io::ErrorKind::InvalidInput,
