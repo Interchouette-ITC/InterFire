@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"struct":["TcpConnectEvent"]};
+window.SIDEBAR_ITEMS = {"constant":["EVENT_MAP","PROGRAM_NAME","RINGBUF_BYTE_SIZE"],"enum":["LoadError","ObserverStatus"],"struct":["Observer","TcpConnectEvent"]};

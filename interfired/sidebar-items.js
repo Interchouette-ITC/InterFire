@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"fn":["main","respond"],"mod":["process"]};
+window.SIDEBAR_ITEMS = {"fn":["main","respond","start_observation"],"mod":["process"]};

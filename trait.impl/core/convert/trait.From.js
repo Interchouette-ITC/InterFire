@@ -1,9 +1,9 @@
 (function() {
-    const implementors = Object.fromEntries([["interfired",[["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/1.98.1/core/convert/trait.From.html\" title=\"trait core::convert::From\">From</a>&lt;<a class=\"struct\" href=\"https://doc.rust-lang.org/1.98.1/core/io/error/struct.Error.html\" title=\"struct core::io::error::Error\">Error</a>&gt; for <a class=\"enum\" href=\"interfired/process/enum.AttributionError.html\" title=\"enum interfired::process::AttributionError\">AttributionError</a>",0]]]]);
+    const implementors = Object.fromEntries([["interfire_ebpf",[["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/1.98.1/core/convert/trait.From.html\" title=\"trait core::convert::From\">From</a>&lt;EbpfError&gt; for <a class=\"enum\" href=\"interfire_ebpf/enum.LoadError.html\" title=\"enum interfire_ebpf::LoadError\">LoadError</a>",0],["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/1.98.1/core/convert/trait.From.html\" title=\"trait core::convert::From\">From</a>&lt;MapError&gt; for <a class=\"enum\" href=\"interfire_ebpf/enum.LoadError.html\" title=\"enum interfire_ebpf::LoadError\">LoadError</a>",0],["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/1.98.1/core/convert/trait.From.html\" title=\"trait core::convert::From\">From</a>&lt;ProgramError&gt; for <a class=\"enum\" href=\"interfire_ebpf/enum.LoadError.html\" title=\"enum interfire_ebpf::LoadError\">LoadError</a>",0]]],["interfired",[["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/1.98.1/core/convert/trait.From.html\" title=\"trait core::convert::From\">From</a>&lt;<a class=\"struct\" href=\"https://doc.rust-lang.org/1.98.1/core/io/error/struct.Error.html\" title=\"struct core::io::error::Error\">Error</a>&gt; for <a class=\"enum\" href=\"interfired/process/enum.AttributionError.html\" title=\"enum interfired::process::AttributionError\">AttributionError</a>",0]]]]);
     if (window.register_implementors) {
         window.register_implementors(implementors);
     } else {
         window.pending_implementors = implementors;
     }
 })()
-//{"start":59,"fragment_lengths":[464]}
+//{"start":59,"fragment_lengths":[874,465]}
