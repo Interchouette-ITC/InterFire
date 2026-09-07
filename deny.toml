@@ -26,6 +26,8 @@ allow = [
     "MPL-2.0",
     "0BSD",
     "bzip2-1.0.6",
+    # ksni (Linux StatusNotifierItem tray).
+    "Unlicense",
 ]
 confidence-threshold = 0.8
 

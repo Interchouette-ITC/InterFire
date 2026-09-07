@@ -20,8 +20,9 @@ The `supply-chain` job runs `make audit && make deny` on every PR and on pushes
 to `dev`.
 
 `deny.toml` allows additional licenses pulled by the GPUI stack (**CC0-1.0**,
-**MPL-2.0**, **0BSD**, **bzip2-1.0.6**). Unmaintained advisories fail only for
-direct workspace crates (`unmaintained = "workspace"`); yanked stays warn.
+**MPL-2.0**, **0BSD**, **bzip2-1.0.6**) and **Unlicense** for the Linux tray
+crate `ksni`. Unmaintained advisories fail only for direct workspace crates
+(`unmaintained = "workspace"`); yanked stays warn.
 
 ## Dependabot
 

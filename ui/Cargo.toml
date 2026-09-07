@@ -13,3 +13,6 @@ path = "src/main.rs"
 [dependencies]
 gpui-kit = { workspace = true }
 interfire-proto = { path = "../crates/interfire-proto" }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+ksni = { version = "0.3", features = ["blocking"] }

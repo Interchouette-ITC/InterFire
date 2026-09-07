@@ -21,7 +21,8 @@ eBPF observer when capabilities allow, consume ring-buffer events, and can bind
 NFQUEUE **4242** for allow/deny (prompt and unattributed → deny until answered
 over IPC). Live filtering needs an InterFire-owned nftables queue rule and
 root/caps; use `--no-ebpf` and/or `--no-nfqueue` for non-root smoke. Interactive
-ops use `interfire-tui`. GPUI tray and Debian packaging are not shipped.
+ops use `interfire-tui`. GPUI desktop shell (`interfire-ui`) includes tray
+states; Debian packaging is not shipped.
 Production latency/coexistence measurements remain open.
 
 ## What you get today
@@ -34,9 +35,10 @@ Production latency/coexistence measurements remain open.
 | `interfirectl` | One-shot CLI: `ping`, `status`, rules / prompts / dns / audit |
 | `interfire-tui` | ratatui control-plane TUI (interactive status / rules / prompts / log) |
 | `interfire-ebpf*` | TCP-connect observation program + aya loader |
+| `interfire-ui` | GPUI desktop shell: rules-first nav + tray states |
 | Docs | Architecture, threat model, UX contract and studies |
 
-Not present yet: GPUI tray client, Debian packaging.
+Not present yet: Debian packaging. Connection alert and Rules CRUD polish land next.
 
 ## Quick start
 
