@@ -78,6 +78,12 @@ pub enum Request {
     RuleDelete {
         id: u64,
     },
+    PromptList,
+    PromptAnswer {
+        id: u64,
+        verdict: String,
+        scope: String,
+    },
 }
 
 impl Request {
@@ -124,6 +130,21 @@ impl Request {
                     _ => Err(ProtocolError::Malformed),
                 }
             }
+            Some("prompt-list") if fields.next().is_none() => Ok(Self::PromptList),
+            Some("prompt-answer") => {
+                let id = fields.next().and_then(|value| value.parse().ok());
+                let verdict = fields.next().map(str::to_owned);
+                let scope = fields.next().map(str::to_owned);
+                if fields.next().is_some() {
+                    return Err(ProtocolError::Malformed);
+                }
+                match (id, verdict, scope) {
+                    (Some(id), Some(verdict), Some(scope)) => {
+                        Ok(Self::PromptAnswer { id, verdict, scope })
+                    }
+                    _ => Err(ProtocolError::Malformed),
+                }
+            }
             _ => Err(ProtocolError::Malformed),
         }
     }
@@ -141,6 +162,7 @@ pub enum Response {
     },
     Error(&'static str),
     Rules(String),
+    Prompts(String),
 }
 
 impl Response {
@@ -158,6 +180,7 @@ impl Response {
             ),
             Self::Error(message) => format!("v1 error {message}\n"),
             Self::Rules(value) => format!("v1 rules {value}\n"),
+            Self::Prompts(value) => format!("v1 prompts {value}\n"),
         }
     }
 }
@@ -203,6 +226,27 @@ mod tests {
         assert_eq!(
             frame,
             "v1 status enforcement=none observation=degraded ipc_version=1\n"
+        );
+    }
+
+    #[test]
+    fn parses_prompt_frames() {
+        assert_eq!(Request::parse("v1 prompt-list\n"), Ok(Request::PromptList));
+        assert_eq!(
+            Request::parse("v1 prompt-answer 7 allow once\n"),
+            Ok(Request::PromptAnswer {
+                id: 7,
+                verdict: "allow".into(),
+                scope: "once".into(),
+            })
+        );
+    }
+
+    #[test]
+    fn encodes_prompts_response() {
+        assert_eq!(
+            Response::Prompts("1|/bin/curl|127.0.0.1|443".into()).encode(),
+            "v1 prompts 1|/bin/curl|127.0.0.1|443\n"
         );
     }
 }

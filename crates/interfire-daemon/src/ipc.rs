@@ -6,12 +6,13 @@ use std::os::fd::AsFd;
 use std::os::unix::net::UnixStream;
 use std::sync::Arc;
 
-use interfire_proto::{IPC_VERSION, MAX_FRAME_BYTES, Request, Response};
+use interfire_proto::{IPC_VERSION, MAX_FRAME_BYTES, Request, Response, RuleScope};
 use interfire_rules::{Direction, Protocol, Rule, Scope, Verdict};
 use nix::sys::socket::{getsockopt, sockopt::PeerCredentials};
 use nix::unistd::Uid;
 use tracing::{debug, warn};
 
+use crate::prompts::{AnswerError, PromptQueue};
 use crate::shared::Shared;
 
 /// Handle one client connection.
@@ -49,6 +50,10 @@ pub fn respond(mut stream: UnixStream, shared: &Arc<Shared>) -> io::Result<()> {
                     port,
                 },
             ),
+            Ok(Request::PromptList) => prompt_list(shared),
+            Ok(Request::PromptAnswer { id, verdict, scope }) => {
+                prompt_answer(shared, &stream, id, &verdict, &scope)
+            }
             Err(_) => Response::Error("malformed_request"),
         }
     };
@@ -87,6 +92,115 @@ fn rule_list(shared: &Shared) -> Response {
             .collect::<Vec<_>>()
             .join(","),
     )
+}
+
+fn prompt_list(shared: &Shared) -> Response {
+    let Ok(mut prompts) = shared.prompts.lock() else {
+        return Response::Error("lock_poisoned");
+    };
+    Response::Prompts(encode_prompts(&mut prompts))
+}
+
+fn encode_prompts(prompts: &mut PromptQueue) -> String {
+    prompts
+        .list_pending()
+        .into_iter()
+        .map(|prompt| {
+            format!(
+                "{}|{}|{}|{}",
+                prompt.id,
+                prompt.key.executable,
+                prompt.key.ipv4_display(),
+                prompt.key.port
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+fn prompt_answer(
+    shared: &Shared,
+    stream: &UnixStream,
+    id: u64,
+    verdict: &str,
+    scope: &str,
+) -> Response {
+    if !peer_may_mutate(stream) {
+        warn!("rejected prompt answer without peer credentials");
+        return Response::Error("unauthorized");
+    }
+    let verdict = match verdict {
+        "allow" => Verdict::Allow,
+        "deny" => Verdict::Deny,
+        _ => return Response::Error("invalid_verdict"),
+    };
+    let scope = match scope {
+        "once" => RuleScope::Once,
+        "session" => RuleScope::Session,
+        "permanent" => RuleScope::Permanent,
+        _ => return Response::Error("invalid_scope"),
+    };
+    let Ok(mut prompts) = shared.prompts.lock() else {
+        return Response::Error("lock_poisoned");
+    };
+    let answered = match prompts.answer(id, verdict, scope) {
+        Ok(answered) => answered,
+        Err(AnswerError::NotFound) => return Response::Error("prompt_not_found"),
+        Err(AnswerError::Expired) => return Response::Error("prompt_expired"),
+    };
+    drop(prompts);
+    if !answered.duplicate
+        && matches!(answered.scope, RuleScope::Session | RuleScope::Permanent)
+        && let Err(response) = persist_answered_rule(shared, &answered)
+    {
+        return response;
+    }
+    debug!(
+        id = answered.id,
+        duplicate = answered.duplicate,
+        ?answered.verdict,
+        ?answered.scope,
+        "prompt answered"
+    );
+    Response::Pong
+}
+
+fn persist_answered_rule(
+    shared: &Shared,
+    answered: &crate::prompts::Answered,
+) -> Result<(), Response> {
+    let Ok(mut rules) = shared.rules.lock() else {
+        return Err(Response::Error("lock_poisoned"));
+    };
+    let next_id = rules
+        .rules()
+        .iter()
+        .map(|rule| rule.id)
+        .max()
+        .unwrap_or(0)
+        .saturating_add(1);
+    let rule = Rule {
+        id: next_id,
+        executable: answered.key.executable.clone(),
+        protocol: Some(Protocol::Tcp),
+        direction: Some(Direction::Outbound),
+        address: None,
+        hostname: None,
+        port: Some(answered.key.port),
+        verdict: answered.verdict,
+        scope: match answered.scope {
+            RuleScope::Once => Scope::Once,
+            RuleScope::Session => Scope::Session,
+            RuleScope::Permanent => Scope::Permanent,
+        },
+    };
+    if rules.insert(rule).is_err() {
+        return Err(Response::Error("invalid_rule"));
+    }
+    if answered.scope == RuleScope::Permanent && shared.store.save(&rules).is_err() {
+        return Err(Response::Error("persistence_failed"));
+    }
+    Ok(())
 }
 
 fn mutate(shared: &Shared, stream: &UnixStream, action: Mutate) -> Response {

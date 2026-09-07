@@ -7,6 +7,7 @@ mod packet;
 mod pending;
 mod policy;
 mod process;
+mod prompts;
 mod shared;
 
 use std::env;

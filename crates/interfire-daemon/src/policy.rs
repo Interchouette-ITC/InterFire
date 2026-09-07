@@ -10,6 +10,7 @@ use tracing::{debug, warn};
 
 use crate::pending::DestKey;
 use crate::process::{self, AttributionError, ProcessCache, ProcessIdentity};
+use crate::prompts::{EnqueueOutcome, PromptKey, PromptQueue};
 
 /// Outcome of attributing and deciding a connect event.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -17,44 +18,91 @@ pub struct Decision {
     pub key: DestKey,
     pub packet_verdict: Verdict,
     pub attributed: bool,
+    pub prompt_id: Option<u64>,
 }
 
-/// Attribute via `/proc`, match rules, and map to a packet verdict.
+/// Attribute via `/proc`, match rules / once-tokens / prompts, and map to a packet verdict.
 ///
-/// Unattributed events and [`RuleVerdict::Prompt`] become [`Verdict::Drop`].
+/// Unattributed events, prompts, and full prompt queues become [`Verdict::Drop`].
 #[must_use]
-pub fn decide(event: TcpConnectEvent, rules: &RuleSet, cache: &mut ProcessCache) -> Decision {
+pub fn decide(
+    event: TcpConnectEvent,
+    rules: &RuleSet,
+    cache: &mut ProcessCache,
+    prompts: &mut PromptQueue,
+) -> Decision {
     let key = DestKey {
         ipv4: event.destination_ipv4,
         port: event.destination_port,
     };
     match attribute(event, cache) {
-        Ok(identity) => {
-            let connection = connection_from(&identity, event);
-            let rule_verdict = rules.verdict_for(&connection);
-            let packet_verdict = packet_verdict(rule_verdict);
-            debug!(
-                pid = identity.pid,
-                executable = %identity.executable.display(),
-                port = event.destination_port,
-                ?rule_verdict,
-                ?packet_verdict,
-                "attributed connect decision"
-            );
-            Decision {
-                key,
-                packet_verdict,
-                attributed: true,
-            }
-        }
+        Ok(identity) => decide_attributed(&identity, event, rules, prompts, key),
         Err(error) => {
             warn!(pid = event.pid, %error, "unattributed connect; denying");
             Decision {
                 key,
                 packet_verdict: Verdict::Drop,
                 attributed: false,
+                prompt_id: None,
             }
         }
+    }
+}
+
+fn decide_attributed(
+    identity: &ProcessIdentity,
+    event: TcpConnectEvent,
+    rules: &RuleSet,
+    prompts: &mut PromptQueue,
+    key: DestKey,
+) -> Decision {
+    let prompt_key = PromptKey {
+        executable: identity.executable.display().to_string(),
+        ipv4: event.destination_ipv4,
+        port: event.destination_port,
+    };
+    if prompts.take_once_allow(&prompt_key) {
+        debug!(port = key.port, "once-allow token consumed");
+        return Decision {
+            key,
+            packet_verdict: Verdict::Accept,
+            attributed: true,
+            prompt_id: None,
+        };
+    }
+    if prompts.consume_once_deny(&prompt_key) {
+        debug!(port = key.port, "once-deny token consumed");
+        return Decision {
+            key,
+            packet_verdict: Verdict::Drop,
+            attributed: true,
+            prompt_id: None,
+        };
+    }
+    let connection = connection_from(identity, event);
+    let rule_verdict = rules.verdict_for(&connection);
+    let (packet_verdict, prompt_id) = match rule_verdict {
+        RuleVerdict::Allow => (Verdict::Accept, None),
+        RuleVerdict::Deny => (Verdict::Drop, None),
+        RuleVerdict::Prompt => match prompts.enqueue(prompt_key) {
+            EnqueueOutcome::Created(id) | EnqueueOutcome::Deduped(id) => (Verdict::Drop, Some(id)),
+            EnqueueOutcome::Full => (Verdict::Drop, None),
+        },
+    };
+    debug!(
+        pid = identity.pid,
+        executable = %identity.executable.display(),
+        port = event.destination_port,
+        ?rule_verdict,
+        ?packet_verdict,
+        ?prompt_id,
+        "attributed connect decision"
+    );
+    Decision {
+        key,
+        packet_verdict,
+        attributed: true,
+        prompt_id,
     }
 }
 
@@ -85,17 +133,11 @@ fn connection_from(identity: &ProcessIdentity, event: TcpConnectEvent) -> Connec
     }
 }
 
-const fn packet_verdict(rule: RuleVerdict) -> Verdict {
-    match rule {
-        RuleVerdict::Allow => Verdict::Accept,
-        RuleVerdict::Deny | RuleVerdict::Prompt => Verdict::Drop,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use interfire_rules::{Rule, Scope};
+    use std::time::Duration;
 
     fn event(pid: u32, port: u16) -> TcpConnectEvent {
         TcpConnectEvent {
@@ -108,17 +150,11 @@ mod tests {
     }
 
     #[test]
-    fn prompt_and_deny_drop_packets() {
-        assert_eq!(packet_verdict(RuleVerdict::Prompt), Verdict::Drop);
-        assert_eq!(packet_verdict(RuleVerdict::Deny), Verdict::Drop);
-        assert_eq!(packet_verdict(RuleVerdict::Allow), Verdict::Accept);
-    }
-
-    #[test]
     fn unattributed_never_allows() {
         let rules = RuleSet::default();
         let mut cache = ProcessCache::new(8);
-        let decision = decide(event(u32::MAX, 9), &rules, &mut cache);
+        let mut prompts = PromptQueue::new(8, Duration::from_secs(60));
+        let decision = decide(event(u32::MAX, 9), &rules, &mut cache, &mut prompts);
         assert!(!decision.attributed);
         assert_eq!(decision.packet_verdict, Verdict::Drop);
     }
@@ -142,8 +178,35 @@ mod tests {
             })
             .unwrap();
         let mut cache = ProcessCache::new(8);
-        let decision = decide(event(self_pid, 8443), &rules, &mut cache);
+        let mut prompts = PromptQueue::new(8, Duration::from_secs(60));
+        let decision = decide(event(self_pid, 8443), &rules, &mut cache, &mut prompts);
         assert!(decision.attributed);
         assert_eq!(decision.packet_verdict, Verdict::Accept);
+    }
+
+    #[test]
+    fn default_prompt_enqueues_and_drops() {
+        let self_pid = std::process::id();
+        let rules = RuleSet::default();
+        let mut cache = ProcessCache::new(8);
+        let mut prompts = PromptQueue::new(8, Duration::from_secs(60));
+        let decision = decide(event(self_pid, 9_001), &rules, &mut cache, &mut prompts);
+        assert!(decision.attributed);
+        assert_eq!(decision.packet_verdict, Verdict::Drop);
+        assert!(decision.prompt_id.is_some());
+        assert_eq!(prompts.list_pending().len(), 1);
+    }
+
+    #[test]
+    fn full_prompt_queue_drops_without_id() {
+        let self_pid = std::process::id();
+        let rules = RuleSet::default();
+        let mut cache = ProcessCache::new(8);
+        let mut prompts = PromptQueue::new(1, Duration::from_secs(60));
+        let first = decide(event(self_pid, 9_002), &rules, &mut cache, &mut prompts);
+        assert!(first.prompt_id.is_some());
+        let second = decide(event(self_pid, 9_003), &rules, &mut cache, &mut prompts);
+        assert_eq!(second.packet_verdict, Verdict::Drop);
+        assert!(second.prompt_id.is_none());
     }
 }

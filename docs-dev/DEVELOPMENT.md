@@ -43,9 +43,12 @@ CI mirrors `make ci`, plus coverage upload to Codecov and a supply-chain job. Li
 cargo run -p interfire-daemon -- --socket=/tmp/interfire.sock --no-ebpf --no-nfqueue
 cargo run -p interfirectl -- --socket=/tmp/interfire.sock ping
 cargo run -p interfirectl -- --socket=/tmp/interfire.sock status
+cargo run -p interfirectl -- --socket=/tmp/interfire.sock prompts list
 ```
 
 Without `--no-ebpf`, the daemon tries to attach the embedded TCP-connect program and reports `observation=attached` or `observation=degraded`. Without `--no-nfqueue`, it tries to bind NFQUEUE 4242 and reports `enforcement=nfqueue` or `enforcement=degraded`.
+
+Default rule miss is **prompt**: the daemon enqueues a bounded pending prompt (cap `MAX_PENDING_PROMPTS`), drops the packet, and exposes `prompt-list` / `prompt-answer` over IPC for the TUI (and one-shot `interfirectl prompts …`). Full queue or expiry stays deny. Answer scopes: `once` | `session` | `permanent`.
 
 ## Idle RSS (`make memcheck`)
 
