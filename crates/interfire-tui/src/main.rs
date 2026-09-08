@@ -30,7 +30,8 @@ use crate::ipc::spawn as spawn_ipc;
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
-    let socket = parse_socket(env::args().skip(1));
+    let (socket, theme_mode) = parse_args(env::args().skip(1));
+    palette::set_mode(theme_mode);
     install_panic_hook();
     let mut terminal = setup_terminal()?;
     let result = run(&mut terminal, socket).await;
@@ -38,14 +39,19 @@ async fn main() -> io::Result<()> {
     result
 }
 
-fn parse_socket(args: impl IntoIterator<Item = String>) -> String {
+fn parse_args(args: impl IntoIterator<Item = String>) -> (String, palette::Mode) {
     let mut socket = DEFAULT_SOCKET.to_owned();
+    let mut theme_mode = palette::Mode::Dark;
     for argument in args {
         if let Some(value) = argument.strip_prefix("--socket=") {
             value.clone_into(&mut socket);
+        } else if let Some(value) = argument.strip_prefix("--theme=")
+            && let Some(mode) = palette::Mode::parse(value)
+        {
+            theme_mode = mode;
         }
     }
-    socket
+    (socket, theme_mode)
 }
 
 fn install_panic_hook() {
@@ -107,14 +113,19 @@ async fn run(
 
 #[cfg(test)]
 mod tests {
-    use super::{DEFAULT_SOCKET, parse_socket};
+    use super::{DEFAULT_SOCKET, parse_args};
+    use crate::palette::Mode;
 
     #[test]
-    fn parse_socket_defaults_and_overrides() {
-        assert_eq!(parse_socket(Vec::<String>::new()), DEFAULT_SOCKET);
-        assert_eq!(
-            parse_socket(vec!["--socket=/tmp/interfire.sock".into()]),
-            "/tmp/interfire.sock"
-        );
+    fn parse_args_defaults_and_overrides() {
+        let (socket, theme) = parse_args(Vec::<String>::new());
+        assert_eq!(socket, DEFAULT_SOCKET);
+        assert_eq!(theme, Mode::Dark);
+        let (socket, theme) = parse_args(vec![
+            "--socket=/tmp/interfire.sock".into(),
+            "--theme=light".into(),
+        ]);
+        assert_eq!(socket, "/tmp/interfire.sock");
+        assert_eq!(theme, Mode::Light);
     }
 }

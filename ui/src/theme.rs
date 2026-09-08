@@ -1,8 +1,8 @@
-//! `InterFire` phoenix theme tokens for the GPUI shell.
+//! `InterFire` phoenix theme tokens for the GPUI shell (light and dark).
 #![forbid(unsafe_code)]
 
 use gpui_kit::component::{Colorize, Theme, ThemeMode};
-use gpui_kit::{App, Hsla, hsla};
+use gpui_kit::{App, Hsla, Window, WindowAppearance, hsla};
 
 /// Brand accent from phoenix artwork (`#F84800`).
 pub const ACCENT: &str = "#F84800";
@@ -10,18 +10,6 @@ pub const ACCENT: &str = "#F84800";
 pub const ACCENT_HOT: &str = "#F03105";
 /// Deep brand red (`#D00000`).
 pub const BRAND_DEEP: &str = "#D00000";
-/// Near-black canvas (`#0E1114`).
-pub const CANVAS: &str = "#0E1114";
-/// Primary surface (`#161B20`).
-pub const SURFACE: &str = "#161B20";
-/// Elevated / hover surface (`#1E252C`).
-pub const ELEVATED: &str = "#1E252C";
-/// Border (`#2C3540`).
-pub const BORDER: &str = "#2C3540";
-/// Primary text (`#E8EDF2`).
-pub const TEXT: &str = "#E8EDF2";
-/// Muted text (`#8B97A5`).
-pub const MUTED: &str = "#8B97A5";
 /// On-accent / on-danger label (`#FFFFFF`).
 pub const ON_ACCENT: &str = "#FFFFFF";
 /// Danger (`#EF5350`).
@@ -32,6 +20,97 @@ pub const DANGER_STRONG: &str = "#DC3545";
 pub const OK: &str = "#3DDC97";
 /// Warning / degraded (`#F5A623`).
 pub const WARN: &str = "#F5A623";
+
+/// Dark canvas (`#0E1114`).
+pub const DARK_CANVAS: &str = "#0E1114";
+/// Dark surface (`#161B20`).
+pub const DARK_SURFACE: &str = "#161B20";
+/// Dark elevated (`#1E252C`).
+pub const DARK_ELEVATED: &str = "#1E252C";
+/// Dark border (`#2C3540`).
+pub const DARK_BORDER: &str = "#2C3540";
+/// Dark text (`#E8EDF2`).
+pub const DARK_TEXT: &str = "#E8EDF2";
+/// Dark muted (`#8B97A5`).
+pub const DARK_MUTED: &str = "#8B97A5";
+
+/// Light canvas (`#F5F6F8`).
+pub const LIGHT_CANVAS: &str = "#F5F6F8";
+/// Light surface (`#FFFFFF`).
+pub const LIGHT_SURFACE: &str = "#FFFFFF";
+/// Light elevated (`#ECEFF3`).
+pub const LIGHT_ELEVATED: &str = "#ECEFF3";
+/// Light border (`#D0D7DE`).
+pub const LIGHT_BORDER: &str = "#D0D7DE";
+/// Light text (`#1F2328`).
+pub const LIGHT_TEXT: &str = "#1F2328";
+/// Light muted (`#656D76`).
+pub const LIGHT_MUTED: &str = "#656D76";
+
+/// Resolved phoenix appearance (what is painted right now).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ChromeMode {
+    /// Near-black ops chrome.
+    Dark,
+    /// Light ops chrome with the same orange brand.
+    Light,
+}
+
+impl ChromeMode {
+    /// Map a window / app appearance to phoenix chrome.
+    #[must_use]
+    pub const fn from_appearance(appearance: WindowAppearance) -> Self {
+        match appearance {
+            WindowAppearance::Light | WindowAppearance::VibrantLight => Self::Light,
+            WindowAppearance::Dark | WindowAppearance::VibrantDark => Self::Dark,
+        }
+    }
+
+    /// Short Settings label.
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Dark => "Dark",
+            Self::Light => "Light",
+        }
+    }
+}
+
+/// User preference for theme (Settings switcher).
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum ChromePreference {
+    /// Follow the desktop appearance.
+    #[default]
+    System,
+    /// Force light phoenix chrome.
+    Light,
+    /// Force dark phoenix chrome.
+    Dark,
+}
+
+impl ChromePreference {
+    pub const ALL: [Self; 3] = [Self::System, Self::Light, Self::Dark];
+
+    /// Short Settings chip label.
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::System => "System",
+            Self::Light => "Light",
+            Self::Dark => "Dark",
+        }
+    }
+
+    /// Resolve to a concrete light/dark mode.
+    #[must_use]
+    pub const fn resolve(self, appearance: WindowAppearance) -> ChromeMode {
+        match self {
+            Self::System => ChromeMode::from_appearance(appearance),
+            Self::Light => ChromeMode::Light,
+            Self::Dark => ChromeMode::Dark,
+        }
+    }
+}
 
 struct PhoenixColors {
     canvas: Hsla,
@@ -51,29 +130,53 @@ struct PhoenixColors {
     list_active: Hsla,
     accent_soft: Hsla,
     scrim: Hsla,
+    success_fg: Hsla,
 }
 
 impl PhoenixColors {
-    fn lock() -> Self {
+    fn for_mode(mode: ChromeMode) -> Self {
         let accent = hex(ACCENT);
-        Self {
-            canvas: hex(CANVAS),
-            surface: hex(SURFACE),
-            elevated: hex(ELEVATED),
-            border: hex(BORDER),
-            text: hex(TEXT),
-            muted_fg: hex(MUTED),
-            accent,
-            accent_hot: hex(ACCENT_HOT),
-            brand_deep: hex(BRAND_DEEP),
-            on_accent: hex(ON_ACCENT),
-            danger: hex(DANGER),
-            danger_strong: hex(DANGER_STRONG),
-            ok: hex(OK),
-            warn: hex(WARN),
-            list_active: accent.opacity(0.28),
-            accent_soft: accent.opacity(0.22),
-            scrim: hsla(0.0, 0.0, 0.0, 0.72),
+        match mode {
+            ChromeMode::Dark => Self {
+                canvas: hex(DARK_CANVAS),
+                surface: hex(DARK_SURFACE),
+                elevated: hex(DARK_ELEVATED),
+                border: hex(DARK_BORDER),
+                text: hex(DARK_TEXT),
+                muted_fg: hex(DARK_MUTED),
+                accent,
+                accent_hot: hex(ACCENT_HOT),
+                brand_deep: hex(BRAND_DEEP),
+                on_accent: hex(ON_ACCENT),
+                danger: hex(DANGER),
+                danger_strong: hex(DANGER_STRONG),
+                ok: hex(OK),
+                warn: hex(WARN),
+                list_active: accent.opacity(0.28),
+                accent_soft: accent.opacity(0.22),
+                scrim: hsla(0.0, 0.0, 0.0, 0.72),
+                success_fg: hex(DARK_CANVAS),
+            },
+            ChromeMode::Light => Self {
+                canvas: hex(LIGHT_CANVAS),
+                surface: hex(LIGHT_SURFACE),
+                elevated: hex(LIGHT_ELEVATED),
+                border: hex(LIGHT_BORDER),
+                text: hex(LIGHT_TEXT),
+                muted_fg: hex(LIGHT_MUTED),
+                accent,
+                accent_hot: hex(ACCENT_HOT),
+                brand_deep: hex(BRAND_DEEP),
+                on_accent: hex(ON_ACCENT),
+                danger: hex(DANGER),
+                danger_strong: hex(DANGER_STRONG),
+                ok: hex(OK),
+                warn: hex(WARN),
+                list_active: accent.opacity(0.18),
+                accent_soft: accent.opacity(0.14),
+                scrim: hsla(0.0, 0.0, 0.0, 0.45),
+                success_fg: hex(LIGHT_TEXT),
+            },
         }
     }
 }
@@ -84,15 +187,22 @@ pub fn hex(value: &str) -> Hsla {
     Hsla::parse_hex(value).unwrap_or_else(|_| panic!("invalid brand hex: {value}"))
 }
 
-/// Apply dark phoenix chrome after `gpui_kit::init`.
-pub fn apply_phoenix_theme(cx: &mut App) {
-    Theme::change(ThemeMode::Dark, None, cx);
-    paint_phoenix(Theme::global_mut(cx));
+/// Apply phoenix chrome for `mode` after `gpui_kit::init`.
+pub fn apply_phoenix_theme(mode: ChromeMode, window: Option<&mut Window>, cx: &mut App) {
+    let kit_mode = match mode {
+        ChromeMode::Dark => ThemeMode::Dark,
+        ChromeMode::Light => ThemeMode::Light,
+    };
+    Theme::change(kit_mode, None, cx);
+    paint_phoenix(Theme::global_mut(cx), mode);
     Theme::sync_base(cx);
+    if let Some(window) = window {
+        window.refresh();
+    }
 }
 
-fn paint_phoenix(theme: &mut Theme) {
-    let colors = PhoenixColors::lock();
+fn paint_phoenix(theme: &mut Theme, mode: ChromeMode) {
+    let colors = PhoenixColors::for_mode(mode);
     paint_base(theme, &colors);
     paint_brand_actions(theme, &colors);
     paint_sidebar_and_lists(theme, &colors);
@@ -155,11 +265,11 @@ fn paint_brand_actions(theme: &mut Theme, c: &PhoenixColors) {
     theme.success = c.ok;
     theme.success_hover = c.ok;
     theme.success_active = c.ok;
-    theme.success_foreground = c.canvas;
+    theme.success_foreground = c.success_fg;
     theme.warning = c.warn;
     theme.warning_hover = c.warn;
     theme.warning_active = c.warn;
-    theme.warning_foreground = c.canvas;
+    theme.warning_foreground = c.success_fg;
     theme.info = c.accent;
     theme.info_hover = c.accent_hot;
     theme.info_active = c.brand_deep;
@@ -231,12 +341,18 @@ mod tests {
             ACCENT,
             ACCENT_HOT,
             BRAND_DEEP,
-            CANVAS,
-            SURFACE,
-            ELEVATED,
-            BORDER,
-            TEXT,
-            MUTED,
+            DARK_CANVAS,
+            DARK_SURFACE,
+            DARK_ELEVATED,
+            DARK_BORDER,
+            DARK_TEXT,
+            DARK_MUTED,
+            LIGHT_CANVAS,
+            LIGHT_SURFACE,
+            LIGHT_ELEVATED,
+            LIGHT_BORDER,
+            LIGHT_TEXT,
+            LIGHT_MUTED,
             ON_ACCENT,
             DANGER,
             DANGER_STRONG,
@@ -245,5 +361,25 @@ mod tests {
         ] {
             let _ = hex(value);
         }
+    }
+
+    #[test]
+    fn preference_resolves_system_and_forced() {
+        assert_eq!(
+            ChromePreference::Light.resolve(WindowAppearance::Dark),
+            ChromeMode::Light
+        );
+        assert_eq!(
+            ChromePreference::Dark.resolve(WindowAppearance::Light),
+            ChromeMode::Dark
+        );
+        assert_eq!(
+            ChromePreference::System.resolve(WindowAppearance::Light),
+            ChromeMode::Light
+        );
+        assert_eq!(
+            ChromePreference::System.resolve(WindowAppearance::Dark),
+            ChromeMode::Dark
+        );
     }
 }

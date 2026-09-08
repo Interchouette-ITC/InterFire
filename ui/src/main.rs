@@ -46,7 +46,11 @@ fn main() {
 
     gpui_kit::application().run(move |cx| {
         gpui_kit::init(cx);
-        theme::apply_phoenix_theme(cx);
+        theme::apply_phoenix_theme(
+            theme::ChromeMode::from_appearance(cx.window_appearance()),
+            None,
+            cx,
+        );
         cx.set_app_identity("net.interchouette.InterFire", "InterFire");
         cx.spawn(async move |cx| {
             cx.open_window(
@@ -66,6 +70,10 @@ fn main() {
                         }
                         App::start_watchers(cx);
                         app
+                    });
+                    view.update(cx, |app, cx| {
+                        let mode = app.chrome_preference().resolve(window.appearance());
+                        theme::apply_phoenix_theme(mode, Some(window), cx);
                     });
                     cx.new(|cx| Root::new(view, window, cx).bg(cx.theme().background))
                 },

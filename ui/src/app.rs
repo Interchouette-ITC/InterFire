@@ -23,7 +23,7 @@ use crate::rss_probe::{RssProbeMode, prompt_load_fixture};
 use crate::rules::{RuleVerdict, next_rule_id, validate_new_rule};
 use crate::rules_view::{add_rule_overlay, rules_body};
 use crate::section::Section;
-use crate::theme;
+use crate::theme::{self, ChromeMode, ChromePreference};
 use crate::tray::{DaemonLink, TrayState};
 #[cfg(target_os = "linux")]
 use crate::tray_host::TrayHost;
@@ -55,6 +55,8 @@ struct ShellContent<'a> {
     viewer_message: Option<&'a str>,
     log: &'a LogBuffer,
     profiling: &'a ProfilingSnapshot,
+    chrome_pref: ChromePreference,
+    chrome_mode: ChromeMode,
 }
 
 /// Active add-rule form backed by GPUI input states.
@@ -87,6 +89,7 @@ pub struct App {
     profiling: ProfilingSnapshot,
     ui_cpu: CpuTracker,
     daemon_cpu: CpuTracker,
+    chrome_pref: ChromePreference,
     #[cfg(target_os = "linux")]
     tray: Option<TrayHost>,
 }
@@ -120,6 +123,7 @@ impl App {
             profiling: ProfilingSnapshot::default(),
             ui_cpu: CpuTracker::default(),
             daemon_cpu: CpuTracker::default(),
+            chrome_pref: ChromePreference::System,
             #[cfg(target_os = "linux")]
             tray: TrayHost::try_spawn(tray_state),
         };
@@ -248,6 +252,24 @@ impl App {
     pub(crate) fn select(&mut self, section: Section, cx: &mut Context<Self>) {
         self.section = section;
         cx.notify();
+    }
+
+    pub(crate) fn set_chrome_preference(
+        &mut self,
+        preference: ChromePreference,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.chrome_pref = preference;
+        let mode = preference.resolve(window.appearance());
+        theme::apply_phoenix_theme(mode, Some(window), cx);
+        cx.notify();
+    }
+
+    /// Current theme preference (Settings switcher).
+    #[must_use]
+    pub const fn chrome_preference(&self) -> ChromePreference {
+        self.chrome_pref
     }
 
     pub(crate) fn select_rule(&mut self, id: u64, cx: &mut Context<Self>) {
@@ -413,7 +435,7 @@ impl App {
 }
 
 impl Render for App {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let selected = self.section;
         let socket = self.socket.clone();
         let tray_state = self.tray_state;
@@ -428,6 +450,8 @@ impl Render for App {
         let viewer_message = self.viewer_message.clone();
         let log = self.log.clone();
         let profiling = self.profiling.clone();
+        let chrome_pref = self.chrome_pref;
+        let chrome_mode = chrome_pref.resolve(window.appearance());
 
         let mut shell = div()
             .id("interfire-shell")
@@ -436,7 +460,7 @@ impl Render for App {
             .size_full()
             .bg(cx.theme().background)
             .text_color(cx.theme().foreground)
-            .child(nav_column(selected, cx))
+            .child(nav_column(selected, chrome_mode, cx))
             .child(content_column(
                 &ShellContent {
                     section: selected,
@@ -452,6 +476,8 @@ impl Render for App {
                     viewer_message: viewer_message.as_deref(),
                     log: &log,
                     profiling: &profiling,
+                    chrome_pref,
+                    chrome_mode,
                 },
                 cx,
             ));
@@ -466,7 +492,7 @@ impl Render for App {
     }
 }
 
-fn nav_column(selected: Section, cx: &Context<App>) -> impl IntoElement {
+fn nav_column(selected: Section, chrome_mode: ChromeMode, cx: &Context<App>) -> impl IntoElement {
     let mut column = div()
         .id("nav")
         .w(px(196.))
@@ -479,7 +505,7 @@ fn nav_column(selected: Section, cx: &Context<App>) -> impl IntoElement {
         .bg(cx.theme().sidebar)
         .border_r_1()
         .border_color(cx.theme().sidebar_border)
-        .child(nav_brand(cx));
+        .child(nav_brand(chrome_mode, cx));
 
     for section in Section::ALL {
         let is_selected = section == selected;
@@ -489,7 +515,7 @@ fn nav_column(selected: Section, cx: &Context<App>) -> impl IntoElement {
     column.child(nav_footer(cx))
 }
 
-fn nav_brand(cx: &Context<App>) -> impl IntoElement {
+fn nav_brand(chrome_mode: ChromeMode, cx: &Context<App>) -> impl IntoElement {
     div()
         .id("nav-brand")
         .flex()
@@ -498,7 +524,7 @@ fn nav_brand(cx: &Context<App>) -> impl IntoElement {
         .mb_3()
         .px_1()
         .child(
-            img(brand::nav_mark_source())
+            img(brand::nav_mark_source(chrome_mode))
                 .id("nav-mark")
                 .w(px(36.))
                 .h(px(36.))
@@ -584,7 +610,7 @@ fn content_column(content: &ShellContent<'_>, cx: &Context<App>) -> impl IntoEle
                 .rounded_lg()
                 .border_1()
                 .border_color(cx.theme().border)
-                .bg(theme::hex(theme::SURFACE))
+                .bg(cx.theme().group_box)
                 .child(section_body(content, cx)),
         )
         .child(status_bar(content, cx))
@@ -608,12 +634,9 @@ fn content_header(content: &ShellContent<'_>, cx: &Context<App>) -> impl IntoEle
 
 fn tray_chip(state: TrayState, cx: &Context<App>) -> impl IntoElement {
     let (fill, label_color) = match state {
-        TrayState::Protected => (theme::hex(theme::OK).opacity(0.2), theme::hex(theme::OK)),
+        TrayState::Protected => (cx.theme().success.opacity(0.2), cx.theme().success),
         TrayState::Prompting => (cx.theme().accent.opacity(0.25), cx.theme().accent),
-        TrayState::Degraded => (
-            theme::hex(theme::WARN).opacity(0.22),
-            theme::hex(theme::WARN),
-        ),
+        TrayState::Degraded => (cx.theme().warning.opacity(0.22), cx.theme().warning),
         TrayState::Unavailable => (cx.theme().danger.opacity(0.22), cx.theme().danger),
     };
     div()
@@ -655,7 +678,7 @@ fn section_body(content: &ShellContent<'_>, cx: &Context<App>) -> Div {
             content.adding,
             cx,
         ),
-        Section::Status => status_body(content.socket, content.tray_state, content.link, muted),
+        Section::Status => status_body(content.socket, content.tray_state, content.link, muted, cx),
         Section::Applications => applications_body(
             content.processes,
             content.selected_process,
@@ -667,11 +690,25 @@ fn section_body(content: &ShellContent<'_>, cx: &Context<App>) -> Div {
             .text_color(muted)
             .child("InterFire-owned nftables controls are not available yet."),
         Section::Profiling => profiling_body(content.profiling, muted),
-        Section::Settings => settings_body(content.socket, content.tray_state, muted, cx),
+        Section::Settings => settings_body(
+            content.socket,
+            content.tray_state,
+            content.chrome_pref,
+            content.chrome_mode,
+            muted,
+            cx,
+        ),
     }
 }
 
-fn settings_body(socket: &str, tray_state: TrayState, muted: Hsla, cx: &Context<App>) -> Div {
+fn settings_body(
+    socket: &str,
+    tray_state: TrayState,
+    chrome_pref: ChromePreference,
+    chrome_mode: ChromeMode,
+    muted: Hsla,
+    cx: &Context<App>,
+) -> Div {
     div()
         .v_flex()
         .gap_3()
@@ -690,15 +727,58 @@ fn settings_body(socket: &str, tray_state: TrayState, muted: Hsla, cx: &Context<
         )
         .child(settings_row("Socket", socket, muted, cx))
         .child(settings_row("Tray", tray_state.label(), muted, cx))
-        .child(settings_row(
-            "Theme",
-            "phoenix dark (orange / black / white)",
-            muted,
-            cx,
-        ))
+        .child(
+            div()
+                .v_flex()
+                .gap_2()
+                .px_3()
+                .py_2()
+                .rounded_md()
+                .border_1()
+                .border_color(cx.theme().border)
+                .bg(cx.theme().popover)
+                .child(div().text_sm().font_semibold().child("Theme"))
+                .child(div().text_xs().text_color(muted).child(format!(
+                    "Appearance: {} (phoenix orange brand)",
+                    chrome_mode.label()
+                )))
+                .child(theme_switcher(chrome_pref, cx)),
+        )
         .child(div().text_color(muted).text_xs().child(
             "Diagnostics and reconnect live on Status. Packaging lands with the install slice.",
         ))
+}
+
+fn theme_switcher(selected: ChromePreference, cx: &Context<App>) -> impl IntoElement {
+    let mut row = div().id("theme-switcher").flex().gap_2();
+    for preference in ChromePreference::ALL {
+        let is_selected = preference == selected;
+        let label = preference.label();
+        row = row.child(
+            div()
+                .id(ElementId::Name(format!("theme-{label}").into()))
+                .px_3()
+                .py_1()
+                .rounded_md()
+                .border_1()
+                .cursor_pointer()
+                .when(is_selected, |this| {
+                    this.bg(cx.theme().accent)
+                        .text_color(cx.theme().accent_foreground)
+                        .border_color(cx.theme().accent)
+                        .font_semibold()
+                })
+                .when(!is_selected, |this| {
+                    this.border_color(cx.theme().border)
+                        .hover(|style| style.bg(cx.theme().accent.opacity(0.15)))
+                })
+                .on_click(cx.listener(move |app, _, window, cx| {
+                    app.set_chrome_preference(preference, window, cx);
+                }))
+                .child(label),
+        );
+    }
+    row
 }
 
 fn settings_row(label: &str, value: &str, muted: Hsla, cx: &Context<App>) -> Div {
@@ -711,7 +791,7 @@ fn settings_row(label: &str, value: &str, muted: Hsla, cx: &Context<App>) -> Div
         .rounded_md()
         .border_1()
         .border_color(cx.theme().border)
-        .bg(theme::hex(theme::ELEVATED))
+        .bg(cx.theme().popover)
         .child(div().text_sm().font_semibold().child(label.to_owned()))
         .child(div().text_sm().text_color(muted).child(value.to_owned()))
 }
@@ -766,7 +846,13 @@ fn format_mib(kib: u64) -> String {
     format!("{} MiB ({} KiB)", kib / 1024, kib)
 }
 
-fn status_body(socket: &str, tray_state: TrayState, link: &DaemonLink, muted: Hsla) -> Div {
+fn status_body(
+    socket: &str,
+    tray_state: TrayState,
+    link: &DaemonLink,
+    muted: Hsla,
+    cx: &Context<App>,
+) -> Div {
     let body = div()
         .v_flex()
         .gap_3()
@@ -784,8 +870,8 @@ fn status_body(socket: &str, tray_state: TrayState, link: &DaemonLink, muted: Hs
                 .px_3()
                 .py_2()
                 .rounded_md()
-                .bg(theme::hex(theme::DANGER_STRONG).opacity(0.18))
-                .text_color(theme::hex(theme::DANGER))
+                .bg(cx.theme().danger.opacity(0.18))
+                .text_color(cx.theme().danger)
                 .child(format!("last error: {reason}")),
         ),
         DaemonLink::Up {

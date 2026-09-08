@@ -8,7 +8,6 @@ use gpui_kit::*;
 
 use crate::alert::{AlertScope, AlertVerdict, ConnectionAlert};
 use crate::app::App;
-use crate::theme;
 
 pub fn alert_overlay(alert: &ConnectionAlert, cx: &Context<App>) -> impl IntoElement {
     let muted = cx.theme().muted_foreground;
@@ -32,7 +31,7 @@ pub fn alert_overlay(alert: &ConnectionAlert, cx: &Context<App>) -> impl IntoEle
                 .rounded_xl()
                 .border_1()
                 .border_color(cx.theme().accent.opacity(0.55))
-                .bg(theme::hex(theme::ELEVATED))
+                .bg(cx.theme().popover)
                 .shadow_lg()
                 .v_flex()
                 .gap_3()
@@ -90,7 +89,7 @@ pub fn alert_overlay(alert: &ConnectionAlert, cx: &Context<App>) -> impl IntoEle
                             .rounded_md()
                             .border_1()
                             .border_color(cx.theme().border)
-                            .bg(theme::hex(theme::SURFACE))
+                            .bg(cx.theme().group_box)
                             .text_color(muted)
                             .child(format!("prompt id: {}", prompt.id))
                             .child(format!("protocol: {}", prompt.protocol))

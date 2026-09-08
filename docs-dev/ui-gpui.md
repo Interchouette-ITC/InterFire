@@ -10,26 +10,30 @@ personal-firewall tray/alert path. Same Unix IPC as `interfirectl` /
 
 ## Theme (phoenix chrome)
 
-InterFire overrides the kit dark theme after `gpui_kit::init` via
-`ui/src/theme.rs` (`apply_phoenix_theme`). Brand PNGs live under
-[`docs/brand/`](../docs/brand/) and are embedded from `ui/src/brand.rs`.
+InterFire overrides the kit theme after `gpui_kit::init` via `ui/src/theme.rs`
+(`apply_phoenix_theme`). Settings exposes a **Theme** switcher: System | Light |
+Dark. Brand PNGs live under [`docs/brand/`](../docs/brand/) and are embedded
+from `ui/src/brand.rs` (light nav uses the light app icon variant).
 
-| Role | Hex | Use |
-| --- | --- | --- |
-| Canvas | `#0E1114` | Window / sidebar background |
-| Surface | `#161B20` | Content panel |
-| Elevated | `#1E252C` | Overlays, Settings rows |
-| Border | `#2C3540` | Separators |
-| Text | `#E8EDF2` | Primary labels |
-| Muted | `#8B97A5` | Secondary labels |
-| Accent | `#F84800` / `#F03105` | Selected nav, Allow, primary CTA |
-| Brand deep | `#D00000` | Active / pressed brand |
-| Danger | `#EF5350` / `#DC3545` | Deny |
-| Ok / Warn | `#3DDC97` / `#F5A623` | Tray chips |
+Shared brand accents stay the same in both modes (`#F84800` / `#F03105`).
+
+| Role | Dark | Light | Use |
+| --- | --- | --- | --- |
+| Canvas | `#0E1114` | `#F5F6F8` | Window / sidebar |
+| Surface | `#161B20` | `#FFFFFF` | Content panel |
+| Elevated | `#1E252C` | `#ECEFF3` | Overlays, Settings rows |
+| Border | `#2C3540` | `#D0D7DE` | Separators |
+| Text | `#E8EDF2` | `#1F2328` | Primary labels |
+| Muted | `#8B97A5` | `#656D76` | Secondary labels |
+| Accent | `#F84800` / `#F03105` | same | Selected nav, Allow, CTA |
+| Brand deep | `#D00000` | same | Active / pressed |
+| Danger | `#EF5350` / `#DC3545` | same | Deny |
+| Ok / Warn | `#3DDC97` / `#F5A623` | same | Tray chips |
 
 Orange is brand identity. Do not fall back to stock kit blue for selected
 chrome. Tray icons use brand pixmaps (not stock `dialog-*` names). The TUI
-reuses the same role colors in `crates/interfire-tui/src/palette.rs`.
+reuses the same roles in `crates/interfire-tui/src/palette.rs` (`--theme=light`
+or `--theme=dark`, default dark).
 
 ## Layout wireframe
 

@@ -10,7 +10,6 @@ use interfire_proto::RuleRow;
 
 use crate::app::{AddRuleFormState, App};
 use crate::rules::RuleVerdict;
-use crate::theme;
 
 pub fn rules_body(
     rules: &[RuleRow],
@@ -84,7 +83,7 @@ pub fn add_rule_overlay(form: &AddRuleFormState, cx: &Context<App>) -> impl Into
                 .rounded_xl()
                 .border_1()
                 .border_color(cx.theme().border)
-                .bg(theme::hex(theme::ELEVATED))
+                .bg(cx.theme().popover)
                 .shadow_lg()
                 .v_flex()
                 .gap_3()
@@ -178,7 +177,7 @@ fn rule_detail(rule: &RuleRow, muted: Hsla, cx: &Context<App>) -> Div {
         .rounded_md()
         .border_1()
         .border_color(cx.theme().border)
-        .bg(theme::hex(theme::CANVAS))
+        .bg(cx.theme().background)
         .child(div().font_semibold().child("Selected"))
         .child(div().text_color(muted).child(format!("id: {}", rule.id)))
         .child(
