@@ -17,6 +17,7 @@ personal-firewall tray/alert path. Same Unix IPC as `interfirectl` /
 | Rules* |  (Rules: dense table + detail/actions)   |
 | Log    |                                          |
 | Network|                                          |
+| Profil.|  (daemon + UI RSS/CPU)                   |
 | Settings|                                         |
 +--------+------------------------------------------+
 | section | daemon | Ready|Loading|Saving            |

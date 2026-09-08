@@ -84,13 +84,15 @@ Applications
 Rules          ← primary surface
 Log
 Network
+Profiling
 Settings
 ```
 
 Rules is the authoritative editable policy view (dense sortable table).
 Applications lists observed identities and their effective rule (thin OK at
 first). Log is a capped audit stream. Network only shows InterFire-owned
-nftables state. Settings exposes daemon health, socket path, retention, and
+nftables state. Profiling shows live daemon and `interfire-ui` RSS/CPU
+(`/proc` + status IPC). Settings exposes daemon health, socket path, retention, and
 diagnostics. Desktop prompts are alert-first; the TUI retains a Prompts tab.
 
 ### Bounded rendering
@@ -105,8 +107,10 @@ diagnostics. Desktop prompts are alert-first; the TUI retains a Prompts tab.
 Release profile, sampled with `make memcheck-ui` (DISPLAY or `xvfb-run`,
 software GL). GPUI + wgpu baseline on Linux is about **190 MiB** idle; the
 original sketch ceilings (80 / 120 / 150 MiB) are retired. That floor is the
-desktop toolkit, not `interfired` (daemon idle stays under 40 MiB). Optional
-allocation report: `make profile-ui` ([hotpath-rs](https://hotpath.rs/)).
+desktop toolkit, not `interfired` (daemon idle stays under 40 MiB). The desktop
+**Profiling** section shows live daemon + UI RSS/CPU. Full benchmark notes and
+optional `make profile-ui` ([hotpath-rs](https://hotpath.rs/)):
+[`../docs-dev/ui-gpui.md`](../docs-dev/ui-gpui.md).
 
 | Client | Idle | Under prompt load |
 | --- | --- | --- |
