@@ -20,6 +20,7 @@ mod tray;
 mod tray_host;
 
 use std::env;
+use std::time::Duration;
 
 use gpui_kit::component::*;
 use gpui_kit::*;
@@ -28,7 +29,15 @@ use interfire_proto::DEFAULT_SOCKET_PATH;
 use crate::app::App;
 use crate::rss_probe::RssProbeMode;
 
+#[global_allocator]
+static ALLOC: hotpath::CountingAllocator = hotpath::CountingAllocator::new();
+
 fn main() {
+    // When built with `--features hotpath` (and optionally `hotpath-alloc`), print a
+    // report after `HOTPATH_SHUTDOWN_MS` (default off; `make profile-ui` sets 8s).
+    hotpath::HotpathGuardBuilder::new(concat!(module_path!(), "::main"))
+        .build_with_shutdown(Duration::from_millis(profile_shutdown_ms()));
+
     let (socket, probe) = parse_args(env::args().skip(1));
 
     gpui_kit::application().run(move |cx| {
@@ -58,6 +67,13 @@ fn main() {
         })
         .detach();
     });
+}
+
+fn profile_shutdown_ms() -> u64 {
+    env::var("HOTPATH_SHUTDOWN_MS")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(0)
 }
 
 fn parse_args(args: impl IntoIterator<Item = String>) -> (String, Option<RssProbeMode>) {

@@ -68,6 +68,7 @@ pub struct App {
 
 impl App {
     #[must_use]
+    #[hotpath::measure]
     pub fn new(socket: String) -> Self {
         let link = DaemonLink::Down {
             reason: "connecting".into(),
@@ -94,6 +95,7 @@ impl App {
     }
 
     /// Stage synthetic load for `make memcheck-ui` (`--rss-probe=…`).
+    #[hotpath::measure]
     pub fn apply_rss_probe(&mut self, mode: RssProbeMode) {
         self.rss_probe = Some(mode);
         match mode {

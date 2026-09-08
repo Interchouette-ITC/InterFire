@@ -39,6 +39,7 @@ pub struct PromptLoadFixture {
 
 /// Build a full pending-prompt queue plus a capped audit buffer.
 #[must_use]
+#[hotpath::measure]
 pub fn prompt_load_fixture() -> PromptLoadFixture {
     let prompts: Vec<PromptRow> = (1..=MAX_PENDING_PROMPTS as u64)
         .map(|id| PromptRow {

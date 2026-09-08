@@ -32,6 +32,7 @@ make ui             # build interfire-ui (needs GPUI system libs; see ui-gpui.md
 make ui-test        # test interfire-ui (same system libs)
 make memcheck       # idle interfired VmRSS vs < 40 MiB (non-root)
 make memcheck-ui    # release UI RSS gates (needs DISPLAY or xvfb-run)
+make profile-ui     # optional hotpath-alloc report for interfire-ui
 make integration    # root netns allow/deny (not in make ci)
 ```
 

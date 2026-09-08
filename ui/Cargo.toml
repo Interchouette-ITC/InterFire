@@ -10,8 +10,14 @@ description = "InterFire GPUI desktop client (tray and rules-first main window)"
 name = "interfire-ui"
 path = "src/main.rs"
 
+[features]
+# Optional [hotpath-rs](https://hotpath.rs/) profiling. Default builds stay cold.
+hotpath = ["hotpath/hotpath"]
+hotpath-alloc = ["hotpath/hotpath-alloc"]
+
 [dependencies]
 gpui-kit = { workspace = true }
+hotpath = { workspace = true }
 interfire-proto = { path = "../crates/interfire-proto" }
 
 [target.'cfg(target_os = "linux")'.dependencies]

@@ -46,9 +46,11 @@ subscriber id. Run with the Linux UI packages above.
 | --- | --- | --- |
 | `gpui-kit` | **0.6.0** (crates.io) | One dependency wrapping GPUI + components + shell |
 | Transitive | `gpui-pre` 0.3.x, `gpui-component` 0.6.x | Pulled by `gpui-kit` |
+| `hotpath` | **0.25.x** (crates.io) | Optional profiler; see [Memory and profiling](#memory-and-profiling) |
 
-Pinned 2026-09-07. Rebuild with `make ui`. Prefer `gpui-ce` only if Linux tray
-work is blocked by upstream gaps.
+Pinned 2026-09-07 (`gpui-kit`). `hotpath` added 2026-09-08 for RSS investigation.
+Rebuild with `make ui`. Prefer `gpui-ce` only if Linux tray work is blocked by
+upstream gaps.
 
 ### Linux system packages
 
@@ -71,14 +73,41 @@ Use `make ui-test` (and CI) when the packages are present.
 - Tree: [`ui/`](../ui/) (workspace member)
 - Install targets for the future `.deb`: Debian (stable) GNOME and Pop!_OS (not packaged yet)
 
-## RSS budgets
+## Memory and profiling
 
-Release gate: `make memcheck-ui` (builds release `interfired` + `interfire-ui`,
-starts a temp daemon, launches the UI with `--rss-probe=idle` then
-`--rss-probe=prompt-load`, samples `/proc/…/VmRSS`).
+### Why ~190 MiB idle is expected (GPUI floor)
 
-Needs `DISPLAY` or `xvfb-run`. Defaults force software GL
-(`LIBGL_ALWAYS_SOFTWARE=1`, `WGPU_BACKEND=gl`).
+`make memcheck-ui` samples `/proc/<pid>/VmRSS` on a **release** `interfire-ui`
+with software GL defaults (`LIBGL_ALWAYS_SOFTWARE=1`, `WGPU_BACKEND=gl`).
+
+| Process | Typical idle VmRSS | Gate | Notes |
+| --- | --- | --- | --- |
+| `interfired` | ~6–7 MiB | < 40 MiB (`make memcheck`) | Enforcement path; this is the firewall budget that matters |
+| `interfire-ui` | **~190 MiB** | < 220 MiB idle / < 260 MiB prompt-load | GPUI + wgpu + fonts/atlas; framework floor before InterFire tables grow |
+| Combined daemon + idle UI | ~200 MiB | < 260 MiB | Dominated by the UI process |
+
+Recorded context (2026-09): release GPUI + wgpu on Linux idles around **190 MiB**
+even with empty Rules / no big audit buffer. That is **not** InterFire policy
+state and **not** the daemon. Do not market the desktop client as a tiny
+process. Original sketch ceilings (80 / 120 / 150 MiB for UI / combined) were
+retired after measurement; gates were raised to measured ceilings with headroom,
+not lowered by pretending the floor is smaller.
+
+Order-of-magnitude context (not InterFire-measured): a minimal **Electron** app
+often idles in the **~150–300 MiB** band (main + renderer + GPU processes). Real
+Electron products are often higher. GPUI here sits in the **Electron-low / mid**
+band, not in a GTK/Qt tray-applet band (~10–50 MiB). Cutting under ~80 MiB idle
+for a full GPUI main window is unlikely without a different UI strategy
+(tray-only, thinner toolkit, or deferred window).
+
+### Release gates (`make memcheck-ui`)
+
+```bash
+make memcheck-ui
+```
+
+Needs `DISPLAY` or `xvfb-run`. Prompt-load stages 100 pending prompts, an alert,
+and a full 2,000-row audit buffer inside the UI process.
 
 | Condition | Budget | Env override |
 | --- | --- | --- |
@@ -86,13 +115,61 @@ Needs `DISPLAY` or `xvfb-run`. Defaults force software GL
 | Prompt-load UI | < 260 MiB | `INTERFIRE_UI_PROMPT_BUDGET_KIB` (default 266240) |
 | Combined daemon + idle UI | < 260 MiB | `INTERFIRE_UI_COMBINED_BUDGET_KIB` (default 266240) |
 
-Prompt-load stages 100 pending prompts, an alert, and a full 2,000-row audit
-buffer inside the UI process. Fail the release if any sample exceeds budget.
+Settle time: `INTERFIRE_UI_MEMCHECK_SETTLE_SECS` (default 4). Fail the release if
+any sample exceeds budget. **Do not raise these ceilings further** to greenwash.
 
-Settle time: `INTERFIRE_UI_MEMCHECK_SETTLE_SECS` (default 4).
+Product contract summary: [`../docs/ux-interfire.md`](../docs/ux-interfire.md).
+
+### hotpath-rs (optional allocation profiling)
+
+Upstream: [hotpath.rs](https://hotpath.rs/), blog notes at
+[hotpath.rs/blog](https://hotpath.rs/blog/). Crate `hotpath` **0.25.x** (MIT).
+
+Wired only on `interfire-ui`. Default `make ui` / packaging builds stay cold:
+macros and `CountingAllocator` are pass-through unless features are enabled.
+
+| Cargo feature | Effect |
+| --- | --- |
+| `hotpath` | Enable timing / instrumentation (`hotpath/hotpath`) |
+| `hotpath-alloc` | Track allocations via `hotpath::CountingAllocator` (`hotpath/hotpath-alloc`) |
+
+```bash
+make profile-ui
+# equivalent:
+cargo build -p interfire-daemon --release
+cargo build -p interfire-ui --release --features hotpath,hotpath-alloc
+bash scripts/profile-ui.sh
+```
+
+`scripts/profile-ui.sh`:
+
+1. Starts a temp daemon (`--no-ebpf --no-nfqueue`).
+2. Runs release `interfire-ui --rss-probe=idle` under DISPLAY or `xvfb-run`.
+3. Sets `HOTPATH_SHUTDOWN_MS` (default **8000**) so
+   `HotpathGuardBuilder::build_with_shutdown` prints the report and exits.
+
+Instrumented InterFire paths (see `#[hotpath::measure]`):
+
+- `App::new`
+- `App::apply_rss_probe`
+- `prompt_load_fixture`
+- `poll_snapshot`
+
+How to read a report:
+
+1. If instrumented InterFire functions allocate little vs ~190 MiB VmRSS, the
+   floor is GPUI/wgpu (expected). Document and keep honest gates; do not claim
+   a low-RSS desktop shell.
+2. If InterFire paths dominate growth (prompt-load / log), cut those paths and
+   only then lower `INTERFIRE_UI_*_BUDGET_KIB` defaults.
+3. Never enable `hotpath` / `hotpath-alloc` in default release or `.deb` builds.
+
+Env knobs: `HOTPATH_SHUTDOWN_MS`, `HOTPATH_ALLOC_METRIC=count` (upstream), plus
+the memcheck overrides above.
 
 ## Related docs
 
 - Product contract: [`../docs/ux-interfire.md`](../docs/ux-interfire.md)
 - Kerio structure study: [`../docs/ux-kerio.md`](../docs/ux-kerio.md)
+- Make index: [`DEVELOPMENT.md`](DEVELOPMENT.md)
 - Private manuals/screenshots: `.cursor/refs/kerio/` (not in application git)
