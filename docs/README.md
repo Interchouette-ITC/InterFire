@@ -43,9 +43,8 @@ Pop!_OS. Production latency/coexistence measurements remain open.
 | `interfire-ui` | GPUI desktop shell: tray, alert, Rules, Applications, Log, Profiling |
 | Docs | Architecture, threat model, UX contract and studies |
 
-Not present yet: install/upgrade/reboot/uninstall matrix notes on
-Debian GNOME and Pop!_OS. Build a local `.deb` with `make deb`
-(see [`packaging.md`](packaging.md)).
+Packaging: `make deb` and [`packaging.md`](packaging.md). Verify install gates
+on Debian GNOME and Pop!_OS with [`install-matrix.md`](install-matrix.md).
 
 ## Quick start
 
@@ -96,6 +95,7 @@ isolated NFQUEUE test is scoped.
 | --- | --- |
 | [`architecture.md`](architecture.md) | Event flow, NFQUEUE verdict path, baseline |
 | [`packaging.md`](packaging.md) | systemd units, paths, reboot recovery |
+| [`install-matrix.md`](install-matrix.md) | Install/upgrade/reboot/uninstall gates |
 | [`threat-model.md`](threat-model.md) | Assets, trust boundaries, controls |
 | [`ux-interfire.md`](ux-interfire.md) | Locked UI contract |
 | [`ux-kerio.md`](ux-kerio.md) | Kerio-era interaction study |
