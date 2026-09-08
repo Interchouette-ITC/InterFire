@@ -45,9 +45,9 @@ Pop!_OS. Production latency/coexistence measurements remain open.
 | `interfire-ui` | GPUI desktop shell: tray, alert, Rules, Applications, Network, Log, Profiling |
 | Docs | Architecture, threat model, UX contract and studies |
 
-Not present yet: Debian `.deb` build and the install/upgrade matrix on
-Debian GNOME and Pop!_OS. systemd units and reboot recovery notes live under
-`packaging/` and [`packaging.md`](packaging.md).
+Not present yet: install/upgrade/reboot/uninstall matrix notes on
+Debian GNOME and Pop!_OS. Build a local `.deb` with `make deb`
+(see [`packaging.md`](packaging.md)).
 
 ## Quick start
 
@@ -129,7 +129,7 @@ packaging/systemd/               interfired + interfire-nft units
 packaging/nft/                   owned inet interfire script
 packaging/tmpfiles.d/            run/state/config dirs
 packaging/defaults/              default rules.toml
-packaging/debian/                Debian package (not built yet)
+packaging/debian/                desktop entry + deb staging helpers
 ```
 
 ## Contributing

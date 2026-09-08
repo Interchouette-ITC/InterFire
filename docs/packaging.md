@@ -1,8 +1,8 @@
 # Packaging and reboot recovery
 
-InterFire ships systemd units and an owned nftables script under `packaging/`.
-Debian `.deb` assembly is a separate install slice; this document describes the
-unit layout and how protection returns after reboot.
+InterFire ships systemd units, an owned nftables script, and a Debian package
+builder under `packaging/` / `scripts/build-deb.sh`. This document describes
+install layout and how protection returns after reboot.
 
 ## Layout
 
@@ -13,8 +13,22 @@ unit layout and how protection returns after reboot.
 | `packaging/nft/interfire.nft` | Owned table script (queue **4242**) |
 | `packaging/tmpfiles.d/interfire.conf` | `/run`, `/var/lib`, `/etc` dirs |
 | `packaging/defaults/rules.toml` | Empty durable rules (`schema_version = 1`) |
+| `packaging/debian/interfire.desktop` | Desktop entry for `interfire-ui` |
+| `scripts/build-deb.sh` | Stage + `dpkg-deb` (`make deb`) |
 
-Installed locations (when packaged):
+## Debian package
+
+```bash
+make deb
+# → target/debian/interfire_0.1.0_amd64.deb
+sudo dpkg -i target/debian/interfire_0.1.0_amd64.deb
+```
+
+The package installs binaries (`interfired`, `interfirectl`, `interfire-tui`,
+`interfire-ui`), systemd units, the owned nft script, tmpfiles, and default
+rules. eBPF bytecode is embedded in `interfired` (no separate object file).
+`postinst` enables and starts `interfire-nft` + `interfired`. Primary verify
+images: Debian (stable) GNOME and Pop!\_OS, `x86_64`.
 
 | Host path | Content |
 | --- | --- |
