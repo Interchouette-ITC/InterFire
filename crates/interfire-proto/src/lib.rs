@@ -1014,5 +1014,314 @@ mod tests {
                 since: 3,
             })
         );
+        assert_eq!(
+            Request::parse("v1 audit-tail\n"),
+            Ok(Request::AuditTail {
+                limit: MAX_LOG_RECORDS_PER_SUBSCRIBER
+            })
+        );
+    }
+
+    #[test]
+    fn parses_rule_add_and_delete_requests() {
+        assert_eq!(
+            Request::parse("v1 rule-add 1 /bin/curl allow 443\n"),
+            Ok(Request::RuleAdd {
+                id: 1,
+                executable: "/bin/curl".into(),
+                verdict: "allow".into(),
+                port: 443,
+            })
+        );
+        assert_eq!(
+            Request::parse("v1 rule-delete 9\n"),
+            Ok(Request::RuleDelete { id: 9 })
+        );
+        assert_eq!(
+            Request::parse("v1 rule-add bad\n"),
+            Err(ProtocolError::Malformed)
+        );
+        assert_eq!(
+            Request::parse("v1 rule-delete not-a-number\n"),
+            Err(ProtocolError::Malformed)
+        );
+    }
+
+    #[test]
+    fn encodes_additional_response_variants() {
+        assert_eq!(Response::Pong.encode(), "v1 pong\n");
+        assert_eq!(Response::Error("bad").encode(), "v1 error bad\n");
+        assert_eq!(Response::Dns("rows".into()).encode(), "v1 dns rows\n");
+        assert_eq!(
+            Response::Audit("tail".into()).encode(),
+            "v1 audit-tail tail\n"
+        );
+        assert_eq!(
+            Response::Subscribed("ui".into()).encode(),
+            "v1 subscribed ui\n"
+        );
+    }
+
+    #[test]
+    fn network_table_state_and_rule_token() {
+        assert_eq!(NetworkTableState::Missing.as_str(), "missing");
+        assert_eq!(
+            NetworkTableState::parse("installed").unwrap(),
+            NetworkTableState::Installed
+        );
+        assert_eq!(
+            NetworkTableState::parse("broken"),
+            Err(ProtocolError::Malformed)
+        );
+        assert_eq!(network_rule_token(4242), "tcp_new_queue_4242");
+        assert_eq!(network_rule_token(99), "tcp_new_queue");
+    }
+
+    #[test]
+    fn network_status_parse_errors_and_summary() {
+        assert_eq!(
+            NetworkStatus::parse("v1 network table=interfire queue=4242 state=installed rule=x\n"),
+            Ok(NetworkStatus {
+                table: "interfire".into(),
+                queue: 4242,
+                state: NetworkTableState::Installed,
+                rule: "x".into(),
+            })
+        );
+        assert_eq!(
+            NetworkStatus::parse("v2 network table=x queue=1 state=missing rule=none\n"),
+            Err(ProtocolError::UnsupportedVersion)
+        );
+        assert_eq!(
+            NetworkStatus::parse("v1 network table=x\n"),
+            Err(ProtocolError::Malformed)
+        );
+        let status = NetworkStatus {
+            table: "interfire".into(),
+            queue: 4242,
+            state: NetworkTableState::Incomplete,
+            rule: "none".into(),
+        };
+        assert!(status.summary().contains("incomplete"));
+    }
+
+    #[test]
+    fn audit_stream_record_rejects_malformed_frames() {
+        assert_eq!(
+            AuditStreamRecord::parse("v1 audit 9|allow curl\n"),
+            Ok(AuditStreamRecord {
+                sequence: 9,
+                message: "allow curl".into(),
+            })
+        );
+        assert_eq!(
+            AuditStreamRecord::parse("v1 audit missing-pipe\n"),
+            Err(ProtocolError::Malformed)
+        );
+        assert_eq!(
+            AuditStreamRecord::parse("v2 audit 1|x\n"),
+            Err(ProtocolError::UnsupportedVersion)
+        );
+    }
+
+    #[test]
+    fn rule_and_prompt_row_labels_and_malformed_rows() {
+        let rule = RuleRow {
+            id: 1,
+            executable: "/bin/curl".into(),
+            verdict: "Allow".into(),
+            port: 443,
+        };
+        assert!(rule.list_label().contains("/bin/curl"));
+        assert_eq!(
+            RuleRow::parse_frame("v1 rules 1|/bin/curl|Allow\n"),
+            Err(ProtocolError::Malformed)
+        );
+
+        let prompt = PromptRow {
+            id: 1,
+            executable: "/bin/curl".into(),
+            destination: "127.0.0.1".into(),
+            port: 443,
+            protocol: "tcp".into(),
+            remaining_secs: 5,
+        };
+        assert!(prompt.list_label().contains("127.0.0.1"));
+        assert_eq!(
+            PromptRow::parse_frame("v1 prompts 1|/bin/curl|127.0.0.1|443\n"),
+            Ok(vec![PromptRow {
+                id: 1,
+                executable: "/bin/curl".into(),
+                destination: "127.0.0.1".into(),
+                port: 443,
+                protocol: "tcp".into(),
+                remaining_secs: 0,
+            }])
+        );
+    }
+
+    #[test]
+    fn process_row_escape_round_trip_and_labels() {
+        let row = ProcessRow {
+            pid: 1,
+            start_ticks: 2,
+            uid: 1000,
+            executable: "/usr/bin/a|b".into(),
+            cmdline: "a;b".into(),
+            verdict: "allow".into(),
+            ports: "1.2.3.4:443/allow".into(),
+        };
+        let encoded = row.encode_row();
+        assert!(encoded.contains("%7C"));
+        let frame = Response::Processes(encoded).encode();
+        let parsed = ProcessRow::parse_frame(&frame).unwrap();
+        assert_eq!(parsed, vec![row.clone()]);
+        assert!(row.list_label().contains("allow"));
+        assert_eq!(
+            ProcessRow::parse_frame("v1 processes 1|2\n"),
+            Err(ProtocolError::Malformed)
+        );
+    }
+
+    #[test]
+    fn dns_note_without_ttl_and_malformed_prompt_answer() {
+        assert_eq!(
+            Request::parse("v1 dns-note example.test 203.0.113.1\n"),
+            Ok(Request::DnsNote {
+                hostname: "example.test".into(),
+                ipv4: "203.0.113.1".into(),
+                ttl_secs: None,
+            })
+        );
+        assert_eq!(
+            Request::parse("v1 dns-note bad 1.2.3.4 not-a-ttl\n"),
+            Err(ProtocolError::Malformed)
+        );
+        assert_eq!(
+            Request::parse("v1 prompt-answer 1 allow\n"),
+            Err(ProtocolError::Malformed)
+        );
+    }
+
+    #[test]
+    fn daemon_status_rejects_malformed_frames() {
+        assert_eq!(
+            DaemonStatus::parse("v1 status enforcement=none\n"),
+            Err(ProtocolError::Malformed)
+        );
+        assert_eq!(
+            DaemonStatus::parse("v2 status enforcement=none observation=attached ipc_version=1\n"),
+            Err(ProtocolError::UnsupportedVersion)
+        );
+    }
+
+    #[test]
+    fn request_parse_rejects_malformed_commands() {
+        assert_eq!(Request::parse("v1\n"), Err(ProtocolError::Malformed));
+        assert_eq!(
+            Request::parse("v1 unknown\n"),
+            Err(ProtocolError::Malformed)
+        );
+        assert_eq!(
+            Request::parse("v1 rule-delete 1 extra\n"),
+            Err(ProtocolError::Malformed)
+        );
+        assert_eq!(
+            Request::parse("v1 rule-add 1 /bin/curl allow 443 extra\n"),
+            Err(ProtocolError::Malformed)
+        );
+        assert_eq!(
+            Request::parse("v1 prompt-answer 1 allow once extra\n"),
+            Err(ProtocolError::Malformed)
+        );
+        assert_eq!(
+            Request::parse("v1 dns-note host 1.2.3.4 30 extra\n"),
+            Err(ProtocolError::Malformed)
+        );
+        assert_eq!(
+            Request::parse("v1 audit-tail 10 extra\n"),
+            Err(ProtocolError::Malformed)
+        );
+        assert_eq!(
+            Request::parse("v1 audit-subscribe ui since=bad\n"),
+            Err(ProtocolError::Malformed)
+        );
+    }
+
+    #[test]
+    fn network_status_rejects_bad_tokens() {
+        assert_eq!(
+            NetworkStatus::parse("v1 network table=x queue=bad state=missing rule=none\n"),
+            Err(ProtocolError::Malformed)
+        );
+        assert_eq!(
+            NetworkStatus::parse("v1 network table=x queue=1 state=broken rule=none\n"),
+            Err(ProtocolError::Malformed)
+        );
+        assert_eq!(
+            NetworkStatus::parse("v1 network table=x queue=1 state=missing bad\n"),
+            Err(ProtocolError::Malformed)
+        );
+        assert_eq!(
+            NetworkStatus::parse("v1 not-network table=x queue=1 state=missing rule=none\n"),
+            Err(ProtocolError::Malformed)
+        );
+    }
+
+    #[test]
+    fn frame_parsers_reject_bad_versions_and_payloads() {
+        assert_eq!(
+            RuleRow::parse_frame("v2 rules 1|/bin/curl|Allow|443\n"),
+            Err(ProtocolError::UnsupportedVersion)
+        );
+        assert_eq!(
+            RuleRow::parse_frame("v1 not-rules\n"),
+            Err(ProtocolError::Malformed)
+        );
+        assert_eq!(
+            PromptRow::parse_frame("v2 prompts 1|/bin/c|127.0.0.1|443|tcp|1\n"),
+            Err(ProtocolError::UnsupportedVersion)
+        );
+        assert_eq!(
+            PromptRow::parse_frame("v1 not-prompts\n"),
+            Err(ProtocolError::Malformed)
+        );
+        assert_eq!(
+            PromptRow::parse_frame("v1 prompts 1|/bin/c|127.0.0.1|bad|tcp|1\n"),
+            Err(ProtocolError::Malformed)
+        );
+        assert_eq!(
+            ProcessRow::parse_frame("v2 processes 1|2|3|allow||/bin/c|cmd\n"),
+            Err(ProtocolError::UnsupportedVersion)
+        );
+        assert_eq!(
+            ProcessRow::parse_frame("v1 not-processes\n"),
+            Err(ProtocolError::Malformed)
+        );
+        assert_eq!(
+            AuditStreamRecord::parse("v1 not-audit 1|x\n"),
+            Err(ProtocolError::Malformed)
+        );
+        assert_eq!(
+            DaemonStatus::parse(
+                "v1 not-status enforcement=none observation=attached ipc_version=1\n"
+            ),
+            Err(ProtocolError::Malformed)
+        );
+        assert_eq!(
+            DaemonStatus::parse(
+                "v1 status enforcement=none observation=attached ipc_version=bad\n"
+            ),
+            Err(ProtocolError::Malformed)
+        );
+    }
+
+    #[test]
+    fn network_status_ignores_unknown_keys() {
+        let status = NetworkStatus::parse(
+            "v1 network table=interfire queue=4242 state=installed rule=x future=1\n",
+        )
+        .expect("network");
+        assert_eq!(status.table, "interfire");
     }
 }

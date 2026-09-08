@@ -58,6 +58,7 @@ impl PendingTable {
             if let Some(oldest) = self.order.pop_front() {
                 self.entries.remove(&oldest);
             } else {
+                self.entries.clear();
                 break;
             }
         }
@@ -84,6 +85,19 @@ impl PendingTable {
                 true
             }
         });
+    }
+}
+
+#[cfg(test)]
+impl PendingTable {
+    fn insert_orphan_for_test(&mut self, key: DestKey, verdict: Verdict) {
+        self.entries.insert(
+            key,
+            PendingEntry {
+                verdict,
+                inserted_at: Instant::now(),
+            },
+        );
     }
 }
 
@@ -115,6 +129,41 @@ mod tests {
         table.insert(DestKey { ipv4: 1, port: 1 }, Verdict::Accept);
         table.insert(DestKey { ipv4: 2, port: 2 }, Verdict::Drop);
         assert!(table.take(DestKey { ipv4: 1, port: 1 }).is_none());
+        assert_eq!(
+            table.take(DestKey { ipv4: 2, port: 2 }),
+            Some(Verdict::Drop)
+        );
+    }
+
+    #[test]
+    fn insert_updates_existing_key() {
+        let mut table = PendingTable::new(4, Duration::from_secs(5));
+        let key = DestKey {
+            ipv4: 0x7f00_0001,
+            port: 80,
+        };
+        table.insert(key, Verdict::Accept);
+        table.insert(key, Verdict::Drop);
+        assert_eq!(table.take(key), Some(Verdict::Drop));
+    }
+
+    #[test]
+    fn ttl_expires_stale_entries() {
+        let mut table = PendingTable::new(4, Duration::from_millis(1));
+        let key = DestKey {
+            ipv4: 0x7f00_0001,
+            port: 443,
+        };
+        table.insert(key, Verdict::Accept);
+        std::thread::sleep(Duration::from_millis(5));
+        assert!(table.take(key).is_none());
+    }
+
+    #[test]
+    fn insert_breaks_when_order_empty_but_entries_full() {
+        let mut table = PendingTable::new(1, Duration::from_secs(5));
+        table.insert_orphan_for_test(DestKey { ipv4: 1, port: 1 }, Verdict::Accept);
+        table.insert(DestKey { ipv4: 2, port: 2 }, Verdict::Drop);
         assert_eq!(
             table.take(DestKey { ipv4: 2, port: 2 }),
             Some(Verdict::Drop)

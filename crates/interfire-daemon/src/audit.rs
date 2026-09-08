@@ -354,10 +354,182 @@ mod tests {
             Ok(Fanout::Replaced)
         ));
         log.append("hello");
-        match second.recv_timeout(Duration::from_millis(50)) {
-            Ok(Fanout::Record(record)) => assert_eq!(record.message, "hello"),
-            other => panic!("expected record, got {other:?}"),
-        }
+        let Ok(Fanout::Record(record)) = second.recv_timeout(Duration::from_millis(50)) else {
+            panic!("expected record");
+        };
+        assert_eq!(record.message, "hello");
         let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn since_returns_records_after_sequence() {
+        let path = temp_path("since.log");
+        let _ = fs::remove_file(&path);
+        let mut log = AuditLog::open(&path, 4_096, 100).unwrap();
+        log.append("one");
+        log.append("two");
+        let rows = log.since(1);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].message, "two");
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn tail_respects_limit_and_order() {
+        let path = temp_path("tail.log");
+        let _ = fs::remove_file(&path);
+        let mut log = AuditLog::open(&path, 4_096, 100).unwrap();
+        log.append("a");
+        log.append("b");
+        log.append("c");
+        let rows = log.tail(2);
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].message, "b");
+        assert_eq!(rows[1].message, "c");
+        assert!(log.tail(0).is_empty());
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn encode_audit_frame_and_parse_record() {
+        let record = BoundedLogRecord {
+            sequence: 3,
+            message: "line\nbreak".into(),
+        };
+        assert_eq!(encode_audit_frame(&record), "v1 audit 3|line\nbreak\n");
+        assert_eq!(
+            parse_record("3\tplain"),
+            Some(BoundedLogRecord {
+                sequence: 3,
+                message: "plain".into(),
+            })
+        );
+        assert!(parse_record("bad").is_none());
+        assert!(parse_record("x\t").is_none());
+    }
+
+    #[test]
+    fn load_from_disk_skips_malformed_lines() {
+        let path = temp_path("malformed.log");
+        let _ = fs::remove_file(&path);
+        fs::write(&path, "1\tgood\nbad-line\n2\talso-good\n").unwrap();
+        let log = AuditLog::open(&path, 4_096, 100).unwrap();
+        assert_eq!(log.tail(10).len(), 2);
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn remove_subscriber_clears_registry() {
+        let path = temp_path("remove.log");
+        let _ = fs::remove_file(&path);
+        let mut log = AuditLog::open(&path, 4_096, 100).unwrap();
+        let _receiver = log.subscribe("ui");
+        assert_eq!(log.subscriber_count(), 1);
+        log.remove_subscriber("ui");
+        assert_eq!(log.subscriber_count(), 0);
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn fanout_removes_full_subscriber_channel() {
+        let path = temp_path("full.log");
+        let _ = fs::remove_file(&path);
+        let mut log = AuditLog::open(&path, 4_096, 100).unwrap();
+        let _receiver = log.subscribe("blocked");
+        for index in 0..=SUBSCRIBER_CHANNEL_CAPACITY {
+            log.append(format!("fill-{index}"));
+        }
+        assert_eq!(log.subscriber_count(), 0);
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn fanout_drops_disconnected_subscribers() {
+        let path = temp_path("fanout.log");
+        let _ = fs::remove_file(&path);
+        let mut log = AuditLog::open(&path, 4_096, 100).unwrap();
+        let receiver = log.subscribe("gone");
+        drop(receiver);
+        log.append("after-drop");
+        assert_eq!(log.subscriber_count(), 0);
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn open_creates_parent_directories() {
+        let base = temp_path("nested");
+        let _ = fs::remove_dir_all(&base);
+        let path = base.join("nested/audit.log");
+        let mut log = AuditLog::open(&path, 4_096, 100).unwrap();
+        assert!(path.parent().unwrap().exists());
+        log.append("boot");
+        let _ = fs::remove_dir_all(base);
+    }
+
+    #[test]
+    fn append_survives_read_only_disk_target() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let path = temp_path("readonly.log");
+        let _ = fs::remove_file(&path);
+        let mut log = AuditLog::open(&path, 4_096, 100).unwrap();
+        log.append("seed");
+        let mut perms = fs::metadata(&path).unwrap().permissions();
+        perms.set_mode(0o444);
+        fs::set_permissions(&path, perms).unwrap();
+        log.append("should warn not panic");
+        let mut perms = fs::metadata(&path).unwrap().permissions();
+        perms.set_mode(0o644);
+        let _ = fs::set_permissions(&path, perms);
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn run_subscriber_returns_true_when_channel_closes() {
+        use std::os::unix::net::UnixStream;
+
+        let (_client, server) = UnixStream::pair().unwrap();
+        let (sender, receiver) = mpsc::sync_channel(4);
+        drop(sender);
+        assert!(run_subscriber(&receiver, server, vec![]));
+    }
+
+    #[test]
+    fn run_subscriber_returns_true_when_backlog_write_fails() {
+        struct FailingWrite;
+
+        impl std::io::Write for FailingWrite {
+            fn write(&mut self, _buf: &[u8]) -> std::io::Result<usize> {
+                Err(std::io::Error::other("write failed"))
+            }
+
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+
+        let (sender, receiver) = mpsc::sync_channel(4);
+        drop(sender);
+        let record = BoundedLogRecord {
+            sequence: 1,
+            message: "x".into(),
+        };
+        assert!(run_subscriber(&receiver, FailingWrite, vec![record],));
+    }
+
+    #[test]
+    fn run_subscriber_handles_replaced_event() {
+        use std::io::Read;
+        use std::os::unix::net::UnixStream;
+
+        let (client, server) = UnixStream::pair().unwrap();
+        let (sender, receiver) = mpsc::sync_channel(4);
+        sender.try_send(Fanout::Replaced).unwrap();
+        drop(sender);
+        assert!(!run_subscriber(&receiver, server, vec![]));
+        let mut client = client;
+        let mut buffer = [0_u8; 32];
+        let read = client.read(&mut buffer).unwrap();
+        assert_eq!(&buffer[..read], b"v1 audit-replaced\n");
     }
 }

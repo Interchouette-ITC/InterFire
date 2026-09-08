@@ -51,4 +51,16 @@ mod tests {
         packet[9] = 17;
         assert!(tcp_destination(&packet).is_none());
     }
+
+    #[test]
+    fn rejects_non_ipv4_and_invalid_ihl() {
+        let mut ipv6 = vec![0_u8; 40];
+        ipv6[0] = 0x60;
+        assert!(tcp_destination(&ipv6).is_none());
+
+        let mut short_ihl = vec![0_u8; 20];
+        short_ihl[0] = 0x40;
+        short_ihl[9] = IPPROTO_TCP;
+        assert!(tcp_destination(&short_ihl).is_none());
+    }
 }

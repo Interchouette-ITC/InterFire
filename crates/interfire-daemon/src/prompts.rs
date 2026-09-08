@@ -302,4 +302,48 @@ mod tests {
             Err(AnswerError::Expired)
         );
     }
+
+    #[test]
+    fn ipv4_display_formats_address() {
+        let prompt_key = PromptKey {
+            executable: "/usr/bin/curl".into(),
+            ipv4: u32::from_ne_bytes([127, 0, 0, 1]),
+            port: 443,
+        };
+        assert_eq!(prompt_key.ipv4_display(), "127.0.0.1");
+    }
+
+    #[test]
+    fn once_deny_token_is_single_use() {
+        let mut queue = PromptQueue::new(4, Duration::from_secs(60));
+        let EnqueueOutcome::Created(id) = queue.enqueue(key(8080)) else {
+            panic!("expected created");
+        };
+        queue.answer(id, Verdict::Deny, RuleScope::Once).unwrap();
+        assert!(queue.consume_once_deny(&key(8080)));
+        assert!(!queue.consume_once_deny(&key(8080)));
+    }
+
+    #[test]
+    fn expire_clears_once_denies_when_over_capacity() {
+        let mut queue = PromptQueue::new(1, Duration::from_secs(60));
+        let EnqueueOutcome::Created(id1) = queue.enqueue(key(1)) else {
+            panic!("expected created");
+        };
+        queue.answer(id1, Verdict::Deny, RuleScope::Once).unwrap();
+        let EnqueueOutcome::Created(id2) = queue.enqueue(key(2)) else {
+            panic!("expected created");
+        };
+        queue.answer(id2, Verdict::Deny, RuleScope::Once).unwrap();
+        let _ = queue.enqueue(key(3));
+    }
+
+    #[test]
+    fn answer_not_found_returns_error() {
+        let mut queue = PromptQueue::new(4, Duration::from_secs(60));
+        assert_eq!(
+            queue.answer(99, Verdict::Allow, RuleScope::Once),
+            Err(AnswerError::NotFound)
+        );
+    }
 }

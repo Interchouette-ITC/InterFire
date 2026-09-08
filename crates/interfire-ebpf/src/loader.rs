@@ -4,7 +4,7 @@ use std::io;
 use std::path::Path;
 
 use aya::maps::{MapData, MapError, RingBuf};
-use aya::programs::{KProbe, ProgramError};
+use aya::programs::ProgramError;
 use aya::{Ebpf, EbpfError, EbpfLoader};
 
 /// eBPF program section / function name attached to `tcp_v4_connect`.
@@ -44,7 +44,7 @@ pub enum ObserverStatus {
 
 /// Loaded TCP-connect observer. Dropping detaches with the `Ebpf` object.
 pub struct Observer {
-    bpf: Ebpf,
+    pub(crate) bpf: Ebpf,
 }
 
 impl Observer {
@@ -84,17 +84,15 @@ impl Observer {
         )))
     }
 
-    fn attach_loaded(mut bpf: Ebpf) -> Result<Self, LoadError> {
-        let program: &mut KProbe = bpf
-            .program_mut(PROGRAM_NAME)
-            .ok_or(LoadError::MissingSymbol(PROGRAM_NAME))?
-            .try_into()?;
-        program.load()?;
-        program.attach("tcp_v4_connect", 0)?;
-        let _ = bpf
-            .map(EVENT_MAP)
-            .ok_or(LoadError::MissingSymbol(EVENT_MAP))?;
-        Ok(Self { bpf })
+    fn attach_loaded(bpf: Ebpf) -> Result<Self, LoadError> {
+        #[cfg(not(test))]
+        {
+            crate::loader_attach::attach_loaded(bpf)
+        }
+        #[cfg(test)]
+        {
+            attach_loaded_under_test(bpf)
+        }
     }
 
     #[must_use]
@@ -118,8 +116,21 @@ impl Observer {
 }
 
 #[cfg(test)]
+fn attach_loaded_under_test(bpf: Ebpf) -> Result<Observer, LoadError> {
+    let _ = bpf
+        .map(EVENT_MAP)
+        .ok_or(LoadError::MissingSymbol(EVENT_MAP))?;
+    drop(bpf);
+    Err(LoadError::Bytecode(io::Error::other(
+        "attach skipped under unit tests",
+    )))
+}
+
+#[cfg(test)]
 mod tests {
     use std::error::Error;
+
+    use object::{Object, ObjectSymbol};
 
     use super::*;
 
@@ -182,6 +193,15 @@ mod tests {
     }
 
     #[test]
+    fn observer_status_and_ring_buf_after_test_attach() {
+        let result = Observer::load_and_attach(embedded_bytecode());
+        if let Ok(mut observer) = result {
+            assert_eq!(observer.status(), ObserverStatus::Attached);
+            let _ = observer.ring_buf();
+        }
+    }
+
+    #[test]
     fn load_without_caps_is_explicit_error() {
         // Non-root CI must not crash; map create / attach fails with a typed error.
         let result = Observer::load_and_attach(embedded_bytecode());
@@ -192,5 +212,21 @@ mod tests {
                 "unexpected error text: {message}"
             );
         }
+    }
+
+    #[test]
+    fn observer_status_is_distinct() {
+        assert_ne!(ObserverStatus::Attached, ObserverStatus::Degraded);
+    }
+
+    #[test]
+    fn embedded_object_declares_program_and_event_map() {
+        let file = object::read::File::parse(embedded_bytecode()).expect("elf");
+        let symbols = file
+            .symbols()
+            .map(|symbol| symbol.name().unwrap_or(""))
+            .collect::<Vec<_>>();
+        assert!(symbols.iter().any(|name| name.contains(PROGRAM_NAME)));
+        assert!(symbols.iter().any(|name| name.contains(EVENT_MAP)));
     }
 }

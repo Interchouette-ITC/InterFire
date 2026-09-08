@@ -330,4 +330,77 @@ mod tests {
         );
         std::fs::remove_file(path).unwrap();
     }
+
+    #[test]
+    fn remove_rule_by_id() {
+        let mut rules = RuleSet::default();
+        rules.insert(rule(1, Verdict::Allow)).unwrap();
+        assert!(rules.remove(1));
+        assert!(!rules.remove(1));
+        assert!(rules.rules().is_empty());
+    }
+
+    #[test]
+    fn insert_rejects_relative_executable_and_duplicate_id() {
+        let mut rules = RuleSet::default();
+        let mut bad = rule(1, Verdict::Allow);
+        bad.executable = "curl".into();
+        assert_eq!(rules.insert(bad), Err(RuleError::ExecutableMustBeAbsolute));
+        rules.insert(rule(2, Verdict::Allow)).unwrap();
+        assert_eq!(
+            rules.insert(rule(2, Verdict::Deny)),
+            Err(RuleError::DuplicateId(2))
+        );
+    }
+
+    #[test]
+    fn load_missing_file_returns_empty_set() {
+        let path = std::env::temp_dir().join(format!(
+            "interfire-rules-missing-{}.toml",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&path);
+        let store = RulesStore::new(&path);
+        assert!(store.load().unwrap().rules().is_empty());
+    }
+
+    #[test]
+    fn store_path_accessor_and_rootless_save_error() {
+        let path =
+            std::env::temp_dir().join(format!("interfire-rules-path-{}.toml", std::process::id()));
+        let store = RulesStore::new(&path);
+        assert_eq!(store.path(), path.as_path());
+        let rootless = RulesStore::new(PathBuf::from(""));
+        assert!(matches!(
+            rootless.save(&RuleSet::default()),
+            Err(PersistenceError::Io(_))
+        ));
+    }
+
+    #[test]
+    fn load_rejects_unsupported_schema() {
+        let path = std::env::temp_dir().join(format!(
+            "interfire-rules-schema-{}.toml",
+            std::process::id()
+        ));
+        std::fs::write(&path, "schema_version = 99\nrules = []\n").unwrap();
+        let store = RulesStore::new(&path);
+        assert!(matches!(
+            store.load(),
+            Err(PersistenceError::UnsupportedSchema(99))
+        ));
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn rule_matches_protocol_and_address() {
+        let mut host_rule = rule(1, Verdict::Deny);
+        host_rule.protocol = Some(Protocol::Udp);
+        host_rule.address = Some("203.0.113.42".parse().unwrap());
+        let mut event = connection();
+        event.protocol = Protocol::Udp;
+        assert!(host_rule.matches(&event));
+        event.protocol = Protocol::Tcp;
+        assert!(!host_rule.matches(&event));
+    }
 }

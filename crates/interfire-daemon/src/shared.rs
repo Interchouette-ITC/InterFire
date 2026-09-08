@@ -84,6 +84,12 @@ impl Shared {
     pub fn observation(&self) -> &'static str {
         observation_label(self.observation.load(Ordering::Relaxed))
     }
+
+    /// Replace the prompt queue (unit tests only).
+    #[cfg(test)]
+    pub fn set_prompt_queue(&self, queue: PromptQueue) {
+        *self.prompts.lock().expect("prompts lock") = queue;
+    }
 }
 
 fn enforcement_code(label: &str) -> u8 {
@@ -115,5 +121,84 @@ const fn observation_label(code: u8) -> &'static str {
         "attached"
     } else {
         "degraded"
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+    use std::time::Duration;
+
+    use interfire_rules::RulesStore;
+
+    use super::*;
+
+    fn temp_audit(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!("interfire-shared-{}-{name}", std::process::id()))
+    }
+
+    #[test]
+    fn new_initializes_state_and_audit_log() {
+        let audit_path = temp_audit("new.log");
+        let _ = fs::remove_file(&audit_path);
+        let store = RulesStore::new(audit_path.with_extension("rules.toml"));
+        let shared = Shared::new(
+            RuleSet::default(),
+            store,
+            "attached",
+            8,
+            Duration::from_secs(5),
+            8,
+            audit_path.clone(),
+        )
+        .expect("shared state");
+        assert_eq!(shared.observation(), "attached");
+        assert_eq!(shared.enforcement(), "none");
+        shared.audit.lock().unwrap().append("boot");
+        assert!(audit_path.exists());
+        let _ = fs::remove_file(audit_path);
+    }
+
+    #[test]
+    fn new_fails_when_audit_path_is_a_directory() {
+        let audit_dir = temp_audit("dir");
+        let _ = fs::remove_dir_all(&audit_dir);
+        fs::create_dir_all(&audit_dir).expect("mkdir");
+        let store = RulesStore::new(audit_dir.join("rules.toml"));
+        let result = Shared::new(
+            RuleSet::default(),
+            store,
+            "attached",
+            8,
+            Duration::from_secs(5),
+            8,
+            audit_dir,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn enforcement_setters_and_getters() {
+        let audit_path = temp_audit("enforce.log");
+        let _ = fs::remove_file(&audit_path);
+        let store = RulesStore::new(audit_path.with_extension("rules.toml"));
+        let shared = Shared::new(
+            RuleSet::default(),
+            store,
+            "degraded",
+            8,
+            Duration::from_secs(5),
+            8,
+            audit_path.clone(),
+        )
+        .expect("shared state");
+        assert_eq!(shared.observation(), "degraded");
+        shared.set_enforcement("nfqueue");
+        assert_eq!(shared.enforcement(), "nfqueue");
+        shared.set_enforcement("degraded");
+        assert_eq!(shared.enforcement(), "degraded");
+        shared.set_enforcement("unknown");
+        assert_eq!(shared.enforcement(), "none");
+        let _ = fs::remove_file(audit_path);
     }
 }

@@ -861,7 +861,7 @@ pub fn footer_hints(app: &App) -> String {
 mod tests {
     use super::{App, IpcEvent, KeyAction, Link, Overlay, Pane, Tab};
     use crossterm::event::KeyCode;
-    use interfire_proto::{DaemonStatus, PromptRow, RuleRow};
+    use interfire_proto::{DaemonStatus, ProcessRow, PromptRow, RuleRow};
 
     use crate::ipc::IpcCommand;
 
@@ -1075,5 +1075,375 @@ mod tests {
             }));
         }
         assert!(app.audit.len() <= MAX_AUDIT_LINES);
+    }
+
+    #[test]
+    fn tab_index_wraps_and_split_tabs_expose_panes() {
+        let mut app = App::new("/tmp/x.sock".into());
+        assert_eq!(Tab::from_index(11), Tab::Help);
+        assert!(!Tab::Status.has_split());
+        assert!(Tab::Log.has_split());
+        app.handle_key(KeyCode::Char('6'));
+        assert_eq!(app.tab, Tab::Help);
+        app.handle_key(KeyCode::Right);
+        assert_eq!(app.tab, Tab::Status);
+        app.handle_key(KeyCode::Left);
+        assert_eq!(app.tab, Tab::Help);
+    }
+
+    #[test]
+    fn chrome_title_covers_connecting_down_and_degraded() {
+        let mut app = App::new("/tmp/x.sock".into());
+        assert_eq!(app.chrome_title(), "connecting");
+        app.apply(IpcEvent::Down("refused".into()));
+        assert_eq!(app.chrome_title(), "daemon unavailable");
+        app.apply(IpcEvent::Status(DaemonStatus {
+            enforcement: "none".into(),
+            observation: "degraded".into(),
+            ipc_version: 1,
+            pid: None,
+            rss_kib: None,
+            cpu_jiffies: None,
+        }));
+        assert_eq!(app.chrome_title(), "degraded");
+    }
+
+    #[test]
+    fn notice_overlay_dismisses_with_enter_and_q() {
+        let mut app = App::new("/tmp/x.sock".into());
+        app.overlay = Overlay::Notice("hello".into());
+        app.handle_key(KeyCode::Enter);
+        assert_eq!(app.overlay, Overlay::None);
+        app.overlay = Overlay::Notice("again".into());
+        app.handle_key(KeyCode::Char('q'));
+        assert_eq!(app.overlay, Overlay::None);
+    }
+
+    #[test]
+    fn add_rule_validation_and_field_navigation() {
+        let mut app = App::new("/tmp/x.sock".into());
+        app.handle_key(KeyCode::Char('3'));
+        app.handle_key(KeyCode::Char('a'));
+        app.handle_key(KeyCode::Tab);
+        app.handle_key(KeyCode::BackTab);
+        app.handle_key(KeyCode::Char('x'));
+        assert_eq!(app.handle_key(KeyCode::Enter), KeyAction::None);
+        assert!(
+            app.status_message
+                .as_ref()
+                .is_some_and(|m| m.contains("integer"))
+        );
+        app.overlay = Overlay::AddRule(super::AddRuleForm {
+            id: "1".into(),
+            executable: "relative".into(),
+            verdict: "deny".into(),
+            port: "443".into(),
+            focus: super::AddField::Executable,
+        });
+        assert_eq!(app.handle_key(KeyCode::Enter), KeyAction::None);
+        app.overlay = Overlay::AddRule(super::AddRuleForm {
+            id: "1".into(),
+            executable: "/bin/curl".into(),
+            verdict: "maybe".into(),
+            port: "443".into(),
+            focus: super::AddField::Verdict,
+        });
+        assert_eq!(app.handle_key(KeyCode::Enter), KeyAction::None);
+        app.overlay = Overlay::AddRule(super::AddRuleForm {
+            id: "1".into(),
+            executable: "/bin/curl".into(),
+            verdict: "deny".into(),
+            port: "99999".into(),
+            focus: super::AddField::Port,
+        });
+        assert_eq!(app.handle_key(KeyCode::Enter), KeyAction::None);
+        app.handle_key(KeyCode::Esc);
+        assert_eq!(app.overlay, Overlay::None);
+    }
+
+    #[test]
+    fn answer_overlay_verdict_scope_and_stale_submit() {
+        let mut app = App::new("/tmp/x.sock".into());
+        app.handle_key(KeyCode::Char('4'));
+        app.apply(IpcEvent::Prompts(vec![PromptRow {
+            id: 2,
+            executable: "/bin/curl".into(),
+            destination: "203.0.113.1".into(),
+            port: 443,
+            protocol: "tcp".into(),
+            remaining_secs: 30,
+        }]));
+        app.handle_key(KeyCode::Char('a'));
+        app.handle_key(KeyCode::Char('d'));
+        app.handle_key(KeyCode::Left);
+        app.handle_key(KeyCode::Right);
+        app.handle_key(KeyCode::BackTab);
+        app.handle_key(KeyCode::Tab);
+        app.handle_key(KeyCode::Esc);
+        assert_eq!(app.overlay, Overlay::None);
+
+        app.handle_key(KeyCode::Char('a'));
+        app.overlay = Overlay::AnswerPrompt(super::AnswerPromptForm {
+            prompt: PromptRow {
+                id: 2,
+                executable: "/bin/curl".into(),
+                destination: "203.0.113.1".into(),
+                port: 443,
+                protocol: "tcp".into(),
+                remaining_secs: 0,
+            },
+            verdict: super::AnswerVerdict::Deny,
+            scope: super::AnswerScope::Once,
+        });
+        assert_eq!(app.handle_key(KeyCode::Enter), KeyAction::None);
+        assert!(matches!(app.overlay, Overlay::Notice(_)));
+    }
+
+    #[test]
+    fn processes_help_and_detail_empty_states() {
+        let mut app = App::new("/tmp/x.sock".into());
+        app.handle_key(KeyCode::Char('2'));
+        assert!(
+            app.detail_lines()
+                .iter()
+                .any(|line| line.contains("no observed processes"))
+        );
+        app.apply(IpcEvent::Processes(vec![ProcessRow {
+            pid: 7,
+            start_ticks: 1,
+            uid: 1000,
+            executable: "/bin/curl".into(),
+            cmdline: "curl".into(),
+            verdict: "allow".into(),
+            ports: String::new(),
+        }]));
+        assert!(
+            app.detail_lines()
+                .iter()
+                .any(|line| line.contains("(none)"))
+        );
+        app.handle_key(KeyCode::Char('6'));
+        assert!(super::help_lines().iter().any(|line| line.contains("Quit")));
+        app.handle_key(KeyCode::Char('5'));
+        assert!(
+            app.detail_lines()
+                .iter()
+                .any(|line| line.contains("no audit frame"))
+        );
+    }
+
+    #[test]
+    fn root_keys_cover_tabs_refresh_quit_and_list_motion() {
+        let mut app = App::new("/tmp/x.sock".into());
+        assert_eq!(app.handle_key(KeyCode::Char('q')), KeyAction::Quit);
+        for (key, tab) in [
+            (KeyCode::Char('1'), Tab::Status),
+            (KeyCode::Char('2'), Tab::Apps),
+            (KeyCode::Char('3'), Tab::Rules),
+            (KeyCode::Char('4'), Tab::Prompts),
+            (KeyCode::Char('5'), Tab::Log),
+            (KeyCode::Char('6'), Tab::Help),
+        ] {
+            app.handle_key(key);
+            assert_eq!(app.tab, tab);
+        }
+        app.handle_key(KeyCode::Char('3'));
+        assert_eq!(
+            app.handle_key(KeyCode::Char('r')),
+            KeyAction::Command(IpcCommand::RefreshRules)
+        );
+        app.handle_key(KeyCode::Char('4'));
+        assert_eq!(
+            app.handle_key(KeyCode::Char('r')),
+            KeyAction::Command(IpcCommand::RefreshPrompts)
+        );
+        app.handle_key(KeyCode::Char('5'));
+        app.apply(IpcEvent::Audit(interfire_proto::AuditStreamRecord {
+            sequence: 1,
+            message: "a".into(),
+        }));
+        app.apply(IpcEvent::Audit(interfire_proto::AuditStreamRecord {
+            sequence: 2,
+            message: "b".into(),
+        }));
+        app.handle_key(KeyCode::Down);
+        app.handle_key(KeyCode::Char('k'));
+        app.handle_key(KeyCode::Char('h'));
+        app.handle_key(KeyCode::Char('l'));
+        assert_eq!(app.pane, Pane::Detail);
+    }
+
+    #[test]
+    fn action_error_status_and_subscribed_detail_lines() {
+        let mut app = App::new("/tmp/s.sock".into());
+        app.apply(IpcEvent::ActionError("boom".into()));
+        assert!(matches!(app.overlay, Overlay::Notice(_)));
+        app.overlay = Overlay::None;
+        app.apply(IpcEvent::Status(DaemonStatus {
+            enforcement: "nfqueue".into(),
+            observation: "attached".into(),
+            ipc_version: 1,
+            pid: Some(9),
+            rss_kib: Some(100),
+            cpu_jiffies: Some(10),
+        }));
+        app.subscribed = true;
+        assert!(
+            app.detail_lines()
+                .iter()
+                .any(|line| line.contains("audit subscribe: ready"))
+        );
+        app.apply(IpcEvent::Prompts(vec![PromptRow {
+            id: 1,
+            executable: "/bin/c".into(),
+            destination: "1.2.3.4".into(),
+            port: 80,
+            protocol: "tcp".into(),
+            remaining_secs: 0,
+        }]));
+        app.handle_key(KeyCode::Char('4'));
+        assert!(
+            app.detail_lines()
+                .iter()
+                .any(|line| line.contains("expired/stale"))
+        );
+        app.handle_key(KeyCode::Char('3'));
+        assert!(
+            app.detail_lines()
+                .iter()
+                .any(|line| line.contains("no rules loaded"))
+        );
+    }
+
+    #[test]
+    fn footer_hints_cover_overlays_tabs_and_status_message() {
+        let mut app = App::new("/tmp/x.sock".into());
+        app.tab = Tab::Rules;
+        app.overlay = Overlay::AddRule(super::AddRuleForm::new());
+        assert!(super::footer_hints(&app).contains("Tab fields"));
+        app.overlay = Overlay::AnswerPrompt(super::AnswerPromptForm::new(PromptRow {
+            id: 1,
+            executable: "/bin/c".into(),
+            destination: "1.2.3.4".into(),
+            port: 443,
+            protocol: "tcp".into(),
+            remaining_secs: 10,
+        }));
+        assert!(super::footer_hints(&app).contains("verdict"));
+        app.overlay = Overlay::Notice("n".into());
+        assert!(super::footer_hints(&app).contains("Esc dismiss"));
+        app.overlay = Overlay::None;
+        app.status_message = Some("saved".into());
+        let hints = super::footer_hints(&app);
+        assert!(hints.contains("a/d/r rules"));
+        assert!(hints.contains("saved"));
+    }
+
+    #[test]
+    fn audit_pop_front_adjusts_log_selection() {
+        use super::MAX_AUDIT_LINES;
+
+        let mut app = App::new("/tmp/x.sock".into());
+        app.handle_key(KeyCode::Char('5'));
+        app.list_selected = 1;
+        for sequence in 1..=(MAX_AUDIT_LINES as u64 + 1) {
+            app.apply(IpcEvent::Audit(interfire_proto::AuditStreamRecord {
+                sequence,
+                message: format!("m{sequence}"),
+            }));
+        }
+        assert_eq!(app.audit.len(), MAX_AUDIT_LINES);
+        assert!(app.list_selected <= MAX_AUDIT_LINES);
+    }
+
+    #[test]
+    fn tab_labels_indices_and_form_navigation() {
+        assert_eq!(Tab::Apps.index(), 1);
+        assert_eq!(Tab::Rules.index(), 2);
+        assert_eq!(Tab::Prompts.index(), 3);
+        assert_eq!(Tab::Log.index(), 4);
+        assert_eq!(Tab::Help.index(), 5);
+        assert_eq!(Tab::Apps.label(), "Apps");
+        assert_eq!(super::AddField::Executable.next(), super::AddField::Verdict);
+        assert_eq!(super::AddField::Port.prev(), super::AddField::Verdict);
+        assert_eq!(super::AnswerVerdict::Deny.as_str(), "deny");
+        assert_eq!(
+            super::AnswerVerdict::Allow.toggle(),
+            super::AnswerVerdict::Deny
+        );
+        assert_eq!(
+            super::AnswerScope::Session.next(),
+            super::AnswerScope::Permanent
+        );
+        assert_eq!(
+            super::AnswerScope::Permanent.prev(),
+            super::AnswerScope::Session
+        );
+    }
+
+    #[test]
+    fn apply_action_ok_and_overlay_field_edits() {
+        let mut app = App::new("/tmp/x.sock".into());
+        app.apply(IpcEvent::ActionOk("saved".into()));
+        assert_eq!(app.status_message.as_deref(), Some("saved"));
+        app.handle_key(KeyCode::Char('3'));
+        app.handle_key(KeyCode::Char('a'));
+        app.handle_key(KeyCode::Tab);
+        app.handle_key(KeyCode::Tab);
+        app.handle_key(KeyCode::Backspace);
+        app.handle_key(KeyCode::Char('9'));
+        app.handle_key(KeyCode::Esc);
+        assert_eq!(app.overlay, Overlay::None);
+    }
+
+    #[test]
+    fn status_help_visible_lists_and_connecting_detail() {
+        let mut app = App::new("/tmp/s.sock".into());
+        let list = app.visible_list(10);
+        assert_eq!(list.total, 0);
+        assert!(
+            app.detail_lines()
+                .iter()
+                .any(|line| line.contains("waiting"))
+        );
+        app.tab = Tab::Help;
+        assert!(app.visible_list(5).items.is_empty());
+    }
+
+    #[test]
+    fn process_ports_split_and_list_motion_edges() {
+        let mut app = App::new("/tmp/x.sock".into());
+        app.handle_key(KeyCode::Char('2'));
+        app.apply(IpcEvent::Processes(vec![ProcessRow {
+            pid: 7,
+            start_ticks: 1,
+            uid: 1000,
+            executable: "/bin/curl".into(),
+            cmdline: "curl".into(),
+            verdict: "allow".into(),
+            ports: "1.2.3.4:443/allow+5.6.7.8:80/deny".into(),
+        }]));
+        assert!(
+            app.detail_lines()
+                .iter()
+                .any(|line| line.contains("1.2.3.4:443/allow"))
+        );
+        app.handle_key(KeyCode::Char('j'));
+        app.handle_key(KeyCode::Left);
+        assert_eq!(app.tab, Tab::Status);
+        app.handle_key(KeyCode::Char('4'));
+        assert_eq!(app.handle_key(KeyCode::Enter), KeyAction::None);
+        app.tab = Tab::Prompts;
+        app.overlay = Overlay::None;
+        let hints = super::footer_hints(&app);
+        assert!(hints.contains("a/r prompts"));
+    }
+
+    #[test]
+    fn prev_tab_wraps_from_status_to_help() {
+        let mut app = App::new("/tmp/x.sock".into());
+        assert_eq!(app.tab, Tab::Status);
+        app.handle_key(KeyCode::Left);
+        assert_eq!(app.tab, Tab::Help);
     }
 }

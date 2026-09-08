@@ -61,6 +61,7 @@ impl DnsCache {
             if let Some(oldest) = self.order.pop_front() {
                 self.by_ip.remove(&oldest);
             } else {
+                self.by_ip.clear();
                 break;
             }
         }
@@ -109,6 +110,19 @@ impl DnsCache {
 }
 
 #[cfg(test)]
+impl DnsCache {
+    fn insert_orphan_for_test(&mut self, ipv4: u32, hostname: &str) {
+        self.by_ip.insert(
+            ipv4,
+            Entry {
+                hostname: hostname.to_ascii_lowercase(),
+                expires_at: Instant::now() + self.default_ttl,
+            },
+        );
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -138,5 +152,35 @@ mod tests {
         cache.observe("b.test", second, None);
         assert!(cache.hostname_for(first).is_none());
         assert_eq!(cache.hostname_for(second).as_deref(), Some("b.test"));
+    }
+
+    #[test]
+    fn with_defaults_and_list_fresh() {
+        let mut cache = DnsCache::with_defaults();
+        let ip = u32::from_ne_bytes([203, 0, 113, 3]);
+        cache.observe("fresh.test", ip, Some(Duration::from_secs(120)));
+        let rows = cache.list_fresh();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].0, "fresh.test");
+        assert_eq!(rows[0].1, ip);
+        assert!(rows[0].2 > 0);
+    }
+
+    #[test]
+    fn observe_updates_existing_ip() {
+        let mut cache = DnsCache::new(4, Duration::from_secs(60));
+        let ip = u32::from_ne_bytes([203, 0, 113, 4]);
+        cache.observe("first.test", ip, None);
+        cache.observe("second.test", ip, None);
+        assert_eq!(cache.hostname_for(ip).as_deref(), Some("second.test"));
+    }
+
+    #[test]
+    fn observe_breaks_when_order_empty_but_cache_full() {
+        let mut cache = DnsCache::new(1, Duration::from_secs(60));
+        let first = u32::from_ne_bytes([1, 0, 0, 1]);
+        cache.insert_orphan_for_test(first, "orphan.test");
+        cache.observe("b.test", u32::from_ne_bytes([1, 0, 0, 2]), None);
+        assert!(cache.hostname_for(first).is_none());
     }
 }
