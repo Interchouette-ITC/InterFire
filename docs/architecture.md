@@ -57,7 +57,8 @@ Primary v0.1 targets (install and desktop dogfood):
 | Debian (stable) with GNOME           | Primary |
 | Pop!\_OS (current supported release) | Primary |
 
-Architecture: `x86_64`. Runtime assumptions: systemd, a kernel with BTF and
+Architecture: `x86_64`. Runtime assumptions: systemd (see
+[`packaging.md`](packaging.md)), a kernel with BTF and
 usable eBPF features, and NFQUEUE support. CI may use Ubuntu runners as a
 compile proxy only; that does not expand the support claim.
 

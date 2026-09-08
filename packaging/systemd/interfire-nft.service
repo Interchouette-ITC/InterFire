@@ -1,0 +1,18 @@
+# Restore InterFire-owned nftables table after boot (inet interfire only).
+[Unit]
+Description=InterFire owned nftables queue rule
+Documentation=https://github.com/Interchouette-ITC/InterFire
+DefaultDependencies=no
+After=network-pre.target systemd-modules-load.service
+Before=interfired.service network.target
+Wants=network-pre.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/nft -f /usr/share/interfire/interfire.nft
+ExecStop=-/usr/sbin/nft delete table inet interfire
+
+[Install]
+WantedBy=multi-user.target
+Also=interfired.service
