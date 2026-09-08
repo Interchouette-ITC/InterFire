@@ -5,8 +5,7 @@
 </p>
 
 <p align="center">
-  <img src="brand/seal-gh-dark-128.png#gh-dark-mode-only" alt="InterFire seal" width="96" height="96" />
-  <img src="brand/seal-gh-light-128.png#gh-light-mode-only" alt="InterFire seal" width="96" height="96" />
+  <img src="brand/icon-app-phoenix-256.png" alt="InterFire phoenix mark" width="160" height="160" />
 </p>
 
 <p align="center">
@@ -163,6 +162,6 @@ Thank you to their maintainers and communities.
 **Apache-2.0** (Apache License, Version 2.0). See [`../LICENSE`](../LICENSE).
 
 <p align="center">
-  <img src="brand/seal-gh-dark-128.png#gh-dark-mode-only" alt="InterFire seal" width="128" height="128" style="margin-top: 1.25rem; margin-bottom: 0; vertical-align: middle;" />
-  <img src="brand/seal-gh-light-128.png#gh-light-mode-only" alt="InterFire seal" width="128" height="128" style="margin-top: 1.25rem; margin-bottom: 0; vertical-align: middle;" />
+  <img src="brand/seal-gh-light-128.png#gh-dark-mode-only" alt="InterFire seal" width="128" height="128" style="margin-top: 1.25rem; margin-bottom: 0; vertical-align: middle;" />
+  <img src="brand/seal-gh-dark-128.png#gh-light-mode-only" alt="InterFire seal" width="128" height="128" style="margin-top: 1.25rem; margin-bottom: 0; vertical-align: middle;" />
 </p>

@@ -39,6 +39,7 @@ Do not mutate `assets/`. Do not pad a small master into a larger empty canvas.
 
 - README header: `logo-banner-readme.png` + `icon-app-phoenix-256.png`
 - Compact lockup (before Thanks): `logo-horizontal-readme.png`
+- Footer seal (theme-aware): white disk on GitHub dark, dark disk on GitHub light
 - Desktop header: `logo-banner-desktop.png`
 - Mobile header: `logo-banner-mobile.png` or `icon-app-phoenix-128.png`
 - Favicon: `favicon-32.png` (from `icon-app-phoenix`)
@@ -47,10 +48,14 @@ Tagline: **FIREWALL · SECURE · CONTROL** (Linux-first Rust application firewal
 
 ## GitHub README seals
 
-Theme-aware circular seals (phoenix + INTERFIRE / FIREWALL ring):
+Circular seals (phoenix + INTERFIRE / FIREWALL ring). Pick the disk that
+**contrasts** with the page: white disk on dark GitHub, dark disk on light
+GitHub.
 
 | File | Use |
 | --- | --- |
-| `seal-gh-light.png` | GitHub light (`#gh-light-mode-only`) |
-| `seal-gh-dark.png` | GitHub dark (`#gh-dark-mode-only`) |
+| `seal-gh-light.png` | White / light disk - GitHub **dark** (`#gh-dark-mode-only`) |
+| `seal-gh-dark.png` | Dark disk - GitHub **light** (`#gh-light-mode-only`) |
 | `seal-gh-light-128.png` / `seal-gh-dark-128.png` | Compact footer seals |
+
+Do not put the dark disk on GitHub dark mode: the round vanishes into the page.
