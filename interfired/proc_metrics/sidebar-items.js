@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["read_cpu_jiffies","read_vm_rss_kib","sample_self"],"struct":["SelfMetrics"]};

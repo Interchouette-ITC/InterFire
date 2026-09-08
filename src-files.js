@@ -1,2 +1,2 @@
-createSrcSidebar('[["interfire_ebpf",["",[],["lib.rs","loader.rs"]]],["interfire_proto",["",[],["lib.rs"]]],["interfire_rules",["",[],["lib.rs"]]],["interfire_tui",["",[],["app.rs","ipc.rs","main.rs","ui.rs"]]],["interfirectl",["",[],["main.rs"]]],["interfired",["",[],["audit.rs","dns.rs","ipc.rs","main.rs","nfqueue.rs","observe.rs","packet.rs","pending.rs","policy.rs","process.rs","prompts.rs","shared.rs"]]]]');
-//{"start":19,"fragment_lengths":[49,39,39,64,37,165]}
+createSrcSidebar('[["interfire_ebpf",["",[],["lib.rs","loader.rs"]]],["interfire_proto",["",[],["lib.rs"]]],["interfire_rules",["",[],["lib.rs"]]],["interfire_tui",["",[],["app.rs","ipc.rs","main.rs","ui.rs"]]],["interfirectl",["",[],["main.rs"]]],["interfired",["",[],["audit.rs","dns.rs","ipc.rs","main.rs","nfqueue.rs","observe.rs","packet.rs","pending.rs","policy.rs","proc_metrics.rs","process.rs","prompts.rs","shared.rs"]]]]');
+//{"start":19,"fragment_lengths":[49,39,39,64,37,183]}
