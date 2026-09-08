@@ -219,4 +219,24 @@ table inet interfire {
         assert!(!script.contains("firewalld"));
         assert!(!script.contains("ufw"));
     }
+
+    #[test]
+    fn owned_script_matches_packaged_nft_file() {
+        let packaged = include_str!("../../../packaging/nft/interfire.nft");
+        assert_eq!(
+            normalize_nft_tokens(&owned_table_script()),
+            normalize_nft_tokens(packaged),
+            "daemon owned_table_script() must stay in sync with packaging/nft/interfire.nft"
+        );
+    }
+
+    fn normalize_nft_tokens(source: &str) -> String {
+        source
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty() && !line.starts_with('#'))
+            .flat_map(|line| line.split_whitespace())
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
 }

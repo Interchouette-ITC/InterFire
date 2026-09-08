@@ -9,9 +9,9 @@ v0.1 clients share the same Unix IPC:
 
 | Surface | Status | Role |
 | --- | --- | --- |
-| `interfirectl` | Shipped | One-shot commands only (`ping`, `status`, rules / prompts / dns / audit) |
+| `interfirectl` | Shipped | One-shot commands only (`ping`, `status`, rules / prompts / dns / audit / network) |
 | `interfire-tui` | Shipped | Interactive control plane (Status \| Rules \| Prompts \| Log \| Help) |
-| GPUI app under `ui/` | Shipped (`interfire-ui`: tray, alert, Rules, Log, harness, RSS gates) | - |
+| GPUI app under `ui/` | Shipped (`interfire-ui`: tray, alert, Status, Applications, Rules, Log, Network, Profiling, Settings, RSS gates) | - |
 
 The interactive ops client is a **ratatui** terminal UI (`crates/interfire-tui`).
 The desktop client is a **GPUI** native Rust app under `ui/` (`interfire-ui`).
