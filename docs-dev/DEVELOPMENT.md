@@ -12,7 +12,7 @@ crates/interfire-ebpf/bpf/       Embedded eBPF object (regenerate with `make ebp
 ## Supported desktops (v0.1)
 
 Dogfood and packaging gates target **Debian (stable) with GNOME** and
-**Pop!_OS** (current supported), `x86_64`. See
+**Pop!\_OS** (current supported), `x86_64`. See
 [`../docs/architecture.md`](../docs/architecture.md) (Supported baseline).
 Build and link notes for `interfire-ui` are in [`ui-gpui.md`](ui-gpui.md).
 
@@ -30,6 +30,10 @@ make ci             # lint + test + doc
 make ebpf           # nightly + bpf-linker; refreshes embedded object
 make ui             # build interfire-ui (needs GPUI system libs; see ui-gpui.md)
 make ui-test        # test interfire-ui (same system libs)
+make run-daemon     # interfired smoke (--no-ebpf --no-nfqueue, SOCKET=/tmp/interfire.sock)
+make run-ui         # interfire-ui against SOCKET (CPU software GL by default)
+make run-tui        # interfire-tui against SOCKET
+make run-ctl        # interfirectl ping against SOCKET
 make memcheck       # idle interfired VmRSS vs < 40 MiB (non-root)
 make memcheck-ui    # release UI RSS gates (needs DISPLAY or xvfb-run)
 make profile-ui     # optional hotpath-alloc report for interfire-ui
@@ -40,12 +44,43 @@ CI mirrors `make ci`, plus coverage upload to Codecov and a supply-chain job. Li
 
 ## Smoke (non-root)
 
+Terminal 1:
+
+```bash
+make run-daemon
+```
+
+Terminal 2:
+
+```bash
+make run-ctl
+make run-ui
+# or
+make run-tui
+```
+
+`make run-ui` / bare `interfire-ui` uses **CPU software rendering** by default so
+weak GPUs still open a window. On a machine with a capable GPU:
+
+```bash
+INTERFIRE_UI_NATIVE_GPU=1 make run-ui
+```
+
+If you force native GPU on hardware that is too old for GPUI, startup can panic
+in wgpu (for example `Too many vertex shader storage blocks`). Unset
+`INTERFIRE_UI_NATIVE_GPU` (or avoid setting a conflicting `WGPU_BACKEND`) so the
+software default applies again.
+
+Equivalent cargo forms:
+
 ```bash
 cargo run -p interfire-daemon -- --socket=/tmp/interfire.sock --no-ebpf --no-nfqueue
 cargo run -p interfirectl -- --socket=/tmp/interfire.sock ping
 cargo run -p interfirectl -- --socket=/tmp/interfire.sock status
 cargo run -p interfirectl -- --socket=/tmp/interfire.sock prompts list
 ```
+
+Override the shared socket path: `make run-ui SOCKET=/path/to.sock` (same `SOCKET` for daemon / TUI / ctl).
 
 Without `--no-ebpf`, the daemon tries to attach the embedded TCP-connect program and reports `observation=attached` or `observation=degraded`. Without `--no-nfqueue`, it tries to bind NFQUEUE 4242 and reports `enforcement=nfqueue` or `enforcement=degraded`.
 
@@ -57,11 +92,11 @@ Audit: capped on-disk log (`--audit=PATH`, default under `/var/lib/interfire/aud
 
 ## CLI vs TUI
 
-| Client | Role |
-| --- | --- |
-| `interfirectl` | **One-shot** only: `ping`, `status`, single `rules` / `prompts` / `dns` / `audit` commands. No REPL, no multi-screen browse loop. |
-| `interfire-tui` | Interactive control plane: tabs Status \| Rules \| Prompts \| Log \| Help, overlays for add-rule and answer-prompt. |
-| `interfire-ui` (`ui/`) | GPUI desktop shell: tray, alert, Rules, Log, RSS gates (same IPC). |
+| Client                 | Role                                                                                                                              |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `interfirectl`         | **One-shot** only: `ping`, `status`, single `rules` / `prompts` / `dns` / `audit` commands. No REPL, no multi-screen browse loop. |
+| `interfire-tui`        | Interactive control plane: tabs Status \| Rules \| Prompts \| Log \| Help, overlays for add-rule and answer-prompt.               |
+| `interfire-ui` (`ui/`) | GPUI desktop shell: tray, alert, Rules, Log, RSS gates (same IPC).                                                                |
 
 Use the CLI from scripts and smoke checks. Use the TUI when you need to browse lists, answer prompts, or watch the log. The UX contract (`docs/ux-interfire.md`) locks this split.
 
@@ -74,7 +109,11 @@ The TUI polls `status` on a timer and keeps a long-lived `audit-subscribe` with 
 Tabs: Status | Rules | Prompts | Log | Help. Left/Right or `1`..`5` change tabs; `h`/`l` move list/detail focus; `j`/`k` move the list. On Rules: `a` opens add overlay, `d` deletes the selected rule, `r` refreshes via IPC. On Prompts: `a`/`Enter` opens the answer overlay (Allow/Deny + once|session|permanent); expired/stale prompts disable answer. `Esc` dismisses an overlay and never quits from root chrome (`q` quits). Help documents the keys.
 
 ```bash
+make run-tui
+# or
 cargo run -p interfire-tui -- --socket=/tmp/interfire.sock
+# light chrome:
+cargo run -p interfire-tui -- --socket=/tmp/interfire.sock --theme=light
 ```
 
 ## Idle RSS (`make memcheck`)

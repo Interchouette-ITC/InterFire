@@ -13,23 +13,27 @@
 
 ## Local gates
 
-| Target | Action |
-| --- | --- |
-| `make fmt` | `cargo fmt --check` |
-| `make lint` | fmt check + clippy (pedantic / nursery deny; excludes BPF program crate) |
-| `make test` | Workspace tests |
-| `make coverage` | `cargo llvm-cov` → `coverage/lcov.info` |
-| `make audit` | `cargo audit` |
-| `make deny` | `cargo deny check` |
-| `make doc` | rustdoc → `docs/api-rust/` (excludes `interfire-ui` and the BPF program crate) |
-| `make ci` | `lint` + `test` + `doc` |
-| `make ui` | Build `interfire-ui` (needs GPUI system libs; see [`../docs-dev/ui-gpui.md`](../docs-dev/ui-gpui.md)) |
-| `make ui-test` | Test `interfire-ui` (same system libs; also run in CI) |
-| `make ebpf` | Rebuild embedded eBPF object (nightly + bpf-linker) |
-| `make memcheck` | Idle `interfired` RSS vs < 40 MiB (non-root) |
-| `make memcheck-ui` | Release UI RSS gates (idle / prompt-load / combined) |
-| `make profile-ui` | Optional [hotpath](https://hotpath.rs/) alloc report for `interfire-ui` |
-| `make integration` | Root netns allow/deny gate (not in `make ci`) |
+| Target             | Action                                                                                                |
+| ------------------ | ----------------------------------------------------------------------------------------------------- |
+| `make fmt`         | `cargo fmt --check`                                                                                   |
+| `make lint`        | fmt check + clippy (pedantic / nursery deny; excludes BPF program crate)                              |
+| `make test`        | Workspace tests                                                                                       |
+| `make coverage`    | `cargo llvm-cov` → `coverage/lcov.info`                                                               |
+| `make audit`       | `cargo audit`                                                                                         |
+| `make deny`        | `cargo deny check`                                                                                    |
+| `make doc`         | rustdoc → `docs/api-rust/` (excludes `interfire-ui` and the BPF program crate)                        |
+| `make ci`          | `lint` + `test` + `doc`                                                                               |
+| `make ui`          | Build `interfire-ui` (needs GPUI system libs; see [`../docs-dev/ui-gpui.md`](../docs-dev/ui-gpui.md)) |
+| `make ui-test`     | Test `interfire-ui` (same system libs; also run in CI)                                                |
+| `make run-daemon`  | Smoke `interfired` (`--no-ebpf --no-nfqueue`)                                                         |
+| `make run-ui`      | Run `interfire-ui` (CPU software GL by default; `INTERFIRE_UI_NATIVE_GPU=1` for native)               |
+| `make run-tui`     | Run `interfire-tui`                                                                                   |
+| `make run-ctl`     | `interfirectl ping` smoke                                                                             |
+| `make ebpf`        | Rebuild embedded eBPF object (nightly + bpf-linker)                                                   |
+| `make memcheck`    | Idle `interfired` RSS vs < 40 MiB (non-root)                                                          |
+| `make memcheck-ui` | Release UI RSS gates (idle / prompt-load / combined)                                                  |
+| `make profile-ui`  | Optional [hotpath](https://hotpath.rs/) alloc report for `interfire-ui`                               |
+| `make integration` | Root netns allow/deny gate (not in `make ci`)                                                         |
 
 Extra operator scripts and smoke recipes: [`../docs-dev/DEVELOPMENT.md`](../docs-dev/DEVELOPMENT.md).
 

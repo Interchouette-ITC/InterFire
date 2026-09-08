@@ -24,6 +24,7 @@ mod tray;
 mod tray_host;
 
 use std::env;
+use std::process::Command;
 use std::time::Duration;
 
 use gpui_kit::component::*;
@@ -37,6 +38,10 @@ use crate::rss_probe::RssProbeMode;
 static ALLOC: hotpath::CountingAllocator = hotpath::CountingAllocator::new();
 
 fn main() {
+    // Weak GPUs cannot run GPUI/wgpu natively; default to CPU software GL unless
+    // the operator opts into native GPU or already set WGPU_BACKEND (e.g. memcheck).
+    apply_default_renderer_env();
+
     // When built with `--features hotpath` (and optionally `hotpath-alloc`), print a
     // report after `HOTPATH_SHUTDOWN_MS` (default off; `make profile-ui` sets 8s).
     hotpath::HotpathGuardBuilder::new(concat!(module_path!(), "::main"))
@@ -91,6 +96,57 @@ fn profile_shutdown_ms() -> u64 {
         .unwrap_or(0)
 }
 
+/// Decision for default graphics env (unit-tested; no process mutation).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RendererEnvDecision {
+    LeaveAlone,
+    ApplySoftware,
+}
+
+fn renderer_env_decision(
+    native_gpu: Option<&str>,
+    wgpu_backend: Option<&str>,
+) -> RendererEnvDecision {
+    if native_gpu == Some("1") {
+        return RendererEnvDecision::LeaveAlone;
+    }
+    if wgpu_backend.is_some() {
+        return RendererEnvDecision::LeaveAlone;
+    }
+    RendererEnvDecision::ApplySoftware
+}
+
+/// Re-exec with software GL when needed (`#![forbid(unsafe_code)]` blocks `env::set_var`).
+fn apply_default_renderer_env() {
+    let native = env::var("INTERFIRE_UI_NATIVE_GPU").ok();
+    let wgpu = env::var("WGPU_BACKEND").ok();
+    if renderer_env_decision(native.as_deref(), wgpu.as_deref())
+        != RendererEnvDecision::ApplySoftware
+    {
+        return;
+    }
+    reexec_with_software_gl();
+}
+
+fn reexec_with_software_gl() -> ! {
+    let exe = env::current_exe().expect("current_exe for software-GL re-exec");
+    let mut cmd = Command::new(exe);
+    cmd.env("LIBGL_ALWAYS_SOFTWARE", "1")
+        .env("WGPU_BACKEND", "gl")
+        .args(env::args_os().skip(1));
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        let err = cmd.exec();
+        panic!("software-GL re-exec failed: {err}");
+    }
+    #[cfg(not(unix))]
+    {
+        let status = cmd.status().expect("software-GL child for non-unix host");
+        std::process::exit(status.code().unwrap_or(1));
+    }
+}
+
 fn parse_args(args: impl IntoIterator<Item = String>) -> (String, Option<RssProbeMode>) {
     let mut socket = DEFAULT_SOCKET_PATH.to_owned();
     let mut probe = None;
@@ -106,7 +162,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> (String, Option<RssProb
 
 #[cfg(test)]
 mod tests {
-    use super::parse_args;
+    use super::{RendererEnvDecision, parse_args, renderer_env_decision};
     use crate::rss_probe::RssProbeMode;
     use interfire_proto::DEFAULT_SOCKET_PATH;
 
@@ -121,5 +177,41 @@ mod tests {
         ]);
         assert_eq!(socket, "/tmp/interfire.sock");
         assert_eq!(probe, Some(RssProbeMode::PromptLoad));
+    }
+
+    #[test]
+    fn renderer_env_defaults_to_software() {
+        assert_eq!(
+            renderer_env_decision(None, None),
+            RendererEnvDecision::ApplySoftware
+        );
+    }
+
+    #[test]
+    fn renderer_env_respects_native_gpu_flag() {
+        assert_eq!(
+            renderer_env_decision(Some("1"), None),
+            RendererEnvDecision::LeaveAlone
+        );
+        assert_eq!(
+            renderer_env_decision(Some("0"), None),
+            RendererEnvDecision::ApplySoftware
+        );
+    }
+
+    #[test]
+    fn renderer_env_respects_explicit_wgpu_backend() {
+        assert_eq!(
+            renderer_env_decision(None, Some("gl")),
+            RendererEnvDecision::LeaveAlone
+        );
+        assert_eq!(
+            renderer_env_decision(None, Some("vulkan")),
+            RendererEnvDecision::LeaveAlone
+        );
+        assert_eq!(
+            renderer_env_decision(Some("1"), Some("vulkan")),
+            RendererEnvDecision::LeaveAlone
+        );
     }
 }
