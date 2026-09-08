@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"fn":["attribute","connection_from","decide","decide_attributed"],"struct":["Decision"]};
+window.SIDEBAR_ITEMS = {"fn":["attribute","connection_from","decide","decide_attributed","record_recent"],"struct":["AttributedDecide","Decision"]};
