@@ -12,7 +12,7 @@ use interfire_proto::{ProcessRow, PromptRow, RuleRow};
 
 use crate::alert::{AlertScope, AlertVerdict, ConnectionAlert};
 use crate::alert_view::alert_overlay;
-use crate::applications_view::{applications_body, try_open_htop};
+use crate::applications_view::{ProcessViewer, applications_body, try_open_viewer};
 use crate::audit_host::{AuditEvent, AuditHost};
 use crate::ipc_poll;
 use crate::log_buf::LogBuffer;
@@ -50,7 +50,7 @@ struct ShellContent<'a> {
     adding: bool,
     processes: &'a [ProcessRow],
     selected_process: Option<(u32, u64)>,
-    htop_message: Option<&'a str>,
+    viewer_message: Option<&'a str>,
     log: &'a LogBuffer,
     profiling: &'a ProfilingSnapshot,
 }
@@ -77,7 +77,7 @@ pub struct App {
     add_form: Option<AddRuleFormState>,
     processes: Vec<ProcessRow>,
     selected_process: Option<(u32, u64)>,
-    htop_message: Option<String>,
+    viewer_message: Option<String>,
     alert: Option<ConnectionAlert>,
     log: LogBuffer,
     audit: AuditHost,
@@ -110,7 +110,7 @@ impl App {
             add_form: None,
             processes: Vec::new(),
             selected_process: None,
-            htop_message: None,
+            viewer_message: None,
             alert: None,
             log: LogBuffer::new(),
             audit,
@@ -255,13 +255,18 @@ impl App {
 
     pub(crate) fn select_process(&mut self, pid: u32, start_ticks: u64, cx: &mut Context<Self>) {
         self.selected_process = Some((pid, start_ticks));
-        self.htop_message = None;
+        self.viewer_message = None;
         cx.notify();
     }
 
-    pub(crate) fn open_htop(&mut self, pid: u32, cx: &mut Context<Self>) {
-        self.htop_message = Some(match try_open_htop(pid) {
-            Ok(()) => format!("opened htop for pid {pid}"),
+    pub(crate) fn open_process_viewer(
+        &mut self,
+        viewer: ProcessViewer,
+        pid: u32,
+        cx: &mut Context<Self>,
+    ) {
+        self.viewer_message = Some(match try_open_viewer(viewer, pid) {
+            Ok(()) => format!("opened {} for pid {pid}", viewer.label()),
             Err(message) => message,
         });
         cx.notify();
@@ -418,7 +423,7 @@ impl Render for App {
         let adding = self.add_form.is_some();
         let processes = self.processes.clone();
         let selected_process = self.selected_process;
-        let htop_message = self.htop_message.clone();
+        let viewer_message = self.viewer_message.clone();
         let log = self.log.clone();
         let profiling = self.profiling.clone();
 
@@ -442,7 +447,7 @@ impl Render for App {
                     adding,
                     processes: &processes,
                     selected_process,
-                    htop_message: htop_message.as_deref(),
+                    viewer_message: viewer_message.as_deref(),
                     log: &log,
                     profiling: &profiling,
                 },
@@ -546,7 +551,7 @@ fn section_body(content: &ShellContent<'_>, cx: &Context<App>) -> Div {
         Section::Applications => applications_body(
             content.processes,
             content.selected_process,
-            content.htop_message,
+            content.viewer_message,
             cx,
         ),
         Section::Log => log_body(content.log, cx),

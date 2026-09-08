@@ -34,7 +34,8 @@ Rules: live list / select / add / delete over Unix IPC (`rule-list`,
 viewport; long-lived `audit-subscribe` id `interfire-ui` (reconnect
 replaces; tear-down on window/host drop). Applications lists observed process
 identities from the daemon cache (`v1 process-list`: absolute path, PID + start
-ticks, cmdline, uid, recent destinations, effective rule) with optional open-in-htop.
+ticks, cmdline, uid, recent destinations, effective rule) with optional open-in
+htop/atop/btop/top when those binaries are on `PATH`.
 Network and Settings are still thin placeholders until those surfaces deepen.
 
 ## UI tests (`make ui-test`)

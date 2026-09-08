@@ -91,8 +91,10 @@ Settings
 Rules is the authoritative editable policy view (dense sortable table).
 Applications lists observed firewall identities (full executable path, PID with
 start ticks, cmdline, uid, recent dest:port, effective rule). Click a row for
-detail. Optional "Open in htop" launches `htop -p <pid>` in a terminal when
-available; InterFire does not embed a system process manager. Log is a capped
+detail. Optional "Open in …" actions launch host tools on `PATH` (`htop`, `atop`,
+`btop`, `top`) in a terminal when available; InterFire does not embed a system
+process manager. `htop`/`top` pass `-p <pid>`; `atop`/`btop` open live views
+(their CLI has no PID filter like htop). Log is a capped
 audit stream. Network only shows InterFire-owned
 nftables state. Profiling shows live daemon and `interfire-ui` RSS/CPU
 (`/proc` + status IPC). Settings exposes daemon health, socket path, retention, and

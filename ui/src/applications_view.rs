@@ -11,11 +11,68 @@ use interfire_proto::ProcessRow;
 
 use crate::app::App;
 
-/// Render Applications list + detail (path, pid, ports, optional htop).
+/// Optional host process viewers launched from Applications detail (never embedded).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ProcessViewer {
+    Htop,
+    Atop,
+    Btop,
+    Top,
+}
+
+impl ProcessViewer {
+    pub const ALL: [Self; 4] = [Self::Htop, Self::Atop, Self::Btop, Self::Top];
+
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Htop => "htop",
+            Self::Atop => "atop",
+            Self::Btop => "btop",
+            Self::Top => "top",
+        }
+    }
+
+    #[must_use]
+    pub const fn bin(self) -> &'static str {
+        self.label()
+    }
+
+    /// argv for the viewer process itself (no terminal wrapper).
+    #[must_use]
+    pub fn argv(self, pid: u32) -> Vec<String> {
+        let pid_s = pid.to_string();
+        match self {
+            // Filter to the selected PID when the tool supports it.
+            Self::Htop | Self::Top => vec![self.bin().into(), "-p".into(), pid_s],
+            // atop `-p` means "per program", not PID filter; open live view.
+            Self::Atop | Self::Btop => vec![self.bin().into()],
+        }
+    }
+
+    #[must_use]
+    pub fn is_on_path(self) -> bool {
+        Command::new("sh")
+            .args(["-c", &format!("command -v {}", self.bin())])
+            .output()
+            .is_ok_and(|out| out.status.success())
+    }
+}
+
+/// Viewers present on `PATH` (order matches [`ProcessViewer::ALL`]).
+#[must_use]
+pub fn available_viewers() -> Vec<ProcessViewer> {
+    ProcessViewer::ALL
+        .into_iter()
+        .filter(|viewer| viewer.is_on_path())
+        .collect()
+}
+
+/// Render Applications list + detail (path, pid, ports, optional process viewers).
 pub fn applications_body(
     processes: &[ProcessRow],
     selected: Option<(u32, u64)>,
-    htop_message: Option<&str>,
+    viewer_message: Option<&str>,
     cx: &Context<App>,
 ) -> Div {
     let muted = cx.theme().muted_foreground;
@@ -36,7 +93,7 @@ pub fn applications_body(
             .iter()
             .find(|row| row.pid == key.0 && row.start_ticks == key.1)
     {
-        body = body.child(process_detail(row, htop_message, muted, cx));
+        body = body.child(process_detail(row, viewer_message, muted, cx));
     } else {
         body = body.child(div().text_color(muted).child(
             "Select a process to see path, cmdline, uid, start ticks, and recent destinations.",
@@ -97,11 +154,12 @@ fn process_table(
 
 fn process_detail(
     row: &ProcessRow,
-    htop_message: Option<&str>,
+    viewer_message: Option<&str>,
     muted: Hsla,
     cx: &Context<App>,
 ) -> Div {
     let pid = row.pid;
+    let viewers = available_viewers();
     let mut body = div()
         .v_flex()
         .gap_1()
@@ -133,48 +191,97 @@ fn process_detail(
         } else {
             row.ports.replace('+', ", ")
         }))
-        .child(
-            div()
-                .id("open-htop")
-                .mt_2()
-                .px_2()
-                .py_1()
-                .rounded_md()
-                .cursor_pointer()
-                .bg(cx.theme().accent.opacity(0.2))
-                .child(format!("Open in htop (pid {pid})"))
-                .on_click(cx.listener(move |app, _, _, cx| {
-                    app.open_htop(pid, cx);
-                })),
-        );
+        .child(div().font_semibold().mt_2().child("Open in process viewer"));
 
-    if let Some(message) = htop_message {
+    if viewers.is_empty() {
+        body = body.child(
+            div()
+                .text_color(muted)
+                .child("No htop/atop/btop/top found on PATH."),
+        );
+    } else {
+        let mut row_actions = div().id("open-viewers").flex().gap_2().flex_wrap();
+        for viewer in viewers {
+            let label = match viewer {
+                ProcessViewer::Htop | ProcessViewer::Top => {
+                    format!("Open in {} (pid {pid})", viewer.label())
+                }
+                ProcessViewer::Atop | ProcessViewer::Btop => {
+                    format!("Open in {}", viewer.label())
+                }
+            };
+            row_actions = row_actions.child(
+                div()
+                    .id(ElementId::Name(format!("open-{}", viewer.label()).into()))
+                    .px_2()
+                    .py_1()
+                    .rounded_md()
+                    .cursor_pointer()
+                    .bg(cx.theme().accent.opacity(0.2))
+                    .child(label)
+                    .on_click(cx.listener(move |app, _, _, cx| {
+                        app.open_process_viewer(viewer, pid, cx);
+                    })),
+            );
+        }
+        body = body.child(row_actions);
+    }
+
+    if let Some(message) = viewer_message {
         body = body.child(div().text_color(muted).child(message.to_owned()));
     }
 
     body
 }
 
-/// Try to open `htop -p PID` in a terminal emulator when available.
-pub fn try_open_htop(pid: u32) -> Result<(), String> {
-    let pid_s = pid.to_string();
+/// Try to open a host process viewer in a terminal emulator when available.
+pub fn try_open_viewer(viewer: ProcessViewer, pid: u32) -> Result<(), String> {
+    if !viewer.is_on_path() {
+        return Err(format!("{} is not installed (not on PATH)", viewer.label()));
+    }
+    let argv = viewer.argv(pid);
+    let joined = argv.join(" ");
+    let gnome_argv = {
+        let mut prefixed = vec!["--".to_owned()];
+        prefixed.extend(argv.iter().cloned());
+        prefixed
+    };
+    let xdg_argv = argv;
     let candidates: [(&str, Vec<String>); 3] = [
-        (
-            "gnome-terminal",
-            vec!["--".into(), "htop".into(), "-p".into(), pid_s.clone()],
-        ),
-        (
-            "x-terminal-emulator",
-            vec!["-e".into(), format!("htop -p {pid}")],
-        ),
-        ("xdg-terminal-exec", vec!["htop".into(), "-p".into(), pid_s]),
+        ("gnome-terminal", gnome_argv),
+        ("x-terminal-emulator", vec!["-e".to_owned(), joined]),
+        ("xdg-terminal-exec", xdg_argv),
     ];
-    for (bin, args) in candidates {
-        if Command::new(bin).args(&args).spawn().is_ok() {
+    for (term, term_argv) in candidates {
+        if Command::new(term).args(&term_argv).spawn().is_ok() {
             return Ok(());
         }
     }
     Err(format!(
-        "could not launch htop for pid {pid} (install htop and a terminal emulator)"
+        "could not launch {} for pid {pid} (install a terminal emulator)",
+        viewer.label()
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ProcessViewer;
+
+    #[test]
+    fn htop_and_top_pass_pid_filter() {
+        assert_eq!(
+            ProcessViewer::Htop.argv(42),
+            vec!["htop".to_owned(), "-p".to_owned(), "42".to_owned()]
+        );
+        assert_eq!(
+            ProcessViewer::Top.argv(7),
+            vec!["top".to_owned(), "-p".to_owned(), "7".to_owned()]
+        );
+    }
+
+    #[test]
+    fn atop_and_btop_launch_without_fake_pid_flag() {
+        assert_eq!(ProcessViewer::Atop.argv(1), vec!["atop".to_owned()]);
+        assert_eq!(ProcessViewer::Btop.argv(1), vec!["btop".to_owned()]);
+    }
 }
