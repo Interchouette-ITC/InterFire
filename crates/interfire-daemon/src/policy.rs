@@ -12,6 +12,7 @@ use crate::dns::DnsCache;
 use crate::pending::DestKey;
 use crate::process::{self, AttributionError, ProcessCache, ProcessIdentity};
 use crate::prompts::{EnqueueOutcome, PromptKey, PromptQueue};
+use crate::recent::{RecentConnects, RecentDest};
 
 /// Outcome of attributing and deciding a connect event.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -34,13 +35,22 @@ pub fn decide(
     cache: &mut ProcessCache,
     prompts: &mut PromptQueue,
     dns: &mut DnsCache,
+    recent: &mut RecentConnects,
 ) -> Decision {
     let key = DestKey {
         ipv4: event.destination_ipv4,
         port: event.destination_port,
     };
     match attribute(event, cache) {
-        Ok(identity) => decide_attributed(&identity, event, rules, prompts, dns, key),
+        Ok(identity) => decide_attributed(AttributedDecide {
+            identity: &identity,
+            event,
+            rules,
+            prompts,
+            dns,
+            recent,
+            key,
+        }),
         Err(error) => {
             warn!(pid = event.pid, %error, "unattributed connect; denying");
             Decision {
@@ -53,14 +63,26 @@ pub fn decide(
     }
 }
 
-fn decide_attributed(
-    identity: &ProcessIdentity,
+struct AttributedDecide<'a> {
+    identity: &'a ProcessIdentity,
     event: TcpConnectEvent,
-    rules: &RuleSet,
-    prompts: &mut PromptQueue,
-    dns: &mut DnsCache,
+    rules: &'a RuleSet,
+    prompts: &'a mut PromptQueue,
+    dns: &'a mut DnsCache,
+    recent: &'a mut RecentConnects,
     key: DestKey,
-) -> Decision {
+}
+
+fn decide_attributed(ctx: AttributedDecide<'_>) -> Decision {
+    let AttributedDecide {
+        identity,
+        event,
+        rules,
+        prompts,
+        dns,
+        recent,
+        key,
+    } = ctx;
     let prompt_key = PromptKey {
         executable: identity.executable.display().to_string(),
         ipv4: event.destination_ipv4,
@@ -68,6 +90,7 @@ fn decide_attributed(
     };
     if prompts.take_once_allow(&prompt_key) {
         debug!(port = key.port, "once-allow token consumed");
+        record_recent(recent, identity, event, "allow");
         return Decision {
             key,
             packet_verdict: Verdict::Accept,
@@ -77,6 +100,7 @@ fn decide_attributed(
     }
     if prompts.consume_once_deny(&prompt_key) {
         debug!(port = key.port, "once-deny token consumed");
+        record_recent(recent, identity, event, "deny");
         return Decision {
             key,
             packet_verdict: Verdict::Drop,
@@ -86,14 +110,17 @@ fn decide_attributed(
     }
     let connection = connection_from(identity, event, dns);
     let rule_verdict = rules.verdict_for(&connection);
-    let (packet_verdict, prompt_id) = match rule_verdict {
-        RuleVerdict::Allow => (Verdict::Accept, None),
-        RuleVerdict::Deny => (Verdict::Drop, None),
+    let (packet_verdict, prompt_id, label) = match rule_verdict {
+        RuleVerdict::Allow => (Verdict::Accept, None, "allow"),
+        RuleVerdict::Deny => (Verdict::Drop, None, "deny"),
         RuleVerdict::Prompt => match prompts.enqueue(prompt_key) {
-            EnqueueOutcome::Created(id) | EnqueueOutcome::Deduped(id) => (Verdict::Drop, Some(id)),
-            EnqueueOutcome::Full => (Verdict::Drop, None),
+            EnqueueOutcome::Created(id) | EnqueueOutcome::Deduped(id) => {
+                (Verdict::Drop, Some(id), "prompt")
+            }
+            EnqueueOutcome::Full => (Verdict::Drop, None, "prompt"),
         },
     };
+    record_recent(recent, identity, event, label);
     debug!(
         pid = identity.pid,
         executable = %identity.executable.display(),
@@ -110,6 +137,23 @@ fn decide_attributed(
         attributed: true,
         prompt_id,
     }
+}
+
+fn record_recent(
+    recent: &mut RecentConnects,
+    identity: &ProcessIdentity,
+    event: TcpConnectEvent,
+    verdict: &str,
+) {
+    recent.record(
+        identity.pid,
+        identity.start_ticks,
+        RecentDest {
+            ipv4: Ipv4Addr::from(event.destination_octets()),
+            port: event.destination_port,
+            verdict: verdict.to_owned(),
+        },
+    );
 }
 
 fn attribute(
@@ -165,12 +209,14 @@ mod tests {
         let mut cache = ProcessCache::new(8);
         let mut prompts = PromptQueue::new(8, Duration::from_secs(60));
         let mut dns = DnsCache::new(8, Duration::from_secs(60));
+        let mut recent = RecentConnects::new(8, 8);
         let decision = decide(
             event(u32::MAX, 9),
             &rules,
             &mut cache,
             &mut prompts,
             &mut dns,
+            &mut recent,
         );
         assert!(!decision.attributed);
         assert_eq!(decision.packet_verdict, Verdict::Drop);
@@ -197,12 +243,14 @@ mod tests {
         let mut cache = ProcessCache::new(8);
         let mut prompts = PromptQueue::new(8, Duration::from_secs(60));
         let mut dns = DnsCache::new(8, Duration::from_secs(60));
+        let mut recent = RecentConnects::new(8, 8);
         let decision = decide(
             event(self_pid, 8443),
             &rules,
             &mut cache,
             &mut prompts,
             &mut dns,
+            &mut recent,
         );
         assert!(decision.attributed);
         assert_eq!(decision.packet_verdict, Verdict::Accept);
@@ -215,12 +263,14 @@ mod tests {
         let mut cache = ProcessCache::new(8);
         let mut prompts = PromptQueue::new(8, Duration::from_secs(60));
         let mut dns = DnsCache::new(8, Duration::from_secs(60));
+        let mut recent = RecentConnects::new(8, 8);
         let decision = decide(
             event(self_pid, 9_001),
             &rules,
             &mut cache,
             &mut prompts,
             &mut dns,
+            &mut recent,
         );
         assert!(decision.attributed);
         assert_eq!(decision.packet_verdict, Verdict::Drop);
@@ -235,12 +285,14 @@ mod tests {
         let mut cache = ProcessCache::new(8);
         let mut prompts = PromptQueue::new(1, Duration::from_secs(60));
         let mut dns = DnsCache::new(8, Duration::from_secs(60));
+        let mut recent = RecentConnects::new(8, 8);
         let first = decide(
             event(self_pid, 9_002),
             &rules,
             &mut cache,
             &mut prompts,
             &mut dns,
+            &mut recent,
         );
         assert!(first.prompt_id.is_some());
         let second = decide(
@@ -249,6 +301,7 @@ mod tests {
             &mut cache,
             &mut prompts,
             &mut dns,
+            &mut recent,
         );
         assert_eq!(second.packet_verdict, Verdict::Drop);
         assert!(second.prompt_id.is_none());
@@ -290,6 +343,7 @@ mod tests {
         let mut cache = ProcessCache::new(8);
         let mut prompts = PromptQueue::new(8, Duration::from_secs(60));
         let mut dns = DnsCache::new(8, Duration::from_millis(1));
+        let mut recent = RecentConnects::new(8, 8);
         dns.observe("evil.test", ip, Some(Duration::from_millis(1)));
         std::thread::sleep(Duration::from_millis(5));
         let decision = decide(
@@ -298,6 +352,7 @@ mod tests {
             &mut cache,
             &mut prompts,
             &mut dns,
+            &mut recent,
         );
         assert_eq!(decision.packet_verdict, Verdict::Accept);
     }

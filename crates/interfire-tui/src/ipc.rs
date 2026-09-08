@@ -5,7 +5,8 @@ use std::io;
 use std::time::Duration;
 
 use interfire_proto::{
-    AuditStreamRecord, DaemonStatus, MAX_FRAME_BYTES, PromptRow, RuleRow, parse_error_message,
+    AuditStreamRecord, DaemonStatus, MAX_FRAME_BYTES, ProcessRow, PromptRow, RuleRow,
+    parse_error_message,
 };
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
@@ -28,6 +29,7 @@ pub enum IpcEvent {
     SubscriptionReady,
     Rules(Vec<RuleRow>),
     Prompts(Vec<PromptRow>),
+    Processes(Vec<ProcessRow>),
     ActionOk(String),
     ActionError(String),
 }
@@ -111,6 +113,11 @@ async fn lists_poll_loop(socket: String, tx: mpsc::UnboundedSender<IpcEvent>) {
         }
         if let Ok(prompts) = fetch_prompts(&socket).await
             && tx.send(IpcEvent::Prompts(prompts)).is_err()
+        {
+            return;
+        }
+        if let Ok(processes) = fetch_processes(&socket).await
+            && tx.send(IpcEvent::Processes(processes)).is_err()
         {
             return;
         }
@@ -226,6 +233,12 @@ async fn fetch_prompts(socket: &str) -> io::Result<Vec<PromptRow>> {
     let frame = one_shot(socket, "v1 prompt-list\n").await?;
     PromptRow::parse_frame(&frame)
         .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "malformed_prompts"))
+}
+
+async fn fetch_processes(socket: &str) -> io::Result<Vec<ProcessRow>> {
+    let frame = one_shot(socket, "v1 process-list\n").await?;
+    ProcessRow::parse_frame(&frame)
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "malformed_processes"))
 }
 
 async fn one_shot(socket: &str, request: &str) -> io::Result<String> {

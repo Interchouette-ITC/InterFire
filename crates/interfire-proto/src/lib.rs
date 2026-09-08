@@ -68,6 +68,7 @@ pub enum Request {
         id: String,
         since: u64,
     },
+    ProcessList,
 }
 
 impl Request {
@@ -174,6 +175,7 @@ impl Request {
                 id.map(|id| Self::AuditSubscribe { id, since })
                     .ok_or(ProtocolError::Malformed)
             }
+            Some("process-list") if fields.next().is_none() => Ok(Self::ProcessList),
             _ => Err(ProtocolError::Malformed),
         }
     }
@@ -189,6 +191,7 @@ pub enum Response {
     Dns(String),
     Audit(String),
     Subscribed(String),
+    Processes(String),
 }
 
 /// Daemon `status` response body (encode side).
@@ -228,6 +231,7 @@ impl Response {
             Self::Dns(value) => format!("v1 dns {value}\n"),
             Self::Audit(value) => format!("v1 audit-tail {value}\n"),
             Self::Subscribed(id) => format!("v1 subscribed {id}\n"),
+            Self::Processes(value) => format!("v1 processes {value}\n"),
         }
     }
 }
@@ -478,6 +482,112 @@ impl PromptRow {
     }
 }
 
+/// One observed process row as returned by `v1 processes …`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProcessRow {
+    pub pid: u32,
+    pub start_ticks: u64,
+    pub uid: u32,
+    pub executable: String,
+    pub cmdline: String,
+    /// Effective rule verdict for this executable (`allow` / `deny` / `prompt`).
+    pub verdict: String,
+    /// Compact recent destinations: `ip:port/verdict+…`.
+    pub ports: String,
+}
+
+impl ProcessRow {
+    /// Parse a `v1 processes …` response frame into rows.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ProtocolError`] when the frame is not a well-formed process list.
+    pub fn parse_frame(frame: &str) -> Result<Vec<Self>, ProtocolError> {
+        let line = frame.trim_end_matches(['\r', '\n']);
+        let mut fields = line.splitn(3, ' ');
+        match fields.next() {
+            Some("v1") => {}
+            Some(token) if token.starts_with('v') => return Err(ProtocolError::UnsupportedVersion),
+            _ => return Err(ProtocolError::Malformed),
+        }
+        if fields.next() != Some("processes") {
+            return Err(ProtocolError::Malformed);
+        }
+        let payload = fields.next().unwrap_or("");
+        if payload.is_empty() {
+            return Ok(Vec::new());
+        }
+        payload.split(';').map(Self::parse_row).collect()
+    }
+
+    fn parse_row(row: &str) -> Result<Self, ProtocolError> {
+        let mut parts = row.splitn(7, '|');
+        let pid = parts
+            .next()
+            .and_then(|value| value.parse().ok())
+            .ok_or(ProtocolError::Malformed)?;
+        let start_ticks = parts
+            .next()
+            .and_then(|value| value.parse().ok())
+            .ok_or(ProtocolError::Malformed)?;
+        let uid = parts
+            .next()
+            .and_then(|value| value.parse().ok())
+            .ok_or(ProtocolError::Malformed)?;
+        let verdict = parts.next().ok_or(ProtocolError::Malformed)?.to_owned();
+        let recent_ports = parts.next().ok_or(ProtocolError::Malformed)?.to_owned();
+        let executable = unescape_field(parts.next().ok_or(ProtocolError::Malformed)?);
+        let cmdline = unescape_field(parts.next().ok_or(ProtocolError::Malformed)?);
+        Ok(Self {
+            pid,
+            start_ticks,
+            uid,
+            executable,
+            cmdline,
+            verdict,
+            ports: recent_ports,
+        })
+    }
+
+    /// Encode one row for a `v1 processes` payload.
+    #[must_use]
+    pub fn encode_row(&self) -> String {
+        format!(
+            "{}|{}|{}|{}|{}|{}|{}",
+            self.pid,
+            self.start_ticks,
+            self.uid,
+            self.verdict,
+            self.ports,
+            escape_field(&self.executable),
+            escape_field(&self.cmdline),
+        )
+    }
+
+    /// Compact list label for UI / TUI.
+    #[must_use]
+    pub fn list_label(&self) -> String {
+        format!(
+            "{}  {}  {}  {}",
+            self.pid, self.executable, self.verdict, self.ports
+        )
+    }
+}
+
+fn escape_field(value: &str) -> String {
+    value
+        .replace('%', "%25")
+        .replace('|', "%7C")
+        .replace(';', "%3B")
+}
+
+fn unescape_field(value: &str) -> String {
+    value
+        .replace("%3B", ";")
+        .replace("%7C", "|")
+        .replace("%25", "%")
+}
+
 /// Parse `v1 error …` into the message body.
 #[must_use]
 pub fn parse_error_message(frame: &str) -> Option<String> {
@@ -610,6 +720,26 @@ mod tests {
             parse_error_message("v1 error invalid_rule\n").as_deref(),
             Some("invalid_rule")
         );
+    }
+
+    #[test]
+    fn parses_process_list_frame() {
+        assert_eq!(
+            Request::parse("v1 process-list\n"),
+            Ok(Request::ProcessList)
+        );
+        let row = ProcessRow {
+            pid: 42,
+            start_ticks: 99,
+            uid: 1000,
+            executable: "/usr/bin/curl".into(),
+            cmdline: "curl https://example".into(),
+            verdict: "prompt".into(),
+            ports: "203.0.113.1:443/prompt".into(),
+        };
+        let frame = Response::Processes(row.encode_row()).encode();
+        assert_eq!(ProcessRow::parse_frame(&frame), Ok(vec![row]));
+        assert_eq!(ProcessRow::parse_frame("v1 processes\n"), Ok(vec![]));
     }
 
     #[test]

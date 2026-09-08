@@ -117,6 +117,15 @@ impl ProcessCache {
         self.entries.insert(key, identity);
     }
 
+    /// Return cached identities in insertion order (oldest first).
+    #[must_use]
+    pub fn list(&self) -> Vec<ProcessIdentity> {
+        self.order
+            .iter()
+            .filter_map(|key| self.entries.get(key).cloned())
+            .collect()
+    }
+
     #[must_use]
     pub fn get(&self, pid: u32, start_ticks: u64) -> Option<&ProcessIdentity> {
         self.entries.get(&(pid, start_ticks))
