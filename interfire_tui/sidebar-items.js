@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"fn":["install_panic_hook","main","parse_socket","restore_terminal","run","setup_terminal"],"mod":["app","ipc","ui"]};
+window.SIDEBAR_ITEMS = {"fn":["install_panic_hook","main","parse_args","restore_terminal","run","setup_terminal"],"mod":["app","ipc","palette","ui"]};

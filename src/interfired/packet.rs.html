@@ -51,5 +51,17 @@
 <a href=#51 id=51 data-nosnippet>51</a>        packet[<span class="number">9</span>] = <span class="number">17</span>;
 <a href=#52 id=52 data-nosnippet>52</a>        <span class="macro">assert!</span>(tcp_destination(<span class="kw-2">&amp;</span>packet).is_none());
 <a href=#53 id=53 data-nosnippet>53</a>    }
-<a href=#54 id=54 data-nosnippet>54</a>}
+<a href=#54 id=54 data-nosnippet>54</a>
+<a href=#55 id=55 data-nosnippet>55</a>    <span class="attr">#[test]
+<a href=#56 id=56 data-nosnippet>56</a>    </span><span class="kw">fn </span>rejects_non_ipv4_and_invalid_ihl() {
+<a href=#57 id=57 data-nosnippet>57</a>        <span class="kw">let </span><span class="kw-2">mut </span>ipv6 = <span class="macro">vec!</span>[<span class="number">0_u8</span>; <span class="number">40</span>];
+<a href=#58 id=58 data-nosnippet>58</a>        ipv6[<span class="number">0</span>] = <span class="number">0x60</span>;
+<a href=#59 id=59 data-nosnippet>59</a>        <span class="macro">assert!</span>(tcp_destination(<span class="kw-2">&amp;</span>ipv6).is_none());
+<a href=#60 id=60 data-nosnippet>60</a>
+<a href=#61 id=61 data-nosnippet>61</a>        <span class="kw">let </span><span class="kw-2">mut </span>short_ihl = <span class="macro">vec!</span>[<span class="number">0_u8</span>; <span class="number">20</span>];
+<a href=#62 id=62 data-nosnippet>62</a>        short_ihl[<span class="number">0</span>] = <span class="number">0x40</span>;
+<a href=#63 id=63 data-nosnippet>63</a>        short_ihl[<span class="number">9</span>] = IPPROTO_TCP;
+<a href=#64 id=64 data-nosnippet>64</a>        <span class="macro">assert!</span>(tcp_destination(<span class="kw-2">&amp;</span>short_ihl).is_none());
+<a href=#65 id=65 data-nosnippet>65</a>    }
+<a href=#66 id=66 data-nosnippet>66</a>}
 </code></pre></div></section></main></body></html>

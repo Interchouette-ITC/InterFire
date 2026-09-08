@@ -163,5 +163,59 @@
 <a href=#163 id=163 data-nosnippet>163</a>        <span class="macro">assert!</span>(cache.get(<span class="number">1</span>, <span class="number">1</span>).is_none());
 <a href=#164 id=164 data-nosnippet>164</a>        <span class="macro">assert!</span>(cache.get(<span class="number">2</span>, <span class="number">1</span>).is_some());
 <a href=#165 id=165 data-nosnippet>165</a>    }
-<a href=#166 id=166 data-nosnippet>166</a>}
+<a href=#166 id=166 data-nosnippet>166</a>
+<a href=#167 id=167 data-nosnippet>167</a>    <span class="attr">#[test]
+<a href=#168 id=168 data-nosnippet>168</a>    </span><span class="kw">fn </span>list_returns_identities_in_insertion_order() {
+<a href=#169 id=169 data-nosnippet>169</a>        <span class="kw">let </span>identity = |pid| ProcessIdentity {
+<a href=#170 id=170 data-nosnippet>170</a>            pid,
+<a href=#171 id=171 data-nosnippet>171</a>            start_ticks: u64::from(pid),
+<a href=#172 id=172 data-nosnippet>172</a>            executable: <span class="macro">format!</span>(<span class="string">"/bin/{pid}"</span>).into(),
+<a href=#173 id=173 data-nosnippet>173</a>            command_line: <span class="macro">vec!</span>[],
+<a href=#174 id=174 data-nosnippet>174</a>            uid: <span class="number">0</span>,
+<a href=#175 id=175 data-nosnippet>175</a>            cgroup: String::new(),
+<a href=#176 id=176 data-nosnippet>176</a>        };
+<a href=#177 id=177 data-nosnippet>177</a>        <span class="kw">let </span><span class="kw-2">mut </span>cache = ProcessCache::new(<span class="number">4</span>);
+<a href=#178 id=178 data-nosnippet>178</a>        cache.insert(identity(<span class="number">1</span>));
+<a href=#179 id=179 data-nosnippet>179</a>        cache.insert(identity(<span class="number">2</span>));
+<a href=#180 id=180 data-nosnippet>180</a>        <span class="kw">let </span>listed = cache.list();
+<a href=#181 id=181 data-nosnippet>181</a>        <span class="macro">assert_eq!</span>(listed.len(), <span class="number">2</span>);
+<a href=#182 id=182 data-nosnippet>182</a>        <span class="macro">assert_eq!</span>(listed[<span class="number">0</span>].pid, <span class="number">1</span>);
+<a href=#183 id=183 data-nosnippet>183</a>        <span class="macro">assert_eq!</span>(listed[<span class="number">1</span>].pid, <span class="number">2</span>);
+<a href=#184 id=184 data-nosnippet>184</a>    }
+<a href=#185 id=185 data-nosnippet>185</a>
+<a href=#186 id=186 data-nosnippet>186</a>    <span class="attr">#[test]
+<a href=#187 id=187 data-nosnippet>187</a>    </span><span class="kw">fn </span>insert_skips_duplicate_key() {
+<a href=#188 id=188 data-nosnippet>188</a>        <span class="kw">let </span><span class="kw-2">mut </span>cache = ProcessCache::new(<span class="number">4</span>);
+<a href=#189 id=189 data-nosnippet>189</a>        <span class="kw">let </span>first = ProcessIdentity {
+<a href=#190 id=190 data-nosnippet>190</a>            pid: <span class="number">7</span>,
+<a href=#191 id=191 data-nosnippet>191</a>            start_ticks: <span class="number">11</span>,
+<a href=#192 id=192 data-nosnippet>192</a>            executable: <span class="string">"/bin/first"</span>.into(),
+<a href=#193 id=193 data-nosnippet>193</a>            command_line: <span class="macro">vec!</span>[],
+<a href=#194 id=194 data-nosnippet>194</a>            uid: <span class="number">0</span>,
+<a href=#195 id=195 data-nosnippet>195</a>            cgroup: String::new(),
+<a href=#196 id=196 data-nosnippet>196</a>        };
+<a href=#197 id=197 data-nosnippet>197</a>        <span class="kw">let </span>second = ProcessIdentity {
+<a href=#198 id=198 data-nosnippet>198</a>            executable: <span class="string">"/bin/second"</span>.into(),
+<a href=#199 id=199 data-nosnippet>199</a>            ..first.clone()
+<a href=#200 id=200 data-nosnippet>200</a>        };
+<a href=#201 id=201 data-nosnippet>201</a>        cache.insert(first);
+<a href=#202 id=202 data-nosnippet>202</a>        cache.insert(second);
+<a href=#203 id=203 data-nosnippet>203</a>        <span class="macro">assert_eq!</span>(
+<a href=#204 id=204 data-nosnippet>204</a>            cache.get(<span class="number">7</span>, <span class="number">11</span>).unwrap().executable.to_str().unwrap(),
+<a href=#205 id=205 data-nosnippet>205</a>            <span class="string">"/bin/first"
+<a href=#206 id=206 data-nosnippet>206</a>        </span>);
+<a href=#207 id=207 data-nosnippet>207</a>    }
+<a href=#208 id=208 data-nosnippet>208</a>
+<a href=#209 id=209 data-nosnippet>209</a>    <span class="attr">#[test]
+<a href=#210 id=210 data-nosnippet>210</a>    </span><span class="kw">fn </span>parse_start_ticks_rejects_malformed_stat() {
+<a href=#211 id=211 data-nosnippet>211</a>        <span class="macro">assert!</span>(parse_start_ticks(<span class="string">"broken"</span>).is_err());
+<a href=#212 id=212 data-nosnippet>212</a>    }
+<a href=#213 id=213 data-nosnippet>213</a>
+<a href=#214 id=214 data-nosnippet>214</a>    <span class="attr">#[test]
+<a href=#215 id=215 data-nosnippet>215</a>    </span><span class="kw">fn </span>resolve_detects_pid_reuse() {
+<a href=#216 id=216 data-nosnippet>216</a>        <span class="kw">let </span>self_pid = std::process::id();
+<a href=#217 id=217 data-nosnippet>217</a>        <span class="kw">let </span>error = resolve(self_pid, u64::MAX).unwrap_err();
+<a href=#218 id=218 data-nosnippet>218</a>        <span class="macro">assert!</span>(<span class="macro">matches!</span>(error, AttributionError::PidReused { .. }));
+<a href=#219 id=219 data-nosnippet>219</a>    }
+<a href=#220 id=220 data-nosnippet>220</a>}
 </code></pre></div></section></main></body></html>

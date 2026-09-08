@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["ACCENT","DANGER","MODE_DARK","MODE_LIGHT","OK","ON_ACCENT","WARN"],"enum":["Mode"],"fn":["accent_label","allow","body","border","border_color","canvas","chrome","deny","elevated","err","focus","is_dark","muted","muted_fg","ok","overlay_panel","panel","selected","set_mode","surface","text","title","warn"],"static":["MODE"]};

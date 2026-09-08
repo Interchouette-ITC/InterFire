@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"enum":["Mutate"],"fn":["audit_subscribe","audit_tail","dispatch","dns_list","dns_note","encode_prompts","handle","mutate","peer_may_mutate","persist_answered_rule","process_list","prompt_answer","prompt_list","rule_list"]};
+window.SIDEBAR_ITEMS = {"enum":["Mutate","NetworkMutate"],"fn":["audit_subscribe","audit_tail","dispatch","dns_list","dns_note","encode_prompts","handle","mutate","network_mutate","peer_may_mutate","persist_answered_rule","process_list","prompt_answer","prompt_list","rule_list"]};

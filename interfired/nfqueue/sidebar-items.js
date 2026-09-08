@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"constant":["QUEUE_NUM"],"fn":["lookup_verdict","run","run_or_degrade"]};
+window.SIDEBAR_ITEMS = {"fn":["run","run_or_degrade"]};

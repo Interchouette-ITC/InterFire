@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"fn":["handle_event","run"]};
+window.SIDEBAR_ITEMS = {"fn":["forced_ring_exit","handle_event","handle_event_for_live","run"]};

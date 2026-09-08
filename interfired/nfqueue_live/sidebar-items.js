@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["bind_and_serve","lookup_verdict"]};
