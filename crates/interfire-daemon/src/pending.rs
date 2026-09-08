@@ -120,4 +120,28 @@ mod tests {
             Some(Verdict::Drop)
         );
     }
+
+    #[test]
+    fn insert_updates_existing_key() {
+        let mut table = PendingTable::new(4, Duration::from_secs(5));
+        let key = DestKey {
+            ipv4: 0x7f00_0001,
+            port: 80,
+        };
+        table.insert(key, Verdict::Accept);
+        table.insert(key, Verdict::Drop);
+        assert_eq!(table.take(key), Some(Verdict::Drop));
+    }
+
+    #[test]
+    fn ttl_expires_stale_entries() {
+        let mut table = PendingTable::new(4, Duration::from_millis(1));
+        let key = DestKey {
+            ipv4: 0x7f00_0001,
+            port: 443,
+        };
+        table.insert(key, Verdict::Accept);
+        std::thread::sleep(Duration::from_millis(5));
+        assert!(table.take(key).is_none());
+    }
 }

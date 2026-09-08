@@ -190,7 +190,8 @@ fn connection_from(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use interfire_rules::{Rule, Scope};
+    use interfire_proto::RuleScope;
+    use interfire_rules::{Rule, Scope, Verdict as RulesVerdict};
     use std::time::Duration;
 
     fn event(pid: u32, port: u16) -> TcpConnectEvent {
@@ -355,5 +356,94 @@ mod tests {
             &mut recent,
         );
         assert_eq!(decision.packet_verdict, Verdict::Accept);
+    }
+
+    #[test]
+    fn deny_rule_drops_attributed_connect() {
+        let self_pid = std::process::id();
+        let identity = process::resolve(self_pid, 0).expect("self /proc");
+        let mut rules = RuleSet::default();
+        rules
+            .insert(Rule {
+                id: 1,
+                executable: identity.executable.display().to_string(),
+                protocol: Some(Protocol::Tcp),
+                direction: Some(Direction::Outbound),
+                address: None,
+                hostname: None,
+                port: Some(9_200),
+                verdict: RuleVerdict::Deny,
+                scope: Scope::Permanent,
+            })
+            .unwrap();
+        let mut cache = ProcessCache::new(8);
+        let mut prompts = PromptQueue::new(8, Duration::from_secs(60));
+        let mut dns = DnsCache::new(8, Duration::from_secs(60));
+        let mut recent = RecentConnects::new(8, 8);
+        let decision = decide(
+            event(self_pid, 9_200),
+            &rules,
+            &mut cache,
+            &mut prompts,
+            &mut dns,
+            &mut recent,
+        );
+        assert!(decision.attributed);
+        assert_eq!(decision.packet_verdict, Verdict::Drop);
+    }
+
+    #[test]
+    fn once_allow_accepts_without_re_prompt() {
+        let self_pid = std::process::id();
+        let rules = RuleSet::default();
+        let mut cache = ProcessCache::new(8);
+        let mut prompts = PromptQueue::new(8, Duration::from_secs(60));
+        let mut dns = DnsCache::new(8, Duration::from_secs(60));
+        let mut recent = RecentConnects::new(8, 8);
+        let first = decide(
+            event(self_pid, 9_300),
+            &rules,
+            &mut cache,
+            &mut prompts,
+            &mut dns,
+            &mut recent,
+        );
+        let id = first.prompt_id.expect("prompt");
+        prompts
+            .answer(id, RulesVerdict::Allow, RuleScope::Once)
+            .unwrap();
+        let second = decide(
+            event(self_pid, 9_300),
+            &rules,
+            &mut cache,
+            &mut prompts,
+            &mut dns,
+            &mut recent,
+        );
+        assert_eq!(second.packet_verdict, Verdict::Accept);
+        assert!(second.prompt_id.is_none());
+    }
+
+    #[test]
+    fn cached_identity_avoids_re_resolve() {
+        let self_pid = std::process::id();
+        let identity = process::resolve(self_pid, 0).expect("self /proc");
+        let mut cache = ProcessCache::new(8);
+        cache.insert(identity.clone());
+        let rules = RuleSet::default();
+        let mut prompts = PromptQueue::new(8, Duration::from_secs(60));
+        let mut dns = DnsCache::new(8, Duration::from_secs(60));
+        let mut recent = RecentConnects::new(8, 8);
+        let mut connect = event(self_pid, 9_400);
+        connect.process_start_ticks = identity.start_ticks;
+        let decision = decide(
+            connect,
+            &rules,
+            &mut cache,
+            &mut prompts,
+            &mut dns,
+            &mut recent,
+        );
+        assert!(decision.attributed);
     }
 }

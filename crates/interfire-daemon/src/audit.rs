@@ -360,4 +360,114 @@ mod tests {
         }
         let _ = fs::remove_file(path);
     }
+
+    #[test]
+    fn since_returns_records_after_sequence() {
+        let path = temp_path("since.log");
+        let _ = fs::remove_file(&path);
+        let mut log = AuditLog::open(&path, 4_096, 100).unwrap();
+        log.append("one");
+        log.append("two");
+        let rows = log.since(1);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].message, "two");
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn tail_respects_limit_and_order() {
+        let path = temp_path("tail.log");
+        let _ = fs::remove_file(&path);
+        let mut log = AuditLog::open(&path, 4_096, 100).unwrap();
+        log.append("a");
+        log.append("b");
+        log.append("c");
+        let rows = log.tail(2);
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].message, "b");
+        assert_eq!(rows[1].message, "c");
+        assert!(log.tail(0).is_empty());
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn encode_audit_frame_and_parse_record() {
+        let record = BoundedLogRecord {
+            sequence: 3,
+            message: "line\nbreak".into(),
+        };
+        assert_eq!(encode_audit_frame(&record), "v1 audit 3|line\nbreak\n");
+        assert_eq!(
+            parse_record("3\tplain"),
+            Some(BoundedLogRecord {
+                sequence: 3,
+                message: "plain".into(),
+            })
+        );
+        assert!(parse_record("bad").is_none());
+        assert!(parse_record("x\t").is_none());
+    }
+
+    #[test]
+    fn load_from_disk_skips_malformed_lines() {
+        let path = temp_path("malformed.log");
+        let _ = fs::remove_file(&path);
+        fs::write(&path, "1\tgood\nbad-line\n2\talso-good\n").unwrap();
+        let log = AuditLog::open(&path, 4_096, 100).unwrap();
+        assert_eq!(log.tail(10).len(), 2);
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn remove_subscriber_clears_registry() {
+        let path = temp_path("remove.log");
+        let _ = fs::remove_file(&path);
+        let mut log = AuditLog::open(&path, 4_096, 100).unwrap();
+        let _receiver = log.subscribe("ui");
+        assert_eq!(log.subscriber_count(), 1);
+        log.remove_subscriber("ui");
+        assert_eq!(log.subscriber_count(), 0);
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn fanout_removes_full_subscriber_channel() {
+        let path = temp_path("full.log");
+        let _ = fs::remove_file(&path);
+        let mut log = AuditLog::open(&path, 4_096, 100).unwrap();
+        let _receiver = log.subscribe("blocked");
+        for index in 0..=SUBSCRIBER_CHANNEL_CAPACITY {
+            log.append(format!("fill-{index}"));
+        }
+        assert_eq!(log.subscriber_count(), 0);
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn fanout_drops_disconnected_subscribers() {
+        let path = temp_path("fanout.log");
+        let _ = fs::remove_file(&path);
+        let mut log = AuditLog::open(&path, 4_096, 100).unwrap();
+        let receiver = log.subscribe("gone");
+        drop(receiver);
+        log.append("after-drop");
+        assert_eq!(log.subscriber_count(), 0);
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn run_subscriber_handles_replaced_event() {
+        use std::io::Read;
+        use std::os::unix::net::UnixStream;
+
+        let (client, server) = UnixStream::pair().unwrap();
+        let (sender, receiver) = mpsc::sync_channel(4);
+        sender.try_send(Fanout::Replaced).unwrap();
+        drop(sender);
+        assert!(!run_subscriber(&receiver, server, vec![]));
+        let mut client = client;
+        let mut buffer = [0_u8; 32];
+        let read = client.read(&mut buffer).unwrap();
+        assert_eq!(&buffer[..read], b"v1 audit-replaced\n");
+    }
 }

@@ -121,6 +121,8 @@ impl Observer {
 mod tests {
     use std::error::Error;
 
+    use object::{Object, ObjectSymbol};
+
     use super::*;
 
     fn embedded_bytecode() -> &'static [u8] {
@@ -192,5 +194,21 @@ mod tests {
                 "unexpected error text: {message}"
             );
         }
+    }
+
+    #[test]
+    fn observer_status_is_distinct() {
+        assert_ne!(ObserverStatus::Attached, ObserverStatus::Degraded);
+    }
+
+    #[test]
+    fn embedded_object_declares_program_and_event_map() {
+        let file = object::read::File::parse(embedded_bytecode()).expect("elf");
+        let symbols = file
+            .symbols()
+            .map(|symbol| symbol.name().unwrap_or(""))
+            .collect::<Vec<_>>();
+        assert!(symbols.iter().any(|name| name.contains(PROGRAM_NAME)));
+        assert!(symbols.iter().any(|name| name.contains(EVENT_MAP)));
     }
 }

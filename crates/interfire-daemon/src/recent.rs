@@ -98,4 +98,25 @@ mod tests {
         let rows = recent.for_process(1, 9);
         assert_eq!(rows[0].verdict, "deny");
     }
+
+    #[test]
+    fn evicts_oldest_process_key() {
+        let mut recent = RecentConnects::new(2, 4);
+        let dest = |port| RecentDest {
+            ipv4: Ipv4Addr::new(203, 0, 113, 10),
+            port,
+            verdict: "prompt".into(),
+        };
+        recent.record(1, 1, dest(443));
+        recent.record(2, 2, dest(80));
+        recent.record(3, 3, dest(22));
+        assert!(recent.for_process(1, 1).is_empty());
+        assert_eq!(recent.for_process(3, 3).len(), 1);
+    }
+
+    #[test]
+    fn unknown_process_returns_empty() {
+        let recent = RecentConnects::new(2, 2);
+        assert!(recent.for_process(99, 1).is_empty());
+    }
 }

@@ -29,8 +29,7 @@ pub fn sample_self() -> io::Result<SelfMetrics> {
     })
 }
 
-fn read_vm_rss_kib() -> io::Result<u64> {
-    let status = fs::read_to_string("/proc/self/status")?;
+fn parse_vm_rss_kib(status: &str) -> io::Result<u64> {
     for line in status.lines() {
         if let Some(rest) = line.strip_prefix("VmRSS:") {
             let kib = rest
@@ -45,10 +44,13 @@ fn read_vm_rss_kib() -> io::Result<u64> {
     Err(io::Error::new(io::ErrorKind::InvalidData, "VmRSS missing"))
 }
 
-fn read_cpu_jiffies() -> io::Result<u64> {
-    let line = fs::read_to_string("/proc/self/stat")?;
+fn read_vm_rss_kib() -> io::Result<u64> {
+    parse_vm_rss_kib(&fs::read_to_string("/proc/self/status")?)
+}
+
+fn parse_cpu_jiffies(stat: &str) -> io::Result<u64> {
     // Field 1 can contain spaces inside parentheses; split after the last ')'.
-    let after_comm = line
+    let after_comm = stat
         .rsplit_once(')')
         .map(|(_, rest)| rest.trim_start())
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "stat missing comm"))?;
@@ -69,6 +71,10 @@ fn read_cpu_jiffies() -> io::Result<u64> {
     Ok(utime.saturating_add(stime))
 }
 
+fn read_cpu_jiffies() -> io::Result<u64> {
+    parse_cpu_jiffies(&fs::read_to_string("/proc/self/stat")?)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -78,5 +84,24 @@ mod tests {
         let metrics = sample_self().expect("/proc/self");
         assert_eq!(metrics.pid, std::process::id());
         assert!(metrics.rss_kib > 0);
+    }
+
+    #[test]
+    fn parse_vm_rss_handles_valid_and_invalid_status() {
+        assert_eq!(parse_vm_rss_kib("VmRSS:\t2048 kB\n").unwrap(), 2048);
+        assert!(parse_vm_rss_kib("Name:\tbash\n").is_err());
+        assert!(parse_vm_rss_kib("VmRSS:\tbad\n").is_err());
+    }
+
+    #[test]
+    fn parse_cpu_jiffies_handles_valid_and_invalid_stat() {
+        let mut fields = vec!["S".to_owned()];
+        fields.extend((0..10).map(|_| "0".to_owned()));
+        fields.push("100".to_owned());
+        fields.push("200".to_owned());
+        let stat = format!("42 (worker) {}", fields.join(" "));
+        assert_eq!(parse_cpu_jiffies(&stat).unwrap(), 300);
+        assert!(parse_cpu_jiffies("broken").is_err());
+        assert!(parse_cpu_jiffies("1 (a) S").is_err());
     }
 }

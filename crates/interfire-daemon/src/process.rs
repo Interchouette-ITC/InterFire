@@ -163,4 +163,58 @@ mod tests {
         assert!(cache.get(1, 1).is_none());
         assert!(cache.get(2, 1).is_some());
     }
+
+    #[test]
+    fn list_returns_identities_in_insertion_order() {
+        let identity = |pid| ProcessIdentity {
+            pid,
+            start_ticks: u64::from(pid),
+            executable: format!("/bin/{pid}").into(),
+            command_line: vec![],
+            uid: 0,
+            cgroup: String::new(),
+        };
+        let mut cache = ProcessCache::new(4);
+        cache.insert(identity(1));
+        cache.insert(identity(2));
+        let listed = cache.list();
+        assert_eq!(listed.len(), 2);
+        assert_eq!(listed[0].pid, 1);
+        assert_eq!(listed[1].pid, 2);
+    }
+
+    #[test]
+    fn insert_skips_duplicate_key() {
+        let mut cache = ProcessCache::new(4);
+        let first = ProcessIdentity {
+            pid: 7,
+            start_ticks: 11,
+            executable: "/bin/first".into(),
+            command_line: vec![],
+            uid: 0,
+            cgroup: String::new(),
+        };
+        let second = ProcessIdentity {
+            executable: "/bin/second".into(),
+            ..first.clone()
+        };
+        cache.insert(first);
+        cache.insert(second);
+        assert_eq!(
+            cache.get(7, 11).unwrap().executable.to_str().unwrap(),
+            "/bin/first"
+        );
+    }
+
+    #[test]
+    fn parse_start_ticks_rejects_malformed_stat() {
+        assert!(parse_start_ticks("broken").is_err());
+    }
+
+    #[test]
+    fn resolve_detects_pid_reuse() {
+        let self_pid = std::process::id();
+        let error = resolve(self_pid, u64::MAX).unwrap_err();
+        assert!(matches!(error, AttributionError::PidReused { .. }));
+    }
 }
