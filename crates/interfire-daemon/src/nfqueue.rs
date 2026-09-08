@@ -8,22 +8,21 @@ use std::time::Duration;
 use nfq::{Queue, Verdict};
 use tracing::{debug, info, warn};
 
+use interfire_proto::NFQUEUE_NUM;
+
 use crate::packet;
 use crate::shared::Shared;
 
-/// Default NFQUEUE number (matches the isolated NFQUEUE test).
-pub const QUEUE_NUM: u16 = 4242;
-
-/// Bind queue `QUEUE_NUM` and apply pending / default-deny verdicts.
+/// Bind queue [`NFQUEUE_NUM`] and apply pending / default-deny verdicts.
 ///
 /// # Errors
 ///
 /// Returns I/O errors when the queue cannot be opened or bound.
 pub fn run(shared: &Shared) -> std::io::Result<()> {
     let mut queue = Queue::open()?;
-    queue.bind(QUEUE_NUM)?;
+    queue.bind(NFQUEUE_NUM)?;
     shared.set_enforcement("nfqueue");
-    info!(queue = QUEUE_NUM, "NFQUEUE bound");
+    info!(queue = NFQUEUE_NUM, "NFQUEUE bound");
     loop {
         let mut message = queue.recv()?;
         let verdict = lookup_verdict(&message, shared);

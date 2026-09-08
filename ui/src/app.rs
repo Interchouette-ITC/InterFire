@@ -8,7 +8,7 @@ use gpui_kit::component::input::InputState;
 use gpui_kit::component::*;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
-use interfire_proto::{ProcessRow, PromptRow, RuleRow};
+use interfire_proto::{NetworkStatus, ProcessRow, PromptRow, RuleRow};
 
 use crate::alert::{AlertScope, AlertVerdict, ConnectionAlert};
 use crate::alert_view::alert_overlay;
@@ -18,6 +18,7 @@ use crate::brand;
 use crate::ipc_poll;
 use crate::log_buf::LogBuffer;
 use crate::log_view::log_body;
+use crate::network_view::network_body;
 use crate::proc_sample::{CpuTracker, ProcSample};
 use crate::rss_probe::{RssProbeMode, prompt_load_fixture};
 use crate::rules::{RuleVerdict, next_rule_id, validate_new_rule};
@@ -53,6 +54,8 @@ struct ShellContent<'a> {
     processes: &'a [ProcessRow],
     selected_process: Option<(u32, u64)>,
     viewer_message: Option<&'a str>,
+    network: Option<&'a NetworkStatus>,
+    network_message: Option<&'a str>,
     log: &'a LogBuffer,
     profiling: &'a ProfilingSnapshot,
     chrome_pref: ChromePreference,
@@ -82,6 +85,8 @@ pub struct App {
     processes: Vec<ProcessRow>,
     selected_process: Option<(u32, u64)>,
     viewer_message: Option<String>,
+    network: Option<NetworkStatus>,
+    network_message: Option<String>,
     alert: Option<ConnectionAlert>,
     log: LogBuffer,
     audit: AuditHost,
@@ -116,6 +121,8 @@ impl App {
             processes: Vec::new(),
             selected_process: None,
             viewer_message: None,
+            network: None,
+            network_message: None,
             alert: None,
             log: LogBuffer::new(),
             audit,
@@ -191,6 +198,7 @@ impl App {
             self.prompts = snapshot.prompts;
             self.rules = snapshot.rules;
             self.processes = snapshot.processes;
+            self.network = snapshot.network;
             if let Some(id) = self.selected_rule
                 && !self.rules.iter().any(|row| row.id == id)
             {
@@ -432,6 +440,38 @@ impl App {
         }
         cx.notify();
     }
+
+    pub(crate) fn install_network_table(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        match ipc_poll::install_network(&self.socket) {
+            Ok(()) => {
+                self.network_message = Some("installed InterFire nftables table".into());
+                self.refresh_from_daemon();
+            }
+            Err(message) => {
+                self.network_message = Some(message);
+            }
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn remove_network_table(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        match ipc_poll::remove_network(&self.socket) {
+            Ok(()) => {
+                self.network_message = Some("removed InterFire nftables table".into());
+                self.refresh_from_daemon();
+            }
+            Err(message) => {
+                self.network_message = Some(message);
+            }
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn refresh_network_status(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        self.network_message = None;
+        self.refresh_from_daemon();
+        cx.notify();
+    }
 }
 
 impl Render for App {
@@ -448,6 +488,8 @@ impl Render for App {
         let processes = self.processes.clone();
         let selected_process = self.selected_process;
         let viewer_message = self.viewer_message.clone();
+        let network = self.network.clone();
+        let network_message = self.network_message.clone();
         let log = self.log.clone();
         let profiling = self.profiling.clone();
         let chrome_pref = self.chrome_pref;
@@ -474,6 +516,8 @@ impl Render for App {
                     processes: &processes,
                     selected_process,
                     viewer_message: viewer_message.as_deref(),
+                    network: network.as_ref(),
+                    network_message: network_message.as_deref(),
                     log: &log,
                     profiling: &profiling,
                     chrome_pref,
@@ -686,9 +730,9 @@ fn section_body(content: &ShellContent<'_>, cx: &Context<App>) -> Div {
             cx,
         ),
         Section::Log => log_body(content.log, cx),
-        Section::Network => div()
-            .text_color(muted)
-            .child("InterFire-owned nftables controls are not available yet."),
+        Section::Network => {
+            network_body(content.link, content.network, content.network_message, cx)
+        }
         Section::Profiling => profiling_body(content.profiling, muted),
         Section::Settings => settings_body(
             content.socket,

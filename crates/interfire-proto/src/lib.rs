@@ -15,6 +15,13 @@ pub const DEFAULT_RULES_PATH: &str = "/etc/interfire/rules.toml";
 /// Default on-disk audit log path.
 pub const DEFAULT_AUDIT_PATH: &str = "/var/lib/interfire/audit.log";
 
+/// InterFire-owned nftables table name (`inet` family).
+pub const NFT_TABLE: &str = "interfire";
+/// InterFire-owned output chain name inside [`NFT_TABLE`].
+pub const NFT_CHAIN: &str = "output";
+/// NFQUEUE number the daemon binds and the owned table queues into.
+pub const NFQUEUE_NUM: u16 = 4242;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RuleScope {
     Once,
@@ -69,6 +76,9 @@ pub enum Request {
         since: u64,
     },
     ProcessList,
+    NetworkStatus,
+    NetworkInstall,
+    NetworkRemove,
 }
 
 impl Request {
@@ -88,97 +98,122 @@ impl Request {
             Some("ping") if fields.next().is_none() => Ok(Self::Ping),
             Some("status") if fields.next().is_none() => Ok(Self::Status),
             Some("rule-list") if fields.next().is_none() => Ok(Self::RuleList),
-            Some("rule-delete") => {
-                let id = fields.next().and_then(|value| value.parse().ok());
-                if fields.next().is_none() {
-                    id.map(|id| Self::RuleDelete { id })
-                        .ok_or(ProtocolError::Malformed)
-                } else {
-                    Err(ProtocolError::Malformed)
-                }
-            }
-            Some("rule-add") => {
-                let id = fields.next().and_then(|value| value.parse().ok());
-                let executable = fields.next().map(str::to_owned);
-                let verdict = fields.next().map(str::to_owned);
-                let port = fields.next().and_then(|value| value.parse().ok());
-                if fields.next().is_some() {
-                    return Err(ProtocolError::Malformed);
-                }
-                match (id, executable, verdict, port) {
-                    (Some(id), Some(executable), Some(verdict), Some(port)) => Ok(Self::RuleAdd {
-                        id,
-                        executable,
-                        verdict,
-                        port,
-                    }),
-                    _ => Err(ProtocolError::Malformed),
-                }
-            }
+            Some("rule-delete") => parse_rule_delete(&mut fields),
+            Some("rule-add") => parse_rule_add(&mut fields),
             Some("prompt-list") if fields.next().is_none() => Ok(Self::PromptList),
-            Some("prompt-answer") => {
-                let id = fields.next().and_then(|value| value.parse().ok());
-                let verdict = fields.next().map(str::to_owned);
-                let scope = fields.next().map(str::to_owned);
-                if fields.next().is_some() {
-                    return Err(ProtocolError::Malformed);
-                }
-                match (id, verdict, scope) {
-                    (Some(id), Some(verdict), Some(scope)) => {
-                        Ok(Self::PromptAnswer { id, verdict, scope })
-                    }
-                    _ => Err(ProtocolError::Malformed),
-                }
-            }
+            Some("prompt-answer") => parse_prompt_answer(&mut fields),
             Some("dns-list") if fields.next().is_none() => Ok(Self::DnsList),
-            Some("dns-note") => {
-                let hostname = fields.next().map(str::to_owned);
-                let ipv4 = fields.next().map(str::to_owned);
-                let ttl_secs = match fields.next() {
-                    Some(value) => Some(value.parse().map_err(|_| ProtocolError::Malformed)?),
-                    None => None,
-                };
-                if fields.next().is_some() {
-                    return Err(ProtocolError::Malformed);
-                }
-                match (hostname, ipv4) {
-                    (Some(hostname), Some(ipv4)) => Ok(Self::DnsNote {
-                        hostname,
-                        ipv4,
-                        ttl_secs,
-                    }),
-                    _ => Err(ProtocolError::Malformed),
-                }
-            }
-            Some("audit-tail") => {
-                let limit = match fields.next() {
-                    Some(value) => value.parse().map_err(|_| ProtocolError::Malformed)?,
-                    None => MAX_LOG_RECORDS_PER_SUBSCRIBER,
-                };
-                if fields.next().is_some() {
-                    return Err(ProtocolError::Malformed);
-                }
-                Ok(Self::AuditTail { limit })
-            }
-            Some("audit-subscribe") => {
-                let id = fields.next().map(str::to_owned);
-                let since = match fields.next() {
-                    Some(value) => value
-                        .strip_prefix("since=")
-                        .and_then(|value| value.parse().ok())
-                        .ok_or(ProtocolError::Malformed)?,
-                    None => 0,
-                };
-                if fields.next().is_some() {
-                    return Err(ProtocolError::Malformed);
-                }
-                id.map(|id| Self::AuditSubscribe { id, since })
-                    .ok_or(ProtocolError::Malformed)
-            }
+            Some("dns-note") => parse_dns_note(&mut fields),
+            Some("audit-tail") => parse_audit_tail(&mut fields),
+            Some("audit-subscribe") => parse_audit_subscribe(&mut fields),
             Some("process-list") if fields.next().is_none() => Ok(Self::ProcessList),
+            Some("network-status") if fields.next().is_none() => Ok(Self::NetworkStatus),
+            Some("network-install") if fields.next().is_none() => Ok(Self::NetworkInstall),
+            Some("network-remove") if fields.next().is_none() => Ok(Self::NetworkRemove),
             _ => Err(ProtocolError::Malformed),
         }
     }
+}
+
+fn parse_rule_delete<'a>(
+    fields: &mut impl Iterator<Item = &'a str>,
+) -> Result<Request, ProtocolError> {
+    let id = fields.next().and_then(|value| value.parse().ok());
+    if fields.next().is_none() {
+        id.map(|id| Request::RuleDelete { id })
+            .ok_or(ProtocolError::Malformed)
+    } else {
+        Err(ProtocolError::Malformed)
+    }
+}
+
+fn parse_rule_add<'a>(
+    fields: &mut impl Iterator<Item = &'a str>,
+) -> Result<Request, ProtocolError> {
+    let id = fields.next().and_then(|value| value.parse().ok());
+    let executable = fields.next().map(str::to_owned);
+    let verdict = fields.next().map(str::to_owned);
+    let port = fields.next().and_then(|value| value.parse().ok());
+    if fields.next().is_some() {
+        return Err(ProtocolError::Malformed);
+    }
+    match (id, executable, verdict, port) {
+        (Some(id), Some(executable), Some(verdict), Some(port)) => Ok(Request::RuleAdd {
+            id,
+            executable,
+            verdict,
+            port,
+        }),
+        _ => Err(ProtocolError::Malformed),
+    }
+}
+
+fn parse_prompt_answer<'a>(
+    fields: &mut impl Iterator<Item = &'a str>,
+) -> Result<Request, ProtocolError> {
+    let id = fields.next().and_then(|value| value.parse().ok());
+    let verdict = fields.next().map(str::to_owned);
+    let scope = fields.next().map(str::to_owned);
+    if fields.next().is_some() {
+        return Err(ProtocolError::Malformed);
+    }
+    match (id, verdict, scope) {
+        (Some(id), Some(verdict), Some(scope)) => Ok(Request::PromptAnswer { id, verdict, scope }),
+        _ => Err(ProtocolError::Malformed),
+    }
+}
+
+fn parse_dns_note<'a>(
+    fields: &mut impl Iterator<Item = &'a str>,
+) -> Result<Request, ProtocolError> {
+    let hostname = fields.next().map(str::to_owned);
+    let ipv4 = fields.next().map(str::to_owned);
+    let ttl_secs = match fields.next() {
+        Some(value) => Some(value.parse().map_err(|_| ProtocolError::Malformed)?),
+        None => None,
+    };
+    if fields.next().is_some() {
+        return Err(ProtocolError::Malformed);
+    }
+    match (hostname, ipv4) {
+        (Some(hostname), Some(ipv4)) => Ok(Request::DnsNote {
+            hostname,
+            ipv4,
+            ttl_secs,
+        }),
+        _ => Err(ProtocolError::Malformed),
+    }
+}
+
+fn parse_audit_tail<'a>(
+    fields: &mut impl Iterator<Item = &'a str>,
+) -> Result<Request, ProtocolError> {
+    let limit = match fields.next() {
+        Some(value) => value.parse().map_err(|_| ProtocolError::Malformed)?,
+        None => MAX_LOG_RECORDS_PER_SUBSCRIBER,
+    };
+    if fields.next().is_some() {
+        return Err(ProtocolError::Malformed);
+    }
+    Ok(Request::AuditTail { limit })
+}
+
+fn parse_audit_subscribe<'a>(
+    fields: &mut impl Iterator<Item = &'a str>,
+) -> Result<Request, ProtocolError> {
+    let id = fields.next().map(str::to_owned);
+    let since = match fields.next() {
+        Some(value) => value
+            .strip_prefix("since=")
+            .and_then(|value| value.parse().ok())
+            .ok_or(ProtocolError::Malformed)?,
+        None => 0,
+    };
+    if fields.next().is_some() {
+        return Err(ProtocolError::Malformed);
+    }
+    id.map(|id| Request::AuditSubscribe { id, since })
+        .ok_or(ProtocolError::Malformed)
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -192,6 +227,54 @@ pub enum Response {
     Audit(String),
     Subscribed(String),
     Processes(String),
+    Network(NetworkStatusBody),
+}
+
+/// Owned nftables table presence for the Network tab / `network-status`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum NetworkTableState {
+    /// Table `inet interfire` is absent.
+    Missing,
+    /// Table present with the expected outbound TCP queue rule.
+    Installed,
+    /// Table present but missing or mismatched queue rule.
+    Incomplete,
+}
+
+impl NetworkTableState {
+    /// Wire token used in IPC (`missing` / `installed` / `incomplete`).
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Missing => "missing",
+            Self::Installed => "installed",
+            Self::Incomplete => "incomplete",
+        }
+    }
+
+    /// Parse a wire token.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ProtocolError::Malformed`] when the token is unknown.
+    pub fn parse(value: &str) -> Result<Self, ProtocolError> {
+        match value {
+            "missing" => Ok(Self::Missing),
+            "installed" => Ok(Self::Installed),
+            "incomplete" => Ok(Self::Incomplete),
+            _ => Err(ProtocolError::Malformed),
+        }
+    }
+}
+
+/// `network-status` response body.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct NetworkStatusBody {
+    pub table: &'static str,
+    pub queue: u16,
+    pub state: NetworkTableState,
+    /// Compact rule token (`none` or `tcp_new_queue_<n>`).
+    pub rule: &'static str,
 }
 
 /// Daemon `status` response body (encode side).
@@ -232,7 +315,91 @@ impl Response {
             Self::Audit(value) => format!("v1 audit-tail {value}\n"),
             Self::Subscribed(id) => format!("v1 subscribed {id}\n"),
             Self::Processes(value) => format!("v1 processes {value}\n"),
+            Self::Network(body) => format!(
+                "v1 network table={} queue={} state={} rule={}\n",
+                body.table,
+                body.queue,
+                body.state.as_str(),
+                body.rule,
+            ),
         }
+    }
+}
+
+/// Parsed `network-status` fields (owned; for clients).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NetworkStatus {
+    pub table: String,
+    pub queue: u16,
+    pub state: NetworkTableState,
+    pub rule: String,
+}
+
+impl NetworkStatus {
+    /// Parse a `v1 network …` response frame.
+    ///
+    /// Unknown `key=value` fields are ignored for forward compatibility.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ProtocolError`] when the frame is not a well-formed network line.
+    pub fn parse(frame: &str) -> Result<Self, ProtocolError> {
+        let line = frame.trim_end_matches(['\r', '\n']);
+        let mut fields = line.split_whitespace();
+        match fields.next() {
+            Some("v1") => {}
+            Some(token) if token.starts_with('v') => return Err(ProtocolError::UnsupportedVersion),
+            _ => return Err(ProtocolError::Malformed),
+        }
+        if fields.next() != Some("network") {
+            return Err(ProtocolError::Malformed);
+        }
+        let mut table = None;
+        let mut queue = None;
+        let mut state = None;
+        let mut rule = None;
+        for field in fields {
+            if let Some(value) = field.strip_prefix("table=") {
+                table = Some(value.to_owned());
+            } else if let Some(value) = field.strip_prefix("queue=") {
+                queue = Some(value.parse().map_err(|_| ProtocolError::Malformed)?);
+            } else if let Some(value) = field.strip_prefix("state=") {
+                state = Some(NetworkTableState::parse(value)?);
+            } else if let Some(value) = field.strip_prefix("rule=") {
+                rule = Some(value.to_owned());
+            } else if field.contains('=') {
+                // Forward-compatible: ignore unknown keys.
+            } else {
+                return Err(ProtocolError::Malformed);
+            }
+        }
+        Ok(Self {
+            table: table.ok_or(ProtocolError::Malformed)?,
+            queue: queue.ok_or(ProtocolError::Malformed)?,
+            state: state.ok_or(ProtocolError::Malformed)?,
+            rule: rule.ok_or(ProtocolError::Malformed)?,
+        })
+    }
+
+    /// Operator-facing summary line for Status / Network chrome.
+    #[must_use]
+    pub fn summary(&self) -> String {
+        format!(
+            "table {}  queue {}  {}  rule {}",
+            self.table,
+            self.queue,
+            self.state.as_str(),
+            self.rule
+        )
+    }
+}
+
+/// Compact rule token when the owned TCP queue rule is present.
+#[must_use]
+pub const fn network_rule_token(queue: u16) -> &'static str {
+    match queue {
+        4242 => "tcp_new_queue_4242",
+        _ => "tcp_new_queue",
     }
 }
 
@@ -740,6 +907,42 @@ mod tests {
         let frame = Response::Processes(row.encode_row()).encode();
         assert_eq!(ProcessRow::parse_frame(&frame), Ok(vec![row]));
         assert_eq!(ProcessRow::parse_frame("v1 processes\n"), Ok(vec![]));
+    }
+
+    #[test]
+    fn parses_network_status_frames() {
+        assert_eq!(
+            Request::parse("v1 network-status\n"),
+            Ok(Request::NetworkStatus)
+        );
+        assert_eq!(
+            Request::parse("v1 network-install\n"),
+            Ok(Request::NetworkInstall)
+        );
+        assert_eq!(
+            Request::parse("v1 network-remove\n"),
+            Ok(Request::NetworkRemove)
+        );
+        let frame = Response::Network(NetworkStatusBody {
+            table: NFT_TABLE,
+            queue: NFQUEUE_NUM,
+            state: NetworkTableState::Installed,
+            rule: network_rule_token(NFQUEUE_NUM),
+        })
+        .encode();
+        assert_eq!(
+            frame,
+            "v1 network table=interfire queue=4242 state=installed rule=tcp_new_queue_4242\n"
+        );
+        assert_eq!(
+            NetworkStatus::parse(&frame),
+            Ok(NetworkStatus {
+                table: "interfire".into(),
+                queue: 4242,
+                state: NetworkTableState::Installed,
+                rule: "tcp_new_queue_4242".into(),
+            })
+        );
     }
 
     #[test]
