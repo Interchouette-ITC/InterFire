@@ -8,6 +8,7 @@ mod observe;
 mod packet;
 mod pending;
 mod policy;
+mod proc_metrics;
 mod process;
 mod prompts;
 mod shared;

@@ -11,6 +11,7 @@ mod audit_host;
 mod ipc_poll;
 mod log_buf;
 mod log_view;
+mod proc_sample;
 mod rss_probe;
 mod rules;
 mod rules_view;

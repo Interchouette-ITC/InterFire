@@ -16,6 +16,7 @@ use crate::audit_host::{AuditEvent, AuditHost};
 use crate::ipc_poll;
 use crate::log_buf::LogBuffer;
 use crate::log_view::log_body;
+use crate::proc_sample::{CpuTracker, ProcSample};
 use crate::rss_probe::{RssProbeMode, prompt_load_fixture};
 use crate::rules::{RuleVerdict, next_rule_id, validate_new_rule};
 use crate::rules_view::{add_rule_overlay, rules_body};
@@ -25,6 +26,17 @@ use crate::tray::{DaemonLink, TrayState};
 use crate::tray_host::TrayHost;
 
 const POLL_INTERVAL: Duration = Duration::from_secs(1);
+
+/// Latest RAM/CPU samples for the Profiling section.
+#[derive(Clone, Debug, Default)]
+pub struct ProfilingSnapshot {
+    pub ui_pid: u32,
+    pub ui_rss_kib: u64,
+    pub ui_cpu_pct: Option<f64>,
+    pub daemon_pid: Option<u32>,
+    pub daemon_rss_kib: Option<u64>,
+    pub daemon_cpu_pct: Option<f64>,
+}
 
 struct ShellContent<'a> {
     section: Section,
@@ -36,6 +48,7 @@ struct ShellContent<'a> {
     rules_message: Option<&'a str>,
     adding: bool,
     log: &'a LogBuffer,
+    profiling: &'a ProfilingSnapshot,
 }
 
 /// Active add-rule form backed by GPUI input states.
@@ -62,6 +75,9 @@ pub struct App {
     log: LogBuffer,
     audit: AuditHost,
     rss_probe: Option<RssProbeMode>,
+    profiling: ProfilingSnapshot,
+    ui_cpu: CpuTracker,
+    daemon_cpu: CpuTracker,
     #[cfg(target_os = "linux")]
     tray: Option<TrayHost>,
 }
@@ -75,7 +91,7 @@ impl App {
         };
         let tray_state = TrayState::from_link(&link);
         let audit = AuditHost::spawn(socket.clone());
-        Self {
+        let mut app = Self {
             section: Section::Rules,
             socket,
             link,
@@ -89,9 +105,14 @@ impl App {
             log: LogBuffer::new(),
             audit,
             rss_probe: None,
+            profiling: ProfilingSnapshot::default(),
+            ui_cpu: CpuTracker::default(),
+            daemon_cpu: CpuTracker::default(),
             #[cfg(target_os = "linux")]
             tray: TrayHost::try_spawn(tray_state),
-        }
+        };
+        app.refresh_profiling(None);
+        app
     }
 
     /// Stage synthetic load for `make memcheck-ui` (`--rss-probe=…`).
@@ -138,6 +159,18 @@ impl App {
         self.drain_audit_events();
         let snapshot = ipc_poll::poll_snapshot(&self.socket);
         self.link = snapshot.link.clone();
+        let daemon_metrics = match &snapshot.link {
+            DaemonLink::Up { status, .. } => {
+                match (status.pid, status.rss_kib, status.cpu_jiffies) {
+                    (Some(pid), Some(rss_kib), Some(cpu_jiffies)) => {
+                        Some((pid, rss_kib, cpu_jiffies))
+                    }
+                    _ => None,
+                }
+            }
+            DaemonLink::Down { .. } => None,
+        };
+        self.refresh_profiling(daemon_metrics);
         if self.rss_probe != Some(RssProbeMode::PromptLoad) {
             self.prompts = snapshot.prompts;
             self.rules = snapshot.rules;
@@ -155,6 +188,27 @@ impl App {
                     tray.set_state(next);
                 }
             }
+        }
+    }
+
+    fn refresh_profiling(&mut self, daemon: Option<(u32, u64, u64)>) {
+        let now = std::time::Instant::now();
+        if let Ok(sample) = ProcSample::sample_self() {
+            let ui_cpu_pct = self.ui_cpu.push(sample.cpu_jiffies, now);
+            self.profiling.ui_pid = sample.pid;
+            self.profiling.ui_rss_kib = sample.rss_kib;
+            self.profiling.ui_cpu_pct = ui_cpu_pct;
+        }
+        if let Some((pid, rss_kib, cpu_jiffies)) = daemon {
+            let daemon_cpu_pct = self.daemon_cpu.push(cpu_jiffies, now);
+            self.profiling.daemon_pid = Some(pid);
+            self.profiling.daemon_rss_kib = Some(rss_kib);
+            self.profiling.daemon_cpu_pct = daemon_cpu_pct;
+        } else {
+            self.profiling.daemon_pid = None;
+            self.profiling.daemon_rss_kib = None;
+            self.profiling.daemon_cpu_pct = None;
+            self.daemon_cpu = CpuTracker::default();
         }
     }
 
@@ -330,6 +384,7 @@ impl Render for App {
         let rules_message = self.rules_message.clone();
         let adding = self.add_form.is_some();
         let log = self.log.clone();
+        let profiling = self.profiling.clone();
 
         let mut shell = div()
             .id("interfire-shell")
@@ -350,6 +405,7 @@ impl Render for App {
                     rules_message: rules_message.as_deref(),
                     adding,
                     log: &log,
+                    profiling: &profiling,
                 },
                 cx,
             ));
@@ -455,6 +511,7 @@ fn section_body(content: &ShellContent<'_>, cx: &Context<App>) -> Div {
         Section::Network => div()
             .text_color(muted)
             .child("InterFire-owned nftables controls are not available yet."),
+        Section::Profiling => profiling_body(content.profiling, muted),
         Section::Settings => div()
             .v_flex()
             .gap_2()
@@ -470,6 +527,56 @@ fn section_body(content: &ShellContent<'_>, cx: &Context<App>) -> Div {
                     .child(format!("tray = {}", content.tray_state.label())),
             ),
     }
+}
+
+fn profiling_body(snap: &ProfilingSnapshot, muted: Hsla) -> Div {
+    let ui_cpu = snap
+        .ui_cpu_pct
+        .map_or_else(|| "…".to_owned(), |pct| format!("{pct:.1}%"));
+    let daemon_rss = snap
+        .daemon_rss_kib
+        .map_or_else(|| "unavailable".to_owned(), format_mib);
+    let daemon_cpu = snap.daemon_cpu_pct.map_or_else(
+        || {
+            if snap.daemon_pid.is_some() {
+                "…".to_owned()
+            } else {
+                "unavailable".to_owned()
+            }
+        },
+        |pct| format!("{pct:.1}%"),
+    );
+    let daemon_pid = snap
+        .daemon_pid
+        .map_or_else(|| "-".to_owned(), |pid| pid.to_string());
+
+    div()
+        .v_flex()
+        .gap_3()
+        .child(div().font_semibold().child("Profiling"))
+        .child(
+            div()
+                .text_color(muted)
+                .child("Live VmRSS and CPU from /proc (UI) and daemon status IPC. GPUI idle is often ~190 MiB; the daemon stays far smaller."),
+        )
+        .child(div().font_semibold().child("interfired (firewall)"))
+        .child(div().child(format!("pid = {daemon_pid}")))
+        .child(div().child(format!("RSS = {daemon_rss}")))
+        .child(div().child(format!("CPU = {daemon_cpu}")))
+        .child(div().font_semibold().mt_2().child("interfire-ui (GPUI)"))
+        .child(div().child(format!("pid = {}", snap.ui_pid)))
+        .child(div().child(format!("RSS = {}", format_mib(snap.ui_rss_kib))))
+        .child(div().child(format!("CPU = {ui_cpu}")))
+        .child(
+            div()
+                .text_color(muted)
+                .mt_2()
+                .child("CPU % uses consecutive 1s polls (USER_HZ=100). Release gates: make memcheck / make memcheck-ui."),
+        )
+}
+
+fn format_mib(kib: u64) -> String {
+    format!("{} MiB ({} KiB)", kib / 1024, kib)
 }
 
 fn status_body(socket: &str, tray_state: TrayState, link: &DaemonLink, muted: Hsla) -> Div {

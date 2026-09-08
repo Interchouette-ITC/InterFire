@@ -934,6 +934,9 @@ mod tests {
             enforcement: "nfqueue".into(),
             observation: "attached".into(),
             ipc_version: 1,
+            pid: None,
+            rss_kib: None,
+            cpu_jiffies: None,
         }));
         assert_eq!(app.chrome_title(), "live");
         assert!(matches!(app.link, Link::Up(_)));
@@ -941,6 +944,9 @@ mod tests {
             enforcement: "none".into(),
             observation: "degraded".into(),
             ipc_version: 1,
+            pid: None,
+            rss_kib: None,
+            cpu_jiffies: None,
         }));
         assert_eq!(app.chrome_title(), "degraded");
     }

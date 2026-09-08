@@ -9,7 +9,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 
-use interfire_proto::{IPC_VERSION, MAX_FRAME_BYTES, Request, Response, RuleScope};
+use interfire_proto::{IPC_VERSION, MAX_FRAME_BYTES, Request, Response, RuleScope, StatusBody};
 use interfire_rules::{Direction, Protocol, Rule, Scope, Verdict};
 use nix::sys::socket::{getsockopt, sockopt::PeerCredentials};
 use nix::unistd::Uid;
@@ -42,11 +42,23 @@ pub fn handle(mut stream: UnixStream, shared: &Arc<Shared>) -> io::Result<()> {
 fn dispatch(request: Request, shared: &Shared, stream: &UnixStream) -> Response {
     match request {
         Request::Ping => Response::Pong,
-        Request::Status => Response::Status {
-            enforcement: shared.enforcement(),
-            observation: shared.observation(),
-            ipc_version: IPC_VERSION,
-        },
+        Request::Status => {
+            let metrics = crate::proc_metrics::sample_self().unwrap_or_else(|_| {
+                crate::proc_metrics::SelfMetrics {
+                    pid: std::process::id(),
+                    rss_kib: 0,
+                    cpu_jiffies: 0,
+                }
+            });
+            Response::Status(StatusBody {
+                enforcement: shared.enforcement(),
+                observation: shared.observation(),
+                ipc_version: IPC_VERSION,
+                pid: metrics.pid,
+                rss_kib: metrics.rss_kib,
+                cpu_jiffies: metrics.cpu_jiffies,
+            })
+        }
         Request::RuleList => rule_list(shared),
         Request::RuleDelete { id } => mutate(shared, stream, Mutate::Delete { id }),
         Request::RuleAdd {

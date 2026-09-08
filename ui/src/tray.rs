@@ -106,6 +106,9 @@ mod tests {
             enforcement: enforcement.into(),
             observation: observation.into(),
             ipc_version: 1,
+            pid: None,
+            rss_kib: None,
+            cpu_jiffies: None,
         }
     }
 

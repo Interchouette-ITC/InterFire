@@ -9,16 +9,18 @@ pub enum Section {
     Rules,
     Log,
     Network,
+    Profiling,
     Settings,
 }
 
 impl Section {
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 7] = [
         Self::Status,
         Self::Applications,
         Self::Rules,
         Self::Log,
         Self::Network,
+        Self::Profiling,
         Self::Settings,
     ];
 
@@ -30,6 +32,7 @@ impl Section {
             Self::Rules => "Rules",
             Self::Log => "Log",
             Self::Network => "Network",
+            Self::Profiling => "Profiling",
             Self::Settings => "Settings",
         }
     }
@@ -42,7 +45,8 @@ mod tests {
     #[test]
     fn section_labels_are_stable() {
         assert_eq!(Section::Rules.label(), "Rules");
-        assert_eq!(Section::ALL.len(), 6);
+        assert_eq!(Section::Profiling.label(), "Profiling");
+        assert_eq!(Section::ALL.len(), 7);
         assert_eq!(Section::ALL[2], Section::Rules);
     }
 }

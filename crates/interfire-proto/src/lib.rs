@@ -182,13 +182,7 @@ impl Request {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Response {
     Pong,
-    Status {
-        /// Verdict path state (`none`, `nfqueue`, or `degraded`).
-        enforcement: &'static str,
-        /// eBPF observation state (`attached` or `degraded`).
-        observation: &'static str,
-        ipc_version: u16,
-    },
+    Status(StatusBody),
     Error(&'static str),
     Rules(String),
     Prompts(String),
@@ -197,18 +191,36 @@ pub enum Response {
     Subscribed(String),
 }
 
+/// Daemon `status` response body (encode side).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct StatusBody {
+    /// Verdict path state (`none`, `nfqueue`, or `degraded`).
+    pub enforcement: &'static str,
+    /// eBPF observation state (`attached` or `degraded`).
+    pub observation: &'static str,
+    pub ipc_version: u16,
+    /// Daemon process id.
+    pub pid: u32,
+    /// Daemon `VmRSS` in KiB from `/proc/self/status`.
+    pub rss_kib: u64,
+    /// Daemon `utime + stime` jiffies from `/proc/self/stat` (for CPU % over polls).
+    pub cpu_jiffies: u64,
+}
+
 impl Response {
     /// Encode a response as one newline-terminated control frame.
     #[must_use]
     pub fn encode(&self) -> String {
         match self {
             Self::Pong => "v1 pong\n".into(),
-            Self::Status {
-                enforcement,
-                observation,
-                ipc_version,
-            } => format!(
-                "v1 status enforcement={enforcement} observation={observation} ipc_version={ipc_version}\n"
+            Self::Status(body) => format!(
+                "v1 status enforcement={} observation={} ipc_version={} pid={} rss_kib={} cpu_jiffies={}\n",
+                body.enforcement,
+                body.observation,
+                body.ipc_version,
+                body.pid,
+                body.rss_kib,
+                body.cpu_jiffies,
             ),
             Self::Error(message) => format!("v1 error {message}\n"),
             Self::Rules(value) => format!("v1 rules {value}\n"),
@@ -226,10 +238,19 @@ pub struct DaemonStatus {
     pub enforcement: String,
     pub observation: String,
     pub ipc_version: u16,
+    /// Present when the daemon includes process metrics on `status`.
+    pub pid: Option<u32>,
+    /// Daemon `VmRSS` in KiB when present.
+    pub rss_kib: Option<u64>,
+    /// Daemon CPU jiffies (`utime + stime`) when present.
+    pub cpu_jiffies: Option<u64>,
 }
 
 impl DaemonStatus {
     /// Parse a `v1 status …` response frame.
+    ///
+    /// Unknown `key=value` fields are ignored so older clients keep working when
+    /// the daemon adds metrics keys.
     ///
     /// # Errors
     ///
@@ -248,6 +269,9 @@ impl DaemonStatus {
         let mut enforcement = None;
         let mut observation = None;
         let mut ipc_version = None;
+        let mut pid = None;
+        let mut rss_kib = None;
+        let mut cpu_jiffies = None;
         for field in fields {
             if let Some(value) = field.strip_prefix("enforcement=") {
                 enforcement = Some(value.to_owned());
@@ -255,6 +279,14 @@ impl DaemonStatus {
                 observation = Some(value.to_owned());
             } else if let Some(value) = field.strip_prefix("ipc_version=") {
                 ipc_version = Some(value.parse().map_err(|_| ProtocolError::Malformed)?);
+            } else if let Some(value) = field.strip_prefix("pid=") {
+                pid = Some(value.parse().map_err(|_| ProtocolError::Malformed)?);
+            } else if let Some(value) = field.strip_prefix("rss_kib=") {
+                rss_kib = Some(value.parse().map_err(|_| ProtocolError::Malformed)?);
+            } else if let Some(value) = field.strip_prefix("cpu_jiffies=") {
+                cpu_jiffies = Some(value.parse().map_err(|_| ProtocolError::Malformed)?);
+            } else if field.contains('=') {
+                // Forward-compatible: ignore unknown keys.
             } else {
                 return Err(ProtocolError::Malformed);
             }
@@ -263,6 +295,9 @@ impl DaemonStatus {
             enforcement: enforcement.ok_or(ProtocolError::Malformed)?,
             observation: observation.ok_or(ProtocolError::Malformed)?,
             ipc_version: ipc_version.ok_or(ProtocolError::Malformed)?,
+            pid,
+            rss_kib,
+            cpu_jiffies,
         })
     }
 }
@@ -483,16 +518,19 @@ mod tests {
     }
 
     #[test]
-    fn status_response_includes_observation() {
-        let frame = Response::Status {
+    fn status_response_includes_observation_and_metrics() {
+        let frame = Response::Status(StatusBody {
             enforcement: "none",
             observation: "degraded",
             ipc_version: IPC_VERSION,
-        }
+            pid: 42,
+            rss_kib: 6400,
+            cpu_jiffies: 1234,
+        })
         .encode();
         assert_eq!(
             frame,
-            "v1 status enforcement=none observation=degraded ipc_version=1\n"
+            "v1 status enforcement=none observation=degraded ipc_version=1 pid=42 rss_kib=6400 cpu_jiffies=1234\n"
         );
         assert_eq!(
             DaemonStatus::parse(&frame),
@@ -500,6 +538,39 @@ mod tests {
                 enforcement: "none".into(),
                 observation: "degraded".into(),
                 ipc_version: 1,
+                pid: Some(42),
+                rss_kib: Some(6400),
+                cpu_jiffies: Some(1234),
+            })
+        );
+    }
+
+    #[test]
+    fn status_parse_ignores_unknown_keys_and_allows_legacy() {
+        assert_eq!(
+            DaemonStatus::parse(
+                "v1 status enforcement=nfqueue observation=attached ipc_version=1\n"
+            ),
+            Ok(DaemonStatus {
+                enforcement: "nfqueue".into(),
+                observation: "attached".into(),
+                ipc_version: 1,
+                pid: None,
+                rss_kib: None,
+                cpu_jiffies: None,
+            })
+        );
+        assert_eq!(
+            DaemonStatus::parse(
+                "v1 status enforcement=nfqueue observation=attached ipc_version=1 pid=9 future=1\n"
+            ),
+            Ok(DaemonStatus {
+                enforcement: "nfqueue".into(),
+                observation: "attached".into(),
+                ipc_version: 1,
+                pid: Some(9),
+                rss_kib: None,
+                cpu_jiffies: None,
             })
         );
     }
