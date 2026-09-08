@@ -5,11 +5,41 @@
 
 use std::io::{self, Write};
 use std::process::{Command, Stdio};
+#[cfg(test)]
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use interfire_proto::{
     NFQUEUE_NUM, NFT_CHAIN, NFT_TABLE, NetworkStatusBody, NetworkTableState, network_rule_token,
 };
 use tracing::{info, warn};
+
+#[cfg(test)]
+static FORCE_NFT_OK: AtomicBool = AtomicBool::new(false);
+#[cfg(test)]
+static NFT_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Force install/remove success without calling `nft` (unit tests only).
+#[cfg(test)]
+pub struct ForceNftOk {
+    _guard: std::sync::MutexGuard<'static, ()>,
+}
+
+#[cfg(test)]
+impl ForceNftOk {
+    #[must_use]
+    pub fn arm() -> Self {
+        let guard = NFT_TEST_LOCK.lock().expect("nft test lock");
+        FORCE_NFT_OK.store(true, Ordering::Relaxed);
+        Self { _guard: guard }
+    }
+}
+
+#[cfg(test)]
+impl Drop for ForceNftOk {
+    fn drop(&mut self) {
+        FORCE_NFT_OK.store(false, Ordering::Relaxed);
+    }
+}
 
 /// Query the InterFire-owned table via `nft list table`.
 #[must_use]
@@ -30,6 +60,15 @@ pub fn status() -> NetworkStatusBody {
 ///
 /// Returns I/O errors when `nft` is missing or rejects the fixed table script.
 pub fn install() -> io::Result<()> {
+    #[cfg(test)]
+    if FORCE_NFT_OK.load(Ordering::Relaxed) {
+        info!(
+            table = NFT_TABLE,
+            queue = NFQUEUE_NUM,
+            "InterFire nftables table installed"
+        );
+        return Ok(());
+    }
     let _ = remove();
     let script = owned_table_script();
     let mut child = Command::new("nft")
@@ -71,6 +110,11 @@ pub fn install() -> io::Result<()> {
 /// Returns I/O errors when `nft` is missing or delete fails for a reason other
 /// than the table already being gone.
 pub fn remove() -> io::Result<()> {
+    #[cfg(test)]
+    if FORCE_NFT_OK.load(Ordering::Relaxed) {
+        info!(table = NFT_TABLE, "InterFire nftables table removed");
+        return Ok(());
+    }
     let output = Command::new("nft")
         .args(["delete", "table", "inet", NFT_TABLE])
         .stdout(Stdio::null())

@@ -1075,6 +1075,32 @@ mod tests {
     }
 
     #[test]
+    fn status_uses_zero_metrics_when_sample_fails() {
+        let (shared, audit_path, rules_path) = test_shared("attached");
+        let _fail = crate::proc_metrics::ForceSampleFailure::arm();
+        let frame = exchange("v1 status\n", &shared);
+        assert!(frame.contains("rss_kib=0"));
+        assert!(frame.contains("cpu_jiffies=0"));
+        cleanup_paths(&audit_path, &rules_path);
+    }
+
+    #[test]
+    fn network_mutate_success_path() {
+        let (shared, audit_path, rules_path) = test_shared("nft-ok");
+        let _ok = crate::nft::ForceNftOk::arm();
+        let (a, _b) = StdUnixStream::pair().unwrap();
+        assert_eq!(
+            dispatch(Request::NetworkInstall, &shared, &a),
+            Response::Pong
+        );
+        assert_eq!(
+            dispatch(Request::NetworkRemove, &shared, &a),
+            Response::Pong
+        );
+        cleanup_paths(&audit_path, &rules_path);
+    }
+
+    #[test]
     fn lock_poisoned_responses() {
         let mut paths = Vec::new();
         let (shared, audit_path, rules_path) = test_shared("attached");

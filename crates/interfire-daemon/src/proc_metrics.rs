@@ -3,6 +3,8 @@
 
 use std::fs;
 use std::io;
+#[cfg(test)]
+use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Snapshot of this process for IPC / UI profiling.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -13,12 +15,21 @@ pub struct SelfMetrics {
     pub cpu_jiffies: u64,
 }
 
+#[cfg(test)]
+static FORCE_SAMPLE_FAILURE: AtomicBool = AtomicBool::new(false);
+#[cfg(test)]
+static SAMPLE_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 /// Read pid, `VmRSS`, and CPU jiffies for the current process.
 ///
 /// # Errors
 ///
 /// Returns I/O or parse failures when `/proc/self` is unreadable.
 pub fn sample_self() -> io::Result<SelfMetrics> {
+    #[cfg(test)]
+    if FORCE_SAMPLE_FAILURE.load(Ordering::Relaxed) {
+        return Err(io::Error::other("forced sample_self failure"));
+    }
     let pid = std::process::id();
     let rss_kib = read_vm_rss_kib()?;
     let cpu_jiffies = read_cpu_jiffies()?;
@@ -27,6 +38,29 @@ pub fn sample_self() -> io::Result<SelfMetrics> {
         rss_kib,
         cpu_jiffies,
     })
+}
+
+/// Force [`sample_self`] to fail for the lifetime of the guard (unit tests only).
+#[cfg(test)]
+pub struct ForceSampleFailure {
+    _guard: std::sync::MutexGuard<'static, ()>,
+}
+
+#[cfg(test)]
+impl ForceSampleFailure {
+    #[must_use]
+    pub fn arm() -> Self {
+        let guard = SAMPLE_TEST_LOCK.lock().expect("sample test lock");
+        FORCE_SAMPLE_FAILURE.store(true, Ordering::Relaxed);
+        Self { _guard: guard }
+    }
+}
+
+#[cfg(test)]
+impl Drop for ForceSampleFailure {
+    fn drop(&mut self) {
+        FORCE_SAMPLE_FAILURE.store(false, Ordering::Relaxed);
+    }
 }
 
 fn parse_vm_rss_kib(status: &str) -> io::Result<u64> {
