@@ -129,7 +129,7 @@ fn service_one_message(
     transport.submit_verdict(verdict)
 }
 
-/// Bind queue [`NFQUEUE_NUM`] and apply pending / default-deny verdicts.
+/// Bind queue [`interfire_proto::NFQUEUE_NUM`] and apply pending / default-deny verdicts.
 ///
 /// # Errors
 ///

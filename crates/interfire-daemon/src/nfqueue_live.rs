@@ -10,7 +10,7 @@ use crate::packet;
 use crate::pending::DestKey;
 use crate::shared::Shared;
 
-/// Open queue [`NFQUEUE_NUM`] and apply pending / default-deny verdicts.
+/// Open queue [`interfire_proto::NFQUEUE_NUM`] and apply pending / default-deny verdicts.
 ///
 /// # Errors
 ///
