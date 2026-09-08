@@ -1,4 +1,4 @@
-#![forbid(unsafe_code)]
+#![cfg_attr(not(test), forbid(unsafe_code))]
 
 mod audit;
 mod dns;
@@ -14,6 +14,9 @@ mod process;
 mod prompts;
 mod recent;
 mod shared;
+
+#[cfg(test)]
+mod ipc_test_support;
 
 use std::env;
 use std::fs;

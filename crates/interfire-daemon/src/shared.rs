@@ -84,6 +84,12 @@ impl Shared {
     pub fn observation(&self) -> &'static str {
         observation_label(self.observation.load(Ordering::Relaxed))
     }
+
+    /// Replace the prompt queue (unit tests only).
+    #[cfg(test)]
+    pub fn set_prompt_queue(&self, queue: PromptQueue) {
+        *self.prompts.lock().expect("prompts lock") = queue;
+    }
 }
 
 fn enforcement_code(label: &str) -> u8 {
