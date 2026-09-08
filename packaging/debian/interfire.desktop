@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=InterFire
+GenericName=Application Firewall
+Comment=Linux application firewall control plane
+Exec=interfire-ui
+Icon=security-high
+Terminal=false
+Categories=System;Security;Network;
+Keywords=firewall;nftables;security;
+StartupNotify=true

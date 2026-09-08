@@ -4,7 +4,7 @@ CLIPPY_FLAGS := -D warnings -D clippy::all -D clippy::pedantic -D clippy::nurser
 CARGO ?= cargo +stable
 DOC_OUT ?= target/doc
 
-.PHONY: help fmt format lint test coverage audit deny doc doc-open doc-clean ci memcheck memcheck-ui profile-ui integration ebpf ui ui-test run-daemon run-ui run-tui run-ctl
+.PHONY: help fmt format lint test coverage audit deny doc doc-open doc-clean ci memcheck memcheck-ui profile-ui integration ebpf ui ui-test run-daemon run-ui run-tui run-ctl deb
 
 .DEFAULT_GOAL := help
 
@@ -34,6 +34,7 @@ help:
 	@echo "  make memcheck-ui    release UI RSS gates (idle / prompt-load / combined)"
 	@echo "  make profile-ui     hotpath-alloc report for interfire-ui (optional)"
 	@echo "  make integration    root netns allow/deny gate (not part of make ci)"
+	@echo "  make deb            build amd64 .deb (release binaries + packaging/)"
 
 fmt:
 	$(CARGO) fmt --check
@@ -143,3 +144,7 @@ profile-ui:
 integration:
 	$(CARGO) build -p interfire-daemon -p interfirectl
 	bash scripts/enforcement-allow-deny.sh
+
+## Build amd64 .deb under target/debian/ (needs dpkg-deb, fakeroot).
+deb:
+	bash scripts/build-deb.sh
