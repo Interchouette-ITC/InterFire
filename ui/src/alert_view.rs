@@ -21,26 +21,54 @@ pub fn alert_overlay(alert: &ConnectionAlert, cx: &Context<App>) -> impl IntoEle
         .flex()
         .items_center()
         .justify_center()
-        .bg(cx.theme().background.opacity(0.72))
+        .bg(cx.theme().overlay)
         .child(
             div()
                 .id("connection-alert-card")
-                .w(px(520.))
+                .w(px(540.))
                 .max_w_full()
-                .p_4()
-                .rounded_lg()
+                .p_5()
+                .rounded_xl()
                 .border_1()
-                .border_color(cx.theme().border)
-                .bg(cx.theme().background)
+                .border_color(cx.theme().accent.opacity(0.55))
+                .bg(cx.theme().popover)
+                .shadow_lg()
                 .v_flex()
                 .gap_3()
-                .child(div().text_lg().font_semibold().child("Connection request"))
-                .child(div().font_semibold().child(prompt.executable.clone()))
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .justify_between()
+                        .child(
+                            div()
+                                .text_lg()
+                                .font_semibold()
+                                .text_color(cx.theme().foreground)
+                                .child("Connection request"),
+                        )
+                        .child(
+                            div()
+                                .px_2()
+                                .py_1()
+                                .rounded_md()
+                                .bg(cx.theme().accent.opacity(0.2))
+                                .text_xs()
+                                .font_semibold()
+                                .text_color(cx.theme().accent)
+                                .child(format!("{}s", prompt.remaining_secs)),
+                        ),
+                )
+                .child(
+                    div()
+                        .font_semibold()
+                        .text_color(cx.theme().foreground)
+                        .child(prompt.executable.clone()),
+                )
                 .child(div().child(format!(
                     "{}:{} ({})",
                     prompt.destination, prompt.port, prompt.protocol
                 )))
-                .child(div().child(format!("remaining: {}s", prompt.remaining_secs)))
                 .when(alert.stale, |this| {
                     this.child(
                         div()
@@ -57,6 +85,11 @@ pub fn alert_overlay(alert: &ConnectionAlert, cx: &Context<App>) -> impl IntoEle
                         div()
                             .v_flex()
                             .gap_1()
+                            .p_3()
+                            .rounded_md()
+                            .border_1()
+                            .border_color(cx.theme().border)
+                            .bg(cx.theme().group_box)
                             .text_color(muted)
                             .child(format!("prompt id: {}", prompt.id))
                             .child(format!("protocol: {}", prompt.protocol))
@@ -66,7 +99,11 @@ pub fn alert_overlay(alert: &ConnectionAlert, cx: &Context<App>) -> impl IntoEle
                     )
                 })
                 .when_some(alert.status_message.clone(), |this, message| {
-                    this.child(div().text_color(muted).child(format!("error: {message}")))
+                    this.child(
+                        div()
+                            .text_color(cx.theme().danger)
+                            .child(format!("error: {message}")),
+                    )
                 }),
         )
 }
@@ -97,6 +134,7 @@ fn scope_chip(
         .when(selected, |this| {
             this.bg(cx.theme().accent)
                 .text_color(cx.theme().accent_foreground)
+                .border_color(cx.theme().accent)
         })
         .when(enabled, |this| {
             this.cursor_pointer()
@@ -113,34 +151,37 @@ fn verdict_row(enabled: bool, cx: &Context<App>) -> impl IntoElement {
         .id("alert-verdicts")
         .flex()
         .gap_2()
-        .child(verdict_chip(AlertVerdict::Allow, enabled, false, cx))
-        .child(verdict_chip(AlertVerdict::Deny, enabled, true, cx))
+        .child(verdict_chip(AlertVerdict::Allow, enabled, cx))
+        .child(verdict_chip(AlertVerdict::Deny, enabled, cx))
 }
 
-fn verdict_chip(
-    verdict: AlertVerdict,
-    enabled: bool,
-    emphasize: bool,
-    cx: &Context<App>,
-) -> impl IntoElement {
+fn verdict_chip(verdict: AlertVerdict, enabled: bool, cx: &Context<App>) -> impl IntoElement {
     let label = verdict.label();
+    let is_allow = matches!(verdict, AlertVerdict::Allow);
     div()
         .id(ElementId::Name(format!("verdict-{label}").into()))
+        .flex_1()
         .px_3()
         .py_2()
         .rounded_md()
         .border_1()
-        .border_color(cx.theme().border)
-        .when(emphasize, |this| {
-            this.bg(cx.theme().accent)
+        .font_semibold()
+        .when(is_allow, |this| {
+            this.border_color(cx.theme().accent)
+                .bg(cx.theme().accent)
                 .text_color(cx.theme().accent_foreground)
+        })
+        .when(!is_allow, |this| {
+            this.border_color(cx.theme().danger)
+                .bg(cx.theme().danger)
+                .text_color(cx.theme().danger_foreground)
         })
         .when(enabled, |this| {
             this.cursor_pointer()
                 .on_click(cx.listener(move |app, _, _, cx| app.submit_verdict(verdict, cx)))
         })
         .when(!enabled, |this| {
-            this.text_color(cx.theme().muted_foreground)
+            this.opacity(0.45).text_color(cx.theme().muted_foreground)
         })
         .child(label)
 }
@@ -152,6 +193,7 @@ fn details_toggle(open: bool, cx: &Context<App>) -> impl IntoElement {
         .text_sm()
         .text_color(cx.theme().muted_foreground)
         .cursor_pointer()
+        .hover(|style| style.text_color(cx.theme().accent))
         .on_click(cx.listener(|app, _, _, cx| app.toggle_details(cx)))
         .child(label)
 }

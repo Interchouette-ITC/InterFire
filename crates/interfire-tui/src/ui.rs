@@ -4,11 +4,11 @@
 use interfire_proto::IPC_VERSION;
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
-use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap};
 
 use crate::app::{AddField, AddRuleForm, AnswerPromptForm, AnswerVerdict, App, Overlay, Pane, Tab};
+use crate::palette;
 
 pub fn draw(frame: &mut Frame<'_>, app: &App) {
     let chunks = Layout::vertical([
@@ -19,7 +19,10 @@ pub fn draw(frame: &mut Frame<'_>, app: &App) {
     .split(frame.area());
     frame.render_widget(tabs_bar(app), chunks[0]);
     draw_body(frame, app, chunks[1]);
-    frame.render_widget(Paragraph::new(crate::app::footer_hints(app)), chunks[2]);
+    frame.render_widget(
+        Paragraph::new(crate::app::footer_hints(app)).style(palette::muted()),
+        chunks[2],
+    );
     match &app.overlay {
         Overlay::None => {}
         Overlay::Notice(message) => draw_notice(frame, message),
@@ -30,24 +33,26 @@ pub fn draw(frame: &mut Frame<'_>, app: &App) {
 
 fn tabs_bar(app: &App) -> Paragraph<'static> {
     let mut spans = vec![
-        Span::styled("InterFire", Style::default().add_modifier(Modifier::BOLD)),
-        Span::raw(format!(" v{IPC_VERSION}  ")),
+        Span::styled("InterFire", palette::title()),
+        Span::styled(format!(" v{IPC_VERSION}  "), palette::muted()),
     ];
     for tab in Tab::ALL {
         let label = format!(" {} ", tab.label());
         if tab == app.tab {
-            spans.push(Span::styled(
-                label,
-                Style::default().add_modifier(Modifier::REVERSED | Modifier::BOLD),
-            ));
+            spans.push(Span::styled(label, palette::selected()));
         } else {
-            spans.push(Span::raw(label));
+            spans.push(Span::styled(label, palette::body()));
         }
     }
     Paragraph::new(Line::from(spans)).block(
         Block::default()
             .borders(Borders::ALL)
-            .title(format!("tabs · {}", app.chrome_title())),
+            .border_style(palette::border())
+            .style(palette::chrome())
+            .title(Span::styled(
+                format!("tabs · {}", app.chrome_title()),
+                palette::muted(),
+            )),
     )
 }
 
@@ -71,7 +76,12 @@ fn draw_body(frame: &mut Frame<'_>, app: &App, area: Rect) {
 }
 
 fn list_widget(app: &App, visible: &crate::app::VisibleList) -> List<'static> {
-    let items: Vec<ListItem<'static>> = visible.items.iter().cloned().map(ListItem::new).collect();
+    let items: Vec<ListItem<'static>> = visible
+        .items
+        .iter()
+        .cloned()
+        .map(|line| ListItem::new(line).style(palette::body()))
+        .collect();
     let focus = if app.pane == Pane::List {
         " [focus]"
     } else {
@@ -88,8 +98,14 @@ fn list_widget(app: &App, visible: &crate::app::VisibleList) -> List<'static> {
         format!("{} list{focus}", app.tab.label())
     };
     List::new(items)
-        .block(Block::default().borders(Borders::ALL).title(title))
-        .highlight_style(Style::default().add_modifier(Modifier::REVERSED))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(palette::border())
+                .style(palette::panel())
+                .title(Span::styled(title, palette::muted())),
+        )
+        .highlight_style(palette::selected())
 }
 
 fn detail_widget(app: &App) -> Paragraph<'_> {
@@ -98,10 +114,20 @@ fn detail_widget(app: &App) -> Paragraph<'_> {
     } else {
         format!("{} detail", app.tab.label())
     };
-    let lines: Vec<Line<'_>> = app.detail_lines().into_iter().map(Line::from).collect();
+    let lines: Vec<Line<'_>> = app
+        .detail_lines()
+        .into_iter()
+        .map(|line| Line::from(Span::styled(line, palette::body())))
+        .collect();
     Paragraph::new(lines)
         .wrap(Wrap { trim: false })
-        .block(Block::default().borders(Borders::ALL).title(title))
+        .style(palette::panel())
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(palette::border())
+                .title(Span::styled(title, palette::muted())),
+        )
 }
 
 fn draw_notice(frame: &mut Frame<'_>, message: &str) {
@@ -109,16 +135,22 @@ fn draw_notice(frame: &mut Frame<'_>, message: &str) {
     frame.render_widget(Clear, area);
     frame.render_widget(
         Paragraph::new(vec![
+            Line::from(Span::styled("Overlay", palette::title())),
+            Line::from(""),
+            Line::from(Span::styled(message.to_owned(), palette::body())),
+            Line::from(""),
             Line::from(Span::styled(
-                "Overlay",
-                Style::default().add_modifier(Modifier::BOLD),
+                "Esc dismisses · does not quit",
+                palette::muted(),
             )),
-            Line::from(""),
-            Line::from(message.to_owned()),
-            Line::from(""),
-            Line::from("Esc dismisses · does not quit"),
         ])
-        .block(Block::default().borders(Borders::ALL).title("notice")),
+        .style(palette::overlay_panel())
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(palette::border())
+                .title(Span::styled("notice", palette::accent_label())),
+        ),
         area,
     );
 }
@@ -132,10 +164,18 @@ fn draw_add_rule(frame: &mut Frame<'_>, form: &AddRuleForm) {
         field_line(form, AddField::Verdict, &form.verdict),
         field_line(form, AddField::Port, &form.port),
         Line::from(""),
-        Line::from("Tab next field · Enter submit · Esc cancel"),
+        Line::from(Span::styled(
+            "Tab next field · Enter submit · Esc cancel",
+            palette::muted(),
+        )),
     ];
     frame.render_widget(
-        Paragraph::new(lines).block(Block::default().borders(Borders::ALL).title("add rule")),
+        Paragraph::new(lines).style(palette::overlay_panel()).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(palette::border())
+                .title(Span::styled("add rule", palette::accent_label())),
+        ),
         area,
     );
 }
@@ -145,41 +185,67 @@ fn draw_answer_prompt(frame: &mut Frame<'_>, form: &AnswerPromptForm) {
     frame.render_widget(Clear, area);
     let prompt = &form.prompt;
     let allow_style = if form.verdict == AnswerVerdict::Allow {
-        Style::default().add_modifier(Modifier::REVERSED | Modifier::BOLD)
+        palette::allow()
     } else {
-        Style::default()
+        palette::body()
     };
     let deny_style = if form.verdict == AnswerVerdict::Deny {
-        Style::default().add_modifier(Modifier::REVERSED | Modifier::BOLD)
+        palette::deny()
     } else {
-        Style::default()
+        palette::body()
+    };
+    let remaining_style = if prompt.remaining_secs <= 5 {
+        palette::err()
+    } else if prompt.remaining_secs <= 15 {
+        palette::warn()
+    } else {
+        palette::ok()
     };
     let lines = vec![
-        Line::from(format!("prompt #{}", prompt.id)),
-        Line::from(format!("path: {}", prompt.executable)),
-        Line::from(format!(
-            "dest: {}:{} ({})",
-            prompt.destination, prompt.port, prompt.protocol
+        Line::from(Span::styled(
+            format!("prompt #{}", prompt.id),
+            palette::title(),
         )),
-        Line::from(format!("remaining: {}s", prompt.remaining_secs)),
+        Line::from(Span::styled(
+            format!("path: {}", prompt.executable),
+            palette::body(),
+        )),
+        Line::from(Span::styled(
+            format!(
+                "dest: {}:{} ({})",
+                prompt.destination, prompt.port, prompt.protocol
+            ),
+            palette::body(),
+        )),
+        Line::from(Span::styled(
+            format!("remaining: {}s", prompt.remaining_secs),
+            remaining_style,
+        )),
         Line::from(""),
         Line::from(vec![
-            Span::raw("verdict: "),
+            Span::styled("verdict: ", palette::muted()),
             Span::styled(" allow ", allow_style),
             Span::styled(" deny ", deny_style),
         ]),
-        Line::from(format!(
-            "scope:   {}  (Tab cycles once|session|permanent)",
-            form.scope.as_str()
+        Line::from(Span::styled(
+            format!(
+                "scope:   {}  (Tab cycles once|session|permanent)",
+                form.scope.as_str()
+            ),
+            palette::body(),
         )),
         Line::from(""),
-        Line::from("a/d or Left/Right verdict · Enter submit · Esc cancel"),
+        Line::from(Span::styled(
+            "a/d or Left/Right verdict · Enter submit · Esc cancel",
+            palette::muted(),
+        )),
     ];
     frame.render_widget(
-        Paragraph::new(lines).block(
+        Paragraph::new(lines).style(palette::overlay_panel()).block(
             Block::default()
                 .borders(Borders::ALL)
-                .title("answer prompt"),
+                .border_style(palette::border())
+                .title(Span::styled("answer prompt", palette::accent_label())),
         ),
         area,
     );
@@ -188,9 +254,9 @@ fn draw_answer_prompt(frame: &mut Frame<'_>, form: &AnswerPromptForm) {
 fn field_line(form: &AddRuleForm, field: AddField, value: &str) -> Line<'static> {
     let marker = if form.focus == field { ">" } else { " " };
     let style = if form.focus == field {
-        Style::default().add_modifier(Modifier::BOLD)
+        palette::focus()
     } else {
-        Style::default()
+        palette::body()
     };
     Line::from(Span::styled(
         format!("{marker} {}: {value}", field.label()),
