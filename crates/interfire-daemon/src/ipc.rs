@@ -2,15 +2,17 @@
 #![forbid(unsafe_code)]
 
 use std::io::{self, BufRead, BufReader, Write};
-use std::net::Ipv4Addr;
+use std::net::{IpAddr, Ipv4Addr};
 use std::os::fd::AsFd;
 use std::os::unix::net::UnixStream;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 
-use interfire_proto::{IPC_VERSION, MAX_FRAME_BYTES, Request, Response, RuleScope, StatusBody};
-use interfire_rules::{Direction, Protocol, Rule, Scope, Verdict};
+use interfire_proto::{
+    IPC_VERSION, MAX_FRAME_BYTES, ProcessRow, Request, Response, RuleScope, StatusBody,
+};
+use interfire_rules::{Connection, Direction, Protocol, Rule, Scope, Verdict};
 use nix::sys::socket::{getsockopt, sockopt::PeerCredentials};
 use nix::unistd::Uid;
 use tracing::{debug, warn};
@@ -88,7 +90,52 @@ fn dispatch(request: Request, shared: &Shared, stream: &UnixStream) -> Response 
         } => dns_note(shared, stream, &hostname, &ipv4, ttl_secs),
         Request::AuditTail { limit } => audit_tail(shared, limit),
         Request::AuditSubscribe { .. } => Response::Error("malformed_request"),
+        Request::ProcessList => process_list(shared),
     }
+}
+
+fn process_list(shared: &Shared) -> Response {
+    let Ok(cache) = shared.process_cache.lock() else {
+        return Response::Error("lock_poisoned");
+    };
+    let Ok(recent) = shared.recent.lock() else {
+        return Response::Error("lock_poisoned");
+    };
+    let Ok(rules) = shared.rules.lock() else {
+        return Response::Error("lock_poisoned");
+    };
+    let rows: Vec<String> = cache
+        .list()
+        .into_iter()
+        .map(|identity| {
+            let ports = recent
+                .for_process(identity.pid, identity.start_ticks)
+                .into_iter()
+                .map(|dest| format!("{}:{}/{}", dest.ipv4, dest.port, dest.verdict))
+                .collect::<Vec<_>>()
+                .join("+");
+            let connection = Connection {
+                executable: identity.executable.display().to_string(),
+                protocol: Protocol::Tcp,
+                direction: Direction::Outbound,
+                address: IpAddr::V4(Ipv4Addr::UNSPECIFIED),
+                hostname: None,
+                port: 0,
+            };
+            let verdict = format!("{:?}", rules.verdict_for(&connection)).to_ascii_lowercase();
+            ProcessRow {
+                pid: identity.pid,
+                start_ticks: identity.start_ticks,
+                uid: identity.uid,
+                executable: identity.executable.display().to_string(),
+                cmdline: identity.command_line.join(" "),
+                verdict,
+                ports,
+            }
+            .encode_row()
+        })
+        .collect();
+    Response::Processes(rows.join(";"))
 }
 
 fn audit_tail(shared: &Shared, limit: usize) -> Response {

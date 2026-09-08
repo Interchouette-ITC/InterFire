@@ -4,7 +4,9 @@
 use std::collections::VecDeque;
 
 use crossterm::event::KeyCode;
-use interfire_proto::{DaemonStatus, MAX_LOG_RECORDS_PER_SUBSCRIBER, PromptRow, RuleRow};
+use interfire_proto::{
+    DaemonStatus, MAX_LOG_RECORDS_PER_SUBSCRIBER, ProcessRow, PromptRow, RuleRow,
+};
 
 use crate::ipc::{IpcCommand, IpcEvent};
 
@@ -24,6 +26,7 @@ pub struct VisibleList {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Tab {
     Status,
+    Apps,
     Rules,
     Prompts,
     Log,
@@ -31,8 +34,9 @@ pub enum Tab {
 }
 
 impl Tab {
-    pub const ALL: [Self; 5] = [
+    pub const ALL: [Self; 6] = [
         Self::Status,
+        Self::Apps,
         Self::Rules,
         Self::Prompts,
         Self::Log,
@@ -43,6 +47,7 @@ impl Tab {
     pub const fn label(self) -> &'static str {
         match self {
             Self::Status => "Status",
+            Self::Apps => "Apps",
             Self::Rules => "Rules",
             Self::Prompts => "Prompts",
             Self::Log => "Log",
@@ -54,10 +59,11 @@ impl Tab {
     pub const fn index(self) -> usize {
         match self {
             Self::Status => 0,
-            Self::Rules => 1,
-            Self::Prompts => 2,
-            Self::Log => 3,
-            Self::Help => 4,
+            Self::Apps => 1,
+            Self::Rules => 2,
+            Self::Prompts => 3,
+            Self::Log => 4,
+            Self::Help => 5,
         }
     }
 
@@ -68,7 +74,7 @@ impl Tab {
 
     #[must_use]
     pub const fn has_split(self) -> bool {
-        matches!(self, Self::Rules | Self::Prompts | Self::Log)
+        matches!(self, Self::Apps | Self::Rules | Self::Prompts | Self::Log)
     }
 }
 
@@ -282,6 +288,7 @@ pub struct App {
     pub audit: VecDeque<String>,
     pub rules: Vec<RuleRow>,
     pub prompts: Vec<PromptRow>,
+    pub processes: Vec<ProcessRow>,
     pub subscribed: bool,
     pub tab: Tab,
     pub pane: Pane,
@@ -299,6 +306,7 @@ impl App {
             audit: VecDeque::new(),
             rules: Vec::new(),
             prompts: Vec::new(),
+            processes: Vec::new(),
             subscribed: false,
             tab: Tab::Status,
             pane: Pane::List,
@@ -331,6 +339,10 @@ impl App {
             }
             IpcEvent::Prompts(prompts) => {
                 self.prompts = prompts;
+                self.clamp_selection();
+            }
+            IpcEvent::Processes(processes) => {
+                self.processes = processes;
                 self.clamp_selection();
             }
             IpcEvent::ActionOk(message) => {
@@ -478,18 +490,22 @@ impl App {
                 KeyAction::None
             }
             KeyCode::Char('2') => {
-                self.set_tab(Tab::Rules);
+                self.set_tab(Tab::Apps);
                 KeyAction::None
             }
             KeyCode::Char('3') => {
-                self.set_tab(Tab::Prompts);
+                self.set_tab(Tab::Rules);
                 KeyAction::None
             }
             KeyCode::Char('4') => {
-                self.set_tab(Tab::Log);
+                self.set_tab(Tab::Prompts);
                 KeyAction::None
             }
             KeyCode::Char('5') => {
+                self.set_tab(Tab::Log);
+                KeyAction::None
+            }
+            KeyCode::Char('6') => {
                 self.set_tab(Tab::Help);
                 KeyAction::None
             }
@@ -604,6 +620,7 @@ impl App {
     pub fn list_len(&self) -> usize {
         match self.tab {
             Tab::Log => self.audit.len(),
+            Tab::Apps => self.processes.len(),
             Tab::Rules => self.rules.len(),
             Tab::Prompts => self.prompts.len(),
             Tab::Status | Tab::Help => 0,
@@ -615,6 +632,12 @@ impl App {
     pub fn visible_list(&self, viewport_rows: usize) -> VisibleList {
         match self.tab {
             Tab::Log => self.visible_audit_window(viewport_rows),
+            Tab::Apps => VisibleList {
+                relative_selected: self.list_selected,
+                items: self.processes.iter().map(ProcessRow::list_label).collect(),
+                start: 0,
+                total: self.processes.len(),
+            },
             Tab::Rules => VisibleList {
                 relative_selected: self.list_selected,
                 items: self.rules.iter().map(RuleRow::list_label).collect(),
@@ -675,6 +698,7 @@ impl App {
     pub fn detail_lines(&self) -> Vec<String> {
         match self.tab {
             Tab::Status => self.status_detail_lines(),
+            Tab::Apps => self.process_detail_lines(),
             Tab::Rules => self.rule_detail_lines(),
             Tab::Prompts => self.prompt_detail_lines(),
             Tab::Log => self
@@ -684,6 +708,38 @@ impl App {
                 .map_or_else(|| vec!["no audit frame selected".into()], |line| vec![line]),
             Tab::Help => help_lines(),
         }
+    }
+
+    fn process_detail_lines(&self) -> Vec<String> {
+        self.processes.get(self.list_selected).map_or_else(
+            || {
+                vec![
+                    "no observed processes yet".into(),
+                    "outbound connects fill this list".into(),
+                ]
+            },
+            |row| {
+                let mut lines = vec![
+                    format!("executable: {}", row.executable),
+                    format!("cmdline: {}", row.cmdline),
+                    format!(
+                        "pid: {}  start_ticks: {}  uid: {}",
+                        row.pid, row.start_ticks, row.uid
+                    ),
+                    format!("effective rule: {}", row.verdict),
+                    String::new(),
+                    "recent destinations:".into(),
+                ];
+                if row.ports.is_empty() {
+                    lines.push("  (none)".into());
+                } else {
+                    for dest in row.ports.split('+') {
+                        lines.push(format!("  {dest}"));
+                    }
+                }
+                lines
+            },
+        )
     }
 
     fn rule_detail_lines(&self) -> Vec<String> {
@@ -756,10 +812,11 @@ impl App {
 #[must_use]
 pub fn help_lines() -> Vec<String> {
     vec![
-        "Tabs: Left/Right or 1..5  (Status Rules Prompts Log Help)".into(),
-        "Panes: h list · l detail  (Rules / Prompts / Log)".into(),
+        "Tabs: Left/Right or 1..6  (Status Apps Rules Prompts Log Help)".into(),
+        "Panes: h list · l detail  (Apps / Rules / Prompts / Log)".into(),
         "List: j/k or Up/Down".into(),
         "Log: capped 2000 rows, virtualized viewport; reconnect replaces subscribe".into(),
+        "Apps: observed firewall identities (path, pid+start ticks, ports)".into(),
         "Rules: a add · d delete · r refresh".into(),
         "Prompts: a/Enter answer · r refresh".into(),
         "Answer overlay: a/d verdict · Tab scope · Enter submit · Esc cancel".into(),
@@ -781,7 +838,7 @@ pub fn footer_hints(app: &App) -> String {
     }
     let mut parts = vec![
         format!("{} · {}", app.chrome_title(), app.tab.label()),
-        "1-5 tabs".into(),
+        "1-6 tabs".into(),
         "q quit".into(),
     ];
     if app.tab.has_split() {
@@ -823,20 +880,20 @@ mod tests {
         let mut app = App::new("/tmp/x.sock".into());
         assert_eq!(app.tab, Tab::Status);
         app.handle_key(KeyCode::Char('2'));
-        assert_eq!(app.tab, Tab::Rules);
+        assert_eq!(app.tab, Tab::Apps);
         assert_eq!(app.pane, Pane::List);
         app.handle_key(KeyCode::Char('l'));
         assert_eq!(app.pane, Pane::Detail);
         app.handle_key(KeyCode::Char('h'));
         assert_eq!(app.pane, Pane::List);
         app.handle_key(KeyCode::Right);
-        assert_eq!(app.tab, Tab::Prompts);
+        assert_eq!(app.tab, Tab::Rules);
     }
 
     #[test]
     fn rules_list_detail_and_delete_command() {
         let mut app = App::new("/tmp/x.sock".into());
-        app.handle_key(KeyCode::Char('2'));
+        app.handle_key(KeyCode::Char('3'));
         app.apply(IpcEvent::Rules(vec![RuleRow {
             id: 9,
             executable: "/bin/curl".into(),
@@ -857,7 +914,7 @@ mod tests {
     #[test]
     fn add_overlay_submits_rule_command() {
         let mut app = App::new("/tmp/x.sock".into());
-        app.handle_key(KeyCode::Char('2'));
+        app.handle_key(KeyCode::Char('3'));
         app.handle_key(KeyCode::Char('a'));
         assert!(matches!(app.overlay, Overlay::AddRule(_)));
         for ch in "7".chars() {
@@ -882,7 +939,7 @@ mod tests {
     #[test]
     fn prompt_answer_overlay_submits_command() {
         let mut app = App::new("/tmp/x.sock".into());
-        app.handle_key(KeyCode::Char('3'));
+        app.handle_key(KeyCode::Char('4'));
         app.apply(IpcEvent::Prompts(vec![PromptRow {
             id: 4,
             executable: "/bin/curl".into(),
@@ -914,7 +971,7 @@ mod tests {
     #[test]
     fn expired_prompt_disables_answer() {
         let mut app = App::new("/tmp/x.sock".into());
-        app.handle_key(KeyCode::Char('3'));
+        app.handle_key(KeyCode::Char('4'));
         app.apply(IpcEvent::Prompts(vec![PromptRow {
             id: 4,
             executable: "/bin/curl".into(),
@@ -964,7 +1021,7 @@ mod tests {
         use interfire_proto::AuditStreamRecord;
 
         let mut app = App::new("/tmp/x.sock".into());
-        app.handle_key(KeyCode::Char('4'));
+        app.handle_key(KeyCode::Char('5'));
         for sequence in 1..=(MAX_AUDIT_LINES as u64 + 500) {
             app.apply(IpcEvent::Audit(AuditStreamRecord {
                 sequence,
@@ -984,7 +1041,7 @@ mod tests {
         use interfire_proto::AuditStreamRecord;
 
         let mut app = App::new("/tmp/x.sock".into());
-        app.handle_key(KeyCode::Char('4'));
+        app.handle_key(KeyCode::Char('5'));
         for sequence in 1..=40 {
             app.apply(IpcEvent::Audit(AuditStreamRecord {
                 sequence,

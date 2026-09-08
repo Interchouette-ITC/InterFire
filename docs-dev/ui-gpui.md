@@ -32,8 +32,10 @@ an icon is present. Pop!_OS is a primary verify target alongside Debian GNOME.
 Rules: live list / select / add / delete over Unix IPC (`rule-list`,
 `rule-add`, `rule-delete`). Log: capped at 2,000 rows with a virtualized
 viewport; long-lived `audit-subscribe` id `interfire-ui` (reconnect
-replaces; tear-down on window/host drop). Applications, Network, and Settings
-are placeholders (copy only) until those surfaces are implemented.
+replaces; tear-down on window/host drop). Applications lists observed process
+identities from the daemon cache (`v1 process-list`: absolute path, PID + start
+ticks, cmdline, uid, recent destinations, effective rule) with optional open-in-htop.
+Network and Settings are still thin placeholders until those surfaces deepen.
 
 ## UI tests (`make ui-test`)
 

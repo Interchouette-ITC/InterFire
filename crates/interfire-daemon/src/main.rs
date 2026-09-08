@@ -11,6 +11,7 @@ mod policy;
 mod proc_metrics;
 mod process;
 mod prompts;
+mod recent;
 mod shared;
 
 use std::env;

@@ -12,6 +12,7 @@ use crate::dns::DnsCache;
 use crate::pending::PendingTable;
 use crate::process::ProcessCache;
 use crate::prompts::PromptQueue;
+use crate::recent::RecentConnects;
 use interfire_proto::MAX_LOG_RECORDS_PER_SUBSCRIBER;
 use std::path::PathBuf;
 
@@ -28,6 +29,7 @@ pub struct Shared {
     pub store: RulesStore,
     pub pending: Mutex<PendingTable>,
     pub process_cache: Mutex<ProcessCache>,
+    pub recent: Mutex<RecentConnects>,
     pub prompts: Mutex<PromptQueue>,
     pub dns: Mutex<DnsCache>,
     pub audit: Mutex<AuditLog>,
@@ -55,6 +57,7 @@ impl Shared {
             store,
             pending: Mutex::new(PendingTable::new(pending_capacity, pending_ttl)),
             process_cache: Mutex::new(ProcessCache::new(process_capacity)),
+            recent: Mutex::new(RecentConnects::new(process_capacity, 8)),
             prompts: Mutex::new(PromptQueue::with_defaults()),
             dns: Mutex::new(DnsCache::with_defaults()),
             audit: Mutex::new(AuditLog::open(

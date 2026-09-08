@@ -5,7 +5,9 @@ use std::io::{self, BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
 use std::time::Duration;
 
-use interfire_proto::{DaemonStatus, MAX_FRAME_BYTES, PromptRow, RuleRow, parse_error_message};
+use interfire_proto::{
+    DaemonStatus, MAX_FRAME_BYTES, ProcessRow, PromptRow, RuleRow, parse_error_message,
+};
 
 use crate::tray::DaemonLink;
 
@@ -17,6 +19,7 @@ pub struct PollSnapshot {
     pub link: DaemonLink,
     pub prompts: Vec<PromptRow>,
     pub rules: Vec<RuleRow>,
+    pub processes: Vec<ProcessRow>,
 }
 
 /// Poll daemon status, pending prompts, and rules.
@@ -27,6 +30,7 @@ pub fn poll_snapshot(socket: &str) -> PollSnapshot {
         Ok(status) => {
             let prompts = fetch_prompts(socket).unwrap_or_default();
             let rules = fetch_rules(socket).unwrap_or_default();
+            let processes = fetch_processes(socket).unwrap_or_default();
             PollSnapshot {
                 link: DaemonLink::Up {
                     status,
@@ -34,12 +38,14 @@ pub fn poll_snapshot(socket: &str) -> PollSnapshot {
                 },
                 prompts,
                 rules,
+                processes,
             }
         }
         Err(reason) => PollSnapshot {
             link: DaemonLink::Down { reason },
             prompts: Vec::new(),
             rules: Vec::new(),
+            processes: Vec::new(),
         },
     }
 }
@@ -96,6 +102,11 @@ fn fetch_prompts(socket: &str) -> Result<Vec<PromptRow>, String> {
 fn fetch_rules(socket: &str) -> Result<Vec<RuleRow>, String> {
     let frame = one_shot(socket, "v1 rule-list\n").map_err(|e| e.to_string())?;
     RuleRow::parse_frame(&frame).map_err(|_| "malformed_rules".to_owned())
+}
+
+fn fetch_processes(socket: &str) -> Result<Vec<ProcessRow>, String> {
+    let frame = one_shot(socket, "v1 process-list\n").map_err(|e| e.to_string())?;
+    ProcessRow::parse_frame(&frame).map_err(|_| "malformed_processes".to_owned())
 }
 
 fn one_shot(socket: &str, request: &str) -> io::Result<String> {

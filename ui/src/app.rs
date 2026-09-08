@@ -8,10 +8,11 @@ use gpui_kit::component::input::InputState;
 use gpui_kit::component::*;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
-use interfire_proto::{PromptRow, RuleRow};
+use interfire_proto::{ProcessRow, PromptRow, RuleRow};
 
 use crate::alert::{AlertScope, AlertVerdict, ConnectionAlert};
 use crate::alert_view::alert_overlay;
+use crate::applications_view::{applications_body, try_open_htop};
 use crate::audit_host::{AuditEvent, AuditHost};
 use crate::ipc_poll;
 use crate::log_buf::LogBuffer;
@@ -47,6 +48,9 @@ struct ShellContent<'a> {
     selected_rule: Option<u64>,
     rules_message: Option<&'a str>,
     adding: bool,
+    processes: &'a [ProcessRow],
+    selected_process: Option<(u32, u64)>,
+    htop_message: Option<&'a str>,
     log: &'a LogBuffer,
     profiling: &'a ProfilingSnapshot,
 }
@@ -71,6 +75,9 @@ pub struct App {
     selected_rule: Option<u64>,
     rules_message: Option<String>,
     add_form: Option<AddRuleFormState>,
+    processes: Vec<ProcessRow>,
+    selected_process: Option<(u32, u64)>,
+    htop_message: Option<String>,
     alert: Option<ConnectionAlert>,
     log: LogBuffer,
     audit: AuditHost,
@@ -101,6 +108,9 @@ impl App {
             selected_rule: None,
             rules_message: None,
             add_form: None,
+            processes: Vec::new(),
+            selected_process: None,
+            htop_message: None,
             alert: None,
             log: LogBuffer::new(),
             audit,
@@ -174,10 +184,19 @@ impl App {
         if self.rss_probe != Some(RssProbeMode::PromptLoad) {
             self.prompts = snapshot.prompts;
             self.rules = snapshot.rules;
+            self.processes = snapshot.processes;
             if let Some(id) = self.selected_rule
                 && !self.rules.iter().any(|row| row.id == id)
             {
                 self.selected_rule = None;
+            }
+            if let Some(key) = self.selected_process
+                && !self
+                    .processes
+                    .iter()
+                    .any(|row| row.pid == key.0 && row.start_ticks == key.1)
+            {
+                self.selected_process = None;
             }
             self.alert = ConnectionAlert::advance(self.alert.take(), &self.prompts);
             let next = TrayState::from_link(&self.link);
@@ -231,6 +250,20 @@ impl App {
 
     pub(crate) fn select_rule(&mut self, id: u64, cx: &mut Context<Self>) {
         self.selected_rule = Some(id);
+        cx.notify();
+    }
+
+    pub(crate) fn select_process(&mut self, pid: u32, start_ticks: u64, cx: &mut Context<Self>) {
+        self.selected_process = Some((pid, start_ticks));
+        self.htop_message = None;
+        cx.notify();
+    }
+
+    pub(crate) fn open_htop(&mut self, pid: u32, cx: &mut Context<Self>) {
+        self.htop_message = Some(match try_open_htop(pid) {
+            Ok(()) => format!("opened htop for pid {pid}"),
+            Err(message) => message,
+        });
         cx.notify();
     }
 
@@ -383,6 +416,9 @@ impl Render for App {
         let selected_rule = self.selected_rule;
         let rules_message = self.rules_message.clone();
         let adding = self.add_form.is_some();
+        let processes = self.processes.clone();
+        let selected_process = self.selected_process;
+        let htop_message = self.htop_message.clone();
         let log = self.log.clone();
         let profiling = self.profiling.clone();
 
@@ -404,6 +440,9 @@ impl Render for App {
                     selected_rule,
                     rules_message: rules_message.as_deref(),
                     adding,
+                    processes: &processes,
+                    selected_process,
+                    htop_message: htop_message.as_deref(),
                     log: &log,
                     profiling: &profiling,
                 },
@@ -504,9 +543,12 @@ fn section_body(content: &ShellContent<'_>, cx: &Context<App>) -> Div {
             cx,
         ),
         Section::Status => status_body(content.socket, content.tray_state, content.link, muted),
-        Section::Applications => div()
-            .text_color(muted)
-            .child("Observed identities and effective rules are not listed here yet."),
+        Section::Applications => applications_body(
+            content.processes,
+            content.selected_process,
+            content.htop_message,
+            cx,
+        ),
         Section::Log => log_body(content.log, cx),
         Section::Network => div()
             .text_color(muted)
