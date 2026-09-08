@@ -278,3 +278,149 @@ fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
     ])
     .split(vertical[1])[1]
 }
+
+#[cfg(test)]
+mod tests {
+    use interfire_proto::{AuditStreamRecord, DaemonStatus, ProcessRow, PromptRow, RuleRow};
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
+
+    use super::draw;
+    use crate::app::{
+        AddField, AddRuleForm, AnswerPromptForm, AnswerScope, AnswerVerdict, App, Overlay, Pane,
+        Tab,
+    };
+    use crate::palette::{self, Mode};
+
+    fn draw_app(app: &App) {
+        let backend = TestBackend::new(120, 40);
+        let mut terminal = Terminal::new(backend).expect("terminal");
+        terminal.draw(|frame| draw(frame, app)).expect("draw frame");
+    }
+
+    fn sample_app(mode: Mode) -> App {
+        palette::set_mode(mode);
+        let mut app = App::new("/tmp/interfire-tui-draw.sock".into());
+        app.apply(crate::ipc::IpcEvent::Status(DaemonStatus {
+            enforcement: "nfqueue".into(),
+            observation: "attached".into(),
+            ipc_version: 1,
+            pid: Some(42),
+            rss_kib: Some(6400),
+            cpu_jiffies: Some(10),
+        }));
+        app.subscribed = true;
+        app.rules = vec![RuleRow {
+            id: 1,
+            executable: "/bin/curl".into(),
+            verdict: "allow".into(),
+            port: 443,
+        }];
+        app.prompts = vec![PromptRow {
+            id: 2,
+            executable: "/bin/curl".into(),
+            destination: "203.0.113.1".into(),
+            port: 443,
+            protocol: "tcp".into(),
+            remaining_secs: 30,
+        }];
+        app.processes = vec![ProcessRow {
+            pid: 100,
+            start_ticks: 50,
+            uid: 1000,
+            executable: "/bin/curl".into(),
+            cmdline: "curl -s".into(),
+            verdict: "allow".into(),
+            ports: "203.0.113.1:443/allow".into(),
+        }];
+        for sequence in 1..=25 {
+            app.apply(crate::ipc::IpcEvent::Audit(AuditStreamRecord {
+                sequence,
+                message: format!("audit-{sequence}"),
+            }));
+        }
+        app.status_message = Some("ready".into());
+        app
+    }
+
+    #[test]
+    fn draws_every_tab_in_dark_and_light_modes() {
+        for mode in [Mode::Dark, Mode::Light] {
+            let mut app = sample_app(mode);
+            for tab in Tab::ALL {
+                app.tab = tab;
+                app.pane = if tab.has_split() {
+                    Pane::Detail
+                } else {
+                    Pane::List
+                };
+                draw_app(&app);
+            }
+        }
+    }
+
+    #[test]
+    fn draws_list_focus_and_log_window_titles() {
+        let mut app = sample_app(Mode::Dark);
+        app.tab = Tab::Log;
+        app.pane = Pane::List;
+        app.list_selected = 20;
+        draw_app(&app);
+        app.pane = Pane::Detail;
+        draw_app(&app);
+    }
+
+    #[test]
+    fn draws_notice_add_rule_and_answer_overlays() {
+        let mut app = sample_app(Mode::Dark);
+        app.overlay = Overlay::Notice("test notice".into());
+        draw_app(&app);
+
+        app.overlay = Overlay::AddRule(AddRuleForm {
+            id: "9".into(),
+            executable: "/bin/curl".into(),
+            verdict: "deny".into(),
+            port: "443".into(),
+            focus: AddField::Executable,
+        });
+        draw_app(&app);
+
+        for (remaining, verdict) in [
+            (3_u64, AnswerVerdict::Allow),
+            (10, AnswerVerdict::Deny),
+            (30, AnswerVerdict::Deny),
+        ] {
+            app.overlay = Overlay::AnswerPrompt(AnswerPromptForm {
+                prompt: PromptRow {
+                    id: 2,
+                    executable: "/bin/curl".into(),
+                    destination: "203.0.113.1".into(),
+                    port: 443,
+                    protocol: "tcp".into(),
+                    remaining_secs: remaining,
+                },
+                verdict,
+                scope: AnswerScope::Session,
+            });
+            draw_app(&app);
+        }
+    }
+
+    #[test]
+    fn draws_connecting_and_down_link_states() {
+        palette::set_mode(Mode::Light);
+        let mut app = App::new("/tmp/interfire-tui-down.sock".into());
+        draw_app(&app);
+        app.apply(crate::ipc::IpcEvent::Down("connect refused".into()));
+        draw_app(&app);
+        app.apply(crate::ipc::IpcEvent::Status(DaemonStatus {
+            enforcement: "none".into(),
+            observation: "degraded".into(),
+            ipc_version: 1,
+            pid: None,
+            rss_kib: None,
+            cpu_jiffies: None,
+        }));
+        draw_app(&app);
+    }
+}
