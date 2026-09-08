@@ -28,7 +28,9 @@ The package installs binaries (`interfired`, `interfirectl`, `interfire-tui`,
 `interfire-ui`), systemd units, the owned nft script, tmpfiles, and default
 rules. eBPF bytecode is embedded in `interfired` (no separate object file).
 `postinst` enables and starts `interfire-nft` + `interfired`. Primary verify
-images: Debian (stable) GNOME and Pop!\_OS, `x86_64`.
+images: Debian (stable) GNOME and Pop!\_OS, `x86_64`. Full install / upgrade /
+reboot / uninstall checklist and migration notes:
+[`install-matrix.md`](install-matrix.md).
 
 | Host path | Content |
 | --- | --- |
