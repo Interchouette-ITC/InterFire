@@ -1,11 +1,7 @@
 # InterFire
 
 <p align="center">
-  <img src="brand/logo-banner-readme.png" alt="InterFire: FIREWALL · SECURE · CONTROL" width="560" />
-</p>
-
-<p align="center">
-  <img src="brand/icon-app-phoenix-256.png" alt="InterFire phoenix mark" width="160" height="160" />
+  <img src="brand/logo-banner-readme.png" alt="InterFire: FIREWALL · SECURE · CONTROL" width="640" />
 </p>
 
 <p align="center">
@@ -137,7 +133,7 @@ packaging/debian/                empty (Debian packaging not implemented)
    caps, and production measurements still matter.
 
 <p align="center">
-  <img src="brand/logo-horizontal-readme.png" alt="InterFire lockup" width="420" style="margin-top: 1.5rem; margin-bottom: 0.25rem;" />
+  <img src="brand/logo-horizontal-readme-on-white.png" alt="InterFire lockup" width="420" style="margin-top: 1.5rem; margin-bottom: 0.25rem;" />
 </p>
 
 ## Thanks
