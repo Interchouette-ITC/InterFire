@@ -52,14 +52,20 @@ objects from other projects are linked or shipped.
 
 Primary v0.1 targets (install and desktop dogfood):
 
-| Distro / desktop | Role |
-| --- | --- |
-| Debian (stable) with GNOME | Primary |
-| Pop!_OS (current supported release) | Primary |
+| Distro / desktop                     | Role    |
+| ------------------------------------ | ------- |
+| Debian (stable) with GNOME           | Primary |
+| Pop!\_OS (current supported release) | Primary |
 
 Architecture: `x86_64`. Runtime assumptions: systemd, a kernel with BTF and
 usable eBPF features, and NFQUEUE support. CI may use Ubuntu runners as a
 compile proxy only; that does not expand the support claim.
+
+Desktop UI (`interfire-ui`) draws with GPUI. On older or weak GPUs that cannot
+meet that requirement, the app **defaults to CPU software rendering** so the
+window still opens (slower, more CPU). Set `INTERFIRE_UI_NATIVE_GPU=1` only on
+machines known to support modern GPU drawing for GPUI. The terminal client
+(`interfire-tui`) does not need a GPU.
 
 Tray icons use StatusNotifierItem. On GNOME, a visible tray needs a shell that
 exposes SNI; when registration fails, Status chrome still reports tray state

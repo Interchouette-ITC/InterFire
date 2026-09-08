@@ -4,9 +4,12 @@ CLIPPY_FLAGS := -D warnings -D clippy::all -D clippy::pedantic -D clippy::nurser
 CARGO ?= cargo +stable
 DOC_OUT ?= target/doc
 
-.PHONY: help fmt format lint test coverage audit deny doc doc-open doc-clean ci memcheck memcheck-ui profile-ui integration ebpf ui ui-test
+.PHONY: help fmt format lint test coverage audit deny doc doc-open doc-clean ci memcheck memcheck-ui profile-ui integration ebpf ui ui-test run-daemon run-ui run-tui run-ctl
 
 .DEFAULT_GOAL := help
+
+# Dev smoke socket (override: `make run-ui SOCKET=/path/to.sock`).
+SOCKET ?= /tmp/interfire.sock
 
 help:
 	@echo "InterFire targets"
@@ -21,6 +24,11 @@ help:
 	@echo "  make ci             lint + test + doc"
 	@echo "  make ui             build interfire-ui (GPUI desktop client)"
 	@echo "  make ui-test        test interfire-ui (needs X11/Wayland UI libs)"
+	@echo "  make run-daemon     run interfired (smoke: --no-ebpf --no-nfqueue)"
+	@echo "  make run-ui         run interfire-ui (software GL default; SOCKET=$(SOCKET))"
+	@echo "                      native GPU: INTERFIRE_UI_NATIVE_GPU=1 make run-ui"
+	@echo "  make run-tui        run interfire-tui (SOCKET=$(SOCKET))"
+	@echo "  make run-ctl        run interfirectl ping (SOCKET=$(SOCKET))"
 	@echo "  make ebpf           rebuild embedded TCP-connect eBPF object (nightly)"
 	@echo "  make memcheck       idle interfired RSS vs < 40 MiB budget"
 	@echo "  make memcheck-ui    release UI RSS gates (idle / prompt-load / combined)"
@@ -94,6 +102,20 @@ ui:
 
 ui-test:
 	$(CARGO) test -p interfire-ui
+
+## Smoke run aliases (foreground). Override socket: `make run-ui SOCKET=/path/to.sock`.
+## `interfire-ui` defaults to CPU software GL; use `INTERFIRE_UI_NATIVE_GPU=1` for native GPU.
+run-daemon:
+	$(CARGO) run -p interfire-daemon -- --socket=$(SOCKET) --no-ebpf --no-nfqueue
+
+run-ui:
+	$(CARGO) run -p interfire-ui -- --socket=$(SOCKET)
+
+run-tui:
+	$(CARGO) run -p interfire-tui -- --socket=$(SOCKET)
+
+run-ctl:
+	$(CARGO) run -p interfirectl -- --socket=$(SOCKET) ping
 
 ## Rebuild `crates/interfire-ebpf/bpf/interfire-ebpf-programs` (needs nightly + bpf-linker).
 ebpf:

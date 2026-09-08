@@ -17,18 +17,18 @@ from `ui/src/brand.rs` (light nav uses the light app icon variant).
 
 Shared brand accents stay the same in both modes (`#F84800` / `#F03105`).
 
-| Role | Dark | Light | Use |
-| --- | --- | --- | --- |
-| Canvas | `#0E1114` | `#F5F6F8` | Window / sidebar |
-| Surface | `#161B20` | `#FFFFFF` | Content panel |
-| Elevated | `#1E252C` | `#ECEFF3` | Overlays, Settings rows |
-| Border | `#2C3540` | `#D0D7DE` | Separators |
-| Text | `#E8EDF2` | `#1F2328` | Primary labels |
-| Muted | `#8B97A5` | `#656D76` | Secondary labels |
-| Accent | `#F84800` / `#F03105` | same | Selected nav, Allow, CTA |
-| Brand deep | `#D00000` | same | Active / pressed |
-| Danger | `#EF5350` / `#DC3545` | same | Deny |
-| Ok / Warn | `#3DDC97` / `#F5A623` | same | Tray chips |
+| Role       | Dark                  | Light     | Use                      |
+| ---------- | --------------------- | --------- | ------------------------ |
+| Canvas     | `#0E1114`             | `#F5F6F8` | Window / sidebar         |
+| Surface    | `#161B20`             | `#FFFFFF` | Content panel            |
+| Elevated   | `#1E252C`             | `#ECEFF3` | Overlays, Settings rows  |
+| Border     | `#2C3540`             | `#D0D7DE` | Separators               |
+| Text       | `#E8EDF2`             | `#1F2328` | Primary labels           |
+| Muted      | `#8B97A5`             | `#656D76` | Secondary labels         |
+| Accent     | `#F84800` / `#F03105` | same      | Selected nav, Allow, CTA |
+| Brand deep | `#D00000`             | same      | Active / pressed         |
+| Danger     | `#EF5350` / `#DC3545` | same      | Deny                     |
+| Ok / Warn  | `#3DDC97` / `#F5A623` | same      | Tray chips               |
 
 Orange is brand identity. Do not fall back to stock kit blue for selected
 chrome. Tray icons use brand pixmaps (not stock `dialog-*` names). The TUI
@@ -55,7 +55,7 @@ Tray: protected | prompting | degraded | daemon-unavailable (Linux SNI via
 `ksni`; state also mirrored in Status chrome and the window status bar).
 On Debian GNOME, a visible tray needs a shell that exposes StatusNotifierItem;
 when SNI registration fails, Status still shows tray state and must not claim
-an icon is present. Pop!_OS is a primary verify target alongside Debian GNOME.
+an icon is present. Pop!\_OS is a primary verify target alongside Debian GNOME.
 Rules: live list / select / add / delete over Unix IPC (`rule-list`,
 `rule-add`, `rule-delete`). Log: capped at 2,000 rows with a virtualized
 viewport; long-lived `audit-subscribe` id `interfire-ui` (reconnect
@@ -73,11 +73,11 @@ subscriber id. Run with the Linux UI packages above.
 
 ## Stack pin
 
-| Crate | Version | Role |
-| --- | --- | --- |
-| `gpui-kit` | **0.6.0** (crates.io) | One dependency wrapping GPUI + components + shell |
-| Transitive | `gpui-pre` 0.3.x, `gpui-component` 0.6.x | Pulled by `gpui-kit` |
-| `hotpath` | **0.25.x** (crates.io) | Optional profiler; see [Memory and profiling](#memory-and-profiling) |
+| Crate      | Version                                  | Role                                                                 |
+| ---------- | ---------------------------------------- | -------------------------------------------------------------------- |
+| `gpui-kit` | **0.6.0** (crates.io)                    | One dependency wrapping GPUI + components + shell                    |
+| Transitive | `gpui-pre` 0.3.x, `gpui-component` 0.6.x | Pulled by `gpui-kit`                                                 |
+| `hotpath`  | **0.25.x** (crates.io)                   | Optional profiler; see [Memory and profiling](#memory-and-profiling) |
 
 Pinned 2026-09-07 (`gpui-kit`). `hotpath` added 2026-09-08 for RSS investigation.
 Rebuild with `make ui`. Prefer `gpui-ce` only if Linux tray work is blocked by
@@ -86,7 +86,7 @@ upstream gaps.
 ### Linux system packages
 
 Linking `interfire-ui` needs development packages on the primary targets
-(Debian and Pop!_OS both use `apt`):
+(Debian and Pop!\_OS both use `apt`):
 
 ```bash
 sudo apt-get install -y \
@@ -102,7 +102,21 @@ Use `make ui-test` (and CI) when the packages are present.
 
 - Binary name: `interfire-ui`
 - Tree: [`ui/`](../ui/) (workspace member)
-- Install targets for the future `.deb`: Debian (stable) GNOME and Pop!_OS (not packaged yet)
+- Local smoke: `make run-ui` (shared `SOCKET`, default `/tmp/interfire.sock`; see [`DEVELOPMENT.md`](DEVELOPMENT.md))
+- Install targets for the future `.deb`: Debian (stable) GNOME and Pop!\_OS (not packaged yet)
+
+## Renderer (software by default)
+
+GPUI needs a modern GPU path. Weak or older cards often fail at startup (wgpu
+pipeline validation). **Default:** the binary re-execs with CPU software GL
+(`LIBGL_ALWAYS_SOFTWARE=1`, `WGPU_BACKEND=gl`) unless:
+
+- `INTERFIRE_UI_NATIVE_GPU=1` (use the real GPU / existing graphics env), or
+- `WGPU_BACKEND` is already set (honour memcheck, profile, or operator override).
+
+Expect lower frame smoothness on software GL; that is intentional so low-end
+dogfood machines still run the desktop client. `make memcheck-ui` / `make profile-ui`
+already set the software env explicitly.
 
 ## Memory and profiling
 
@@ -111,11 +125,11 @@ Use `make ui-test` (and CI) when the packages are present.
 `make memcheck-ui` samples `/proc/<pid>/VmRSS` on a **release** `interfire-ui`
 with software GL defaults (`LIBGL_ALWAYS_SOFTWARE=1`, `WGPU_BACKEND=gl`).
 
-| Process | Typical idle VmRSS | Gate | Notes |
-| --- | --- | --- | --- |
-| `interfired` | ~6–7 MiB | < 40 MiB (`make memcheck`) | Enforcement path; this is the firewall budget that matters |
-| `interfire-ui` | **~190 MiB** | < 220 MiB idle / < 260 MiB prompt-load | GPUI + wgpu + fonts/atlas; framework floor before InterFire tables grow |
-| Combined daemon + idle UI | ~200 MiB | < 260 MiB | Dominated by the UI process |
+| Process                   | Typical idle VmRSS | Gate                                   | Notes                                                                   |
+| ------------------------- | ------------------ | -------------------------------------- | ----------------------------------------------------------------------- |
+| `interfired`              | ~6–7 MiB           | < 40 MiB (`make memcheck`)             | Enforcement path; this is the firewall budget that matters              |
+| `interfire-ui`            | **~190 MiB**       | < 220 MiB idle / < 260 MiB prompt-load | GPUI + wgpu + fonts/atlas; framework floor before InterFire tables grow |
+| Combined daemon + idle UI | ~200 MiB           | < 260 MiB                              | Dominated by the UI process                                             |
 
 Recorded context (2026-09): release GPUI + wgpu on Linux idles around **190 MiB**
 even with empty Rules / no big audit buffer. That is **not** InterFire policy
@@ -140,10 +154,10 @@ make memcheck-ui
 Needs `DISPLAY` or `xvfb-run`. Prompt-load stages 100 pending prompts, an alert,
 and a full 2,000-row audit buffer inside the UI process.
 
-| Condition | Budget | Env override |
-| --- | --- | --- |
-| Idle UI | < 220 MiB | `INTERFIRE_UI_IDLE_BUDGET_KIB` (default 225280) |
-| Prompt-load UI | < 260 MiB | `INTERFIRE_UI_PROMPT_BUDGET_KIB` (default 266240) |
+| Condition                 | Budget    | Env override                                        |
+| ------------------------- | --------- | --------------------------------------------------- |
+| Idle UI                   | < 220 MiB | `INTERFIRE_UI_IDLE_BUDGET_KIB` (default 225280)     |
+| Prompt-load UI            | < 260 MiB | `INTERFIRE_UI_PROMPT_BUDGET_KIB` (default 266240)   |
 | Combined daemon + idle UI | < 260 MiB | `INTERFIRE_UI_COMBINED_BUDGET_KIB` (default 266240) |
 
 Settle time: `INTERFIRE_UI_MEMCHECK_SETTLE_SECS` (default 4). Fail the release if
@@ -159,9 +173,9 @@ Upstream: [hotpath.rs](https://hotpath.rs/), blog notes at
 Wired only on `interfire-ui`. Default `make ui` / packaging builds stay cold:
 macros and `CountingAllocator` are pass-through unless features are enabled.
 
-| Cargo feature | Effect |
-| --- | --- |
-| `hotpath` | Enable timing / instrumentation (`hotpath/hotpath`) |
+| Cargo feature   | Effect                                                                       |
+| --------------- | ---------------------------------------------------------------------------- |
+| `hotpath`       | Enable timing / instrumentation (`hotpath/hotpath`)                          |
 | `hotpath-alloc` | Track allocations via `hotpath::CountingAllocator` (`hotpath/hotpath-alloc`) |
 
 ```bash
