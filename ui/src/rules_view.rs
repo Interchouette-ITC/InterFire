@@ -229,7 +229,7 @@ fn verdict_row(selected: RuleVerdict, cx: &Context<App>) -> impl IntoElement {
     row
 }
 
-fn action_chip(
+pub fn action_chip(
     id: &'static str,
     label: &'static str,
     enabled: bool,

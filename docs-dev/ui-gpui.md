@@ -63,7 +63,10 @@ replaces; tear-down on window/host drop). Applications lists observed process
 identities from the daemon cache (`v1 process-list`: absolute path, PID + start
 ticks, cmdline, uid, recent destinations, effective rule) with optional open-in
 htop/atop/btop/top when those binaries are on `PATH`.
-Network and Settings are still thin placeholders until those surfaces deepen.
+Network shows only InterFire-owned nftables (`inet interfire`): status,
+install queue rule, and remove table (`network-status` /
+`network-install` / `network-remove`). Settings covers socket, tray, and
+theme.
 
 ## UI tests (`make ui-test`)
 

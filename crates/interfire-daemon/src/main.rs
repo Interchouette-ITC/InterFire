@@ -4,6 +4,7 @@ mod audit;
 mod dns;
 mod ipc;
 mod nfqueue;
+mod nft;
 mod observe;
 mod packet;
 mod pending;

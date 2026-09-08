@@ -1,6 +1,6 @@
 # Architecture and feasibility record
 
-## Current status: live path wired (operator nft still required)
+## Current status: live path wired; owned nft installable
 
 InterFire uses eBPF for TCP-connect observation, then resolves the executable,
 command line, uid, cgroup, and start-time through `/proc` in userspace. eBPF
@@ -10,9 +10,14 @@ The primary verdict path is NFQUEUE: the daemon binds queue **4242**, stores
 recent connect decisions keyed by destination IPv4 and port, and accepts or
 drops queued packets. Prompt verdicts stay **deny** until answered over IPC
 (`interfire-tui` or `interfirectl`). Unattributed events and packets without a
-pending decision are **deny**. Open gaps: production latency/coexistence
-measurements and documented install of the InterFire-owned nftables queue rule.
-A root network-namespace gate (`make integration` /
+pending decision are **deny**.
+
+The InterFire-owned nftables table is **`inet interfire`**. The Network tab
+(`interfire-ui`) and one-shot CLI (`interfirectl network install|remove|status`)
+install or remove only that table: an `output` chain that queues new outbound
+TCP (`ct state new`) to queue 4242. Unrelated tables are never listed or
+edited. Open gaps: production latency/coexistence measurements. A root
+network-namespace gate (`make integration` /
 `scripts/enforcement-allow-deny.sh`) proves controlled allow and deny. Idle
 daemon RSS is checked with `make memcheck` against the < 40 MiB budget.
 

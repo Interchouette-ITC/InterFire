@@ -75,6 +75,15 @@ fn main() -> io::Result<()> {
         {
             format!("audit-subscribe {id} {since}")
         }
+        [network, status] if network == "network" && status == "status" => {
+            "network-status".to_owned()
+        }
+        [network, install] if network == "network" && install == "install" => {
+            "network-install".to_owned()
+        }
+        [network, remove] if network == "network" && remove == "remove" => {
+            "network-remove".to_owned()
+        }
         _ => return usage(),
     };
 
@@ -88,7 +97,7 @@ fn main() -> io::Result<()> {
 
 fn usage() -> io::Result<()> {
     eprintln!(
-        "usage: interfirectl [--socket=PATH] <ping|status|rules …|prompts …|dns …|audit tail [N]|audit subscribe ID [since=N]>"
+        "usage: interfirectl [--socket=PATH] <ping|status|rules …|prompts …|dns …|audit tail [N]|audit subscribe ID [since=N]|network status|network install|network remove>"
     );
     eprintln!("one-shot CLI only; use interfire-tui for interactive browse/answer");
     Err(io::Error::new(

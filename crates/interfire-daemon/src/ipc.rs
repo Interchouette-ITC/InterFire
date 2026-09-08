@@ -17,6 +17,7 @@ use nix::sys::socket::{getsockopt, sockopt::PeerCredentials};
 use nix::unistd::Uid;
 use tracing::{debug, warn};
 
+use crate::nft;
 use crate::prompts::{AnswerError, PromptQueue};
 use crate::shared::Shared;
 
@@ -91,6 +92,36 @@ fn dispatch(request: Request, shared: &Shared, stream: &UnixStream) -> Response 
         Request::AuditTail { limit } => audit_tail(shared, limit),
         Request::AuditSubscribe { .. } => Response::Error("malformed_request"),
         Request::ProcessList => process_list(shared),
+        Request::NetworkStatus => Response::Network(nft::status()),
+        Request::NetworkInstall => network_mutate(stream, NetworkMutate::Install),
+        Request::NetworkRemove => network_mutate(stream, NetworkMutate::Remove),
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum NetworkMutate {
+    Install,
+    Remove,
+}
+
+fn network_mutate(stream: &UnixStream, action: NetworkMutate) -> Response {
+    if !peer_may_mutate(stream) {
+        warn!("network mutate rejected: unauthorized peer");
+        return Response::Error("unauthorized");
+    }
+    let result = match action {
+        NetworkMutate::Install => nft::install(),
+        NetworkMutate::Remove => nft::remove(),
+    };
+    match result {
+        Ok(()) => Response::Pong,
+        Err(error) => {
+            warn!(%error, "network mutate failed");
+            match action {
+                NetworkMutate::Install => Response::Error("nft_install_failed"),
+                NetworkMutate::Remove => Response::Error("nft_remove_failed"),
+            }
+        }
     }
 }
 

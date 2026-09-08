@@ -6,7 +6,8 @@ use std::os::unix::net::UnixStream;
 use std::time::Duration;
 
 use interfire_proto::{
-    DaemonStatus, MAX_FRAME_BYTES, ProcessRow, PromptRow, RuleRow, parse_error_message,
+    DaemonStatus, MAX_FRAME_BYTES, NetworkStatus, ProcessRow, PromptRow, RuleRow,
+    parse_error_message,
 };
 
 use crate::tray::DaemonLink;
@@ -20,6 +21,7 @@ pub struct PollSnapshot {
     pub prompts: Vec<PromptRow>,
     pub rules: Vec<RuleRow>,
     pub processes: Vec<ProcessRow>,
+    pub network: Option<NetworkStatus>,
 }
 
 /// Poll daemon status, pending prompts, and rules.
@@ -31,6 +33,7 @@ pub fn poll_snapshot(socket: &str) -> PollSnapshot {
             let prompts = fetch_prompts(socket).unwrap_or_default();
             let rules = fetch_rules(socket).unwrap_or_default();
             let processes = fetch_processes(socket).unwrap_or_default();
+            let network = fetch_network(socket).ok();
             PollSnapshot {
                 link: DaemonLink::Up {
                     status,
@@ -39,6 +42,7 @@ pub fn poll_snapshot(socket: &str) -> PollSnapshot {
                 prompts,
                 rules,
                 processes,
+                network,
             }
         }
         Err(reason) => PollSnapshot {
@@ -46,6 +50,7 @@ pub fn poll_snapshot(socket: &str) -> PollSnapshot {
             prompts: Vec::new(),
             rules: Vec::new(),
             processes: Vec::new(),
+            network: None,
         },
     }
 }
@@ -87,6 +92,34 @@ pub fn add_rule(
 pub fn delete_rule(socket: &str, id: u64) -> Result<(), String> {
     let request = format!("v1 rule-delete {id}\n");
     send_expect_pong(socket, &request)
+}
+
+/// Install the InterFire-owned nftables queue table (`v1 network-install`).
+///
+/// # Errors
+///
+/// Returns a daemon error message or transport failure text.
+pub fn install_network(socket: &str) -> Result<(), String> {
+    send_expect_pong(socket, "v1 network-install\n")
+}
+
+/// Remove the InterFire-owned nftables table (`v1 network-remove`).
+///
+/// # Errors
+///
+/// Returns a daemon error message or transport failure text.
+pub fn remove_network(socket: &str) -> Result<(), String> {
+    send_expect_pong(socket, "v1 network-remove\n")
+}
+
+/// Fetch owned nftables status (`v1 network-status`).
+///
+/// # Errors
+///
+/// Returns a transport or parse failure text.
+pub fn fetch_network(socket: &str) -> Result<NetworkStatus, String> {
+    let frame = one_shot(socket, "v1 network-status\n").map_err(|e| e.to_string())?;
+    NetworkStatus::parse(&frame).map_err(|_| "malformed_network".to_owned())
 }
 
 fn fetch_status(socket: &str) -> Result<DaemonStatus, String> {

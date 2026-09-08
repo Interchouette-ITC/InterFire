@@ -23,11 +23,13 @@ Canonical repo: [Interchouette-ITC/InterFire](https://github.com/Interchouette-I
 persist TOML rules, resolve process identity via `/proc`, attach a TCP-connect
 eBPF observer when capabilities allow, consume ring-buffer events, and can bind
 NFQUEUE **4242** for allow/deny (prompt and unattributed → deny until answered
-over IPC). Live filtering needs an InterFire-owned nftables queue rule and
-root/caps; use `--no-ebpf` and/or `--no-nfqueue` for non-root smoke. Interactive
+over IPC). Live filtering needs the InterFire-owned nftables table
+(`inet interfire`, queue **4242**) via Network tab or
+`interfirectl network install`, plus root/caps; use `--no-ebpf` and/or
+`--no-nfqueue` for non-root smoke. Interactive
 ops use `interfire-tui`. GPUI desktop shell (`interfire-ui`) includes tray,
-connection alert, Rules, Applications, Log, Profiling, and RSS gates; Debian
-packaging is not shipped. Primary targets: Debian (stable) with GNOME, and
+connection alert, Rules, Applications, Network, Log, Profiling, and RSS gates;
+Debian packaging is not shipped. Primary targets: Debian (stable) with GNOME, and
 Pop!_OS. Production latency/coexistence measurements remain open.
 
 ## What you get today
@@ -37,10 +39,10 @@ Pop!_OS. Production latency/coexistence measurements remain open.
 | `interfire-rules` | Deterministic application-rule matching + TOML store |
 | `interfire-proto` | Versioned, bounded Unix-socket framing |
 | `interfired` | Daemon: IPC, rules, ringbuf → `/proc` → rules → NFQUEUE |
-| `interfirectl` | One-shot CLI: `ping`, `status`, rules / prompts / dns / audit |
+| `interfirectl` | One-shot CLI: `ping`, `status`, rules / prompts / dns / audit / network |
 | `interfire-tui` | ratatui control-plane TUI (interactive status / apps / rules / prompts / log) |
 | `interfire-ebpf*` | TCP-connect observation program + aya loader |
-| `interfire-ui` | GPUI desktop shell: tray, alert, Rules, Applications, Log, Profiling |
+| `interfire-ui` | GPUI desktop shell: tray, alert, Rules, Applications, Network, Log, Profiling |
 | Docs | Architecture, threat model, UX contract and studies |
 
 Not present yet: Debian packaging (systemd unit, `.deb`, install matrix on
