@@ -1,6 +1,15 @@
 # InterFire
 
 <p align="center">
+  <img src="brand/logo-banner-readme.png" alt="InterFire: FIREWALL · SECURE · CONTROL" width="560" />
+</p>
+
+<p align="center">
+  <img src="brand/seal-gh-dark-128.png#gh-dark-mode-only" alt="InterFire seal" width="96" height="96" />
+  <img src="brand/seal-gh-light-128.png#gh-light-mode-only" alt="InterFire seal" width="96" height="96" />
+</p>
+
+<p align="center">
   <strong>Linux-first Rust application firewall.</strong>
 </p>
 
@@ -22,9 +31,9 @@ NFQUEUE **4242** for allow/deny (prompt and unattributed → deny until answered
 over IPC). Live filtering needs an InterFire-owned nftables queue rule and
 root/caps; use `--no-ebpf` and/or `--no-nfqueue` for non-root smoke. Interactive
 ops use `interfire-tui`. GPUI desktop shell (`interfire-ui`) includes tray,
-connection alert, Rules, Log, and RSS gates; Debian packaging is not shipped.
-Primary targets: Debian (stable) with GNOME, and Pop!_OS. Production
-latency/coexistence measurements remain open.
+connection alert, Rules, Applications, Log, Profiling, and RSS gates; Debian
+packaging is not shipped. Primary targets: Debian (stable) with GNOME, and
+Pop!_OS. Production latency/coexistence measurements remain open.
 
 ## What you get today
 
@@ -34,9 +43,9 @@ latency/coexistence measurements remain open.
 | `interfire-proto` | Versioned, bounded Unix-socket framing |
 | `interfired` | Daemon: IPC, rules, ringbuf → `/proc` → rules → NFQUEUE |
 | `interfirectl` | One-shot CLI: `ping`, `status`, rules / prompts / dns / audit |
-| `interfire-tui` | ratatui control-plane TUI (interactive status / rules / prompts / log) |
+| `interfire-tui` | ratatui control-plane TUI (interactive status / apps / rules / prompts / log) |
 | `interfire-ebpf*` | TCP-connect observation program + aya loader |
-| `interfire-ui` | GPUI desktop shell: tray, alert, Rules, Log, RSS gates |
+| `interfire-ui` | GPUI desktop shell: tray, alert, Rules, Applications, Log, Profiling |
 | Docs | Architecture, threat model, UX contract and studies |
 
 Not present yet: Debian packaging (systemd unit, `.deb`, install matrix on
@@ -97,6 +106,7 @@ isolated NFQUEUE test is scoped.
 | [`pull_request_template.md`](pull_request_template.md) | PR Summary + Test plan template |
 | [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) | Community standards |
 | [`SECURITY.md`](SECURITY.md) | Vulnerability reporting |
+| [`brand/`](brand/) | Brand assets |
 | [`../docs-dev/README.md`](../docs-dev/README.md) | Developer docs index |
 | [`api-rust/`](api-rust/) | rustdoc after `make doc` |
 
@@ -112,6 +122,7 @@ ui/                              interfire-ui (GPUI desktop)
 crates/interfire-ebpf/           TCP event contract + aya loader
 crates/interfire-ebpf-programs/  TCP-connect eBPF program (bpfel)
 docs/                            product docs (this hub)
+docs/brand/                      public brand masters + size variants
 docs-dev/                        developer notes
 fixtures/                        rule fixtures
 scripts/                         capability probe + NFQUEUE test helpers
@@ -126,6 +137,32 @@ packaging/debian/                empty (Debian packaging not implemented)
 4. Keep enforcement claims honest: the verdict path is wired; operator nft,
    caps, and production measurements still matter.
 
+<p align="center">
+  <img src="brand/logo-horizontal-readme.png" alt="InterFire lockup" width="420" style="margin-top: 1.5rem; margin-bottom: 0.25rem;" />
+</p>
+
+## Thanks
+
+**InterFire** stands on excellent open-source projects and Linux kernel surfaces:
+
+| Project | Role here |
+| --- | --- |
+| [Rust](https://www.rust-lang.org/) | Daemon, CLI, TUI, desktop shell, and crates |
+| [Tokio](https://tokio.rs/) | Async runtime where the control plane needs it |
+| [aya](https://aya-rs.dev/) | eBPF loader and TCP-connect observation path |
+| [nftables](https://netfilter.org/projects/nftables/) / Netfilter | Operator-owned queue rule + NFQUEUE verdict path |
+| [ratatui](https://ratatui.rs/) | `interfire-tui` control plane |
+| [GPUI](https://www.gpui.rs/) / [gpui-kit](https://crates.io/crates/gpui-kit) | `interfire-ui` desktop shell |
+| [nix](https://docs.rs/nix) | Unix IPC peer credentials and related syscalls |
+| [tracing](https://tracing.rs/) | Structured daemon diagnostics |
+
+Thank you to their maintainers and communities.
+
 ## License
 
 **Apache-2.0** (Apache License, Version 2.0). See [`../LICENSE`](../LICENSE).
+
+<p align="center">
+  <img src="brand/seal-gh-dark-128.png#gh-dark-mode-only" alt="InterFire seal" width="128" height="128" style="margin-top: 1.25rem; margin-bottom: 0; vertical-align: middle;" />
+  <img src="brand/seal-gh-light-128.png#gh-light-mode-only" alt="InterFire seal" width="128" height="128" style="margin-top: 1.25rem; margin-bottom: 0; vertical-align: middle;" />
+</p>
