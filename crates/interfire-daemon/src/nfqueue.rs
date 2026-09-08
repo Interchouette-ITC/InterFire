@@ -11,10 +11,10 @@ use std::time::Duration;
 
 #[cfg(test)]
 use nfq::Verdict;
-#[cfg(test)]
-use tracing::{debug, info, warn};
 #[cfg(not(test))]
 use tracing::warn;
+#[cfg(test)]
+use tracing::{debug, info, warn};
 
 #[cfg(test)]
 use interfire_proto::NFQUEUE_NUM;

@@ -12,10 +12,10 @@ use std::time::Duration;
 #[cfg(test)]
 use interfire_ebpf::{EVENT_MAP, LoadError};
 use interfire_ebpf::{Observer, TcpConnectEvent};
-#[cfg(test)]
-use tracing::{debug, warn};
 #[cfg(not(test))]
 use tracing::debug;
+#[cfg(test)]
+use tracing::{debug, warn};
 
 use crate::policy;
 use crate::shared::Shared;
