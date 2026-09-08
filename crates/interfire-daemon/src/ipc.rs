@@ -475,7 +475,7 @@ mod tests {
     };
     use interfire_rules::{Direction, Protocol, Rule, RuleSet, RulesStore, Scope, Verdict};
 
-    use crate::ipc_test_support::stream_without_peer_creds;
+    use crate::ipc_test_support::{stream_without_peer_creds, suite_lock};
     use crate::process::ProcessIdentity;
     use crate::prompts::{EnqueueOutcome, PromptKey};
     use crate::recent::RecentDest;
@@ -597,18 +597,21 @@ mod tests {
 
     #[test]
     fn peer_cred_allows_same_uid_pair() {
+        let _suite = suite_lock();
         let (a, _b) = StdUnixStream::pair().unwrap();
         assert!(peer_may_mutate(&a));
     }
 
     #[test]
     fn peer_cred_rejects_non_socket_stream() {
+        let _suite = suite_lock();
         let stream = stream_without_peer_creds();
         assert!(!peer_may_mutate(&stream));
     }
 
     #[test]
     fn handle_ping_and_status() {
+        let _suite = suite_lock();
         let (shared, audit_path, rules_path) = test_shared("attached");
         shared.set_enforcement("nfqueue");
         let pong = exchange("v1 ping\n", &shared);
@@ -624,6 +627,7 @@ mod tests {
 
     #[test]
     fn handle_malformed_and_oversized_frames() {
+        let _suite = suite_lock();
         let (shared, audit_path, rules_path) = test_shared("degraded");
         let malformed = exchange("not-a-frame\n", &shared);
         assert_eq!(error_code(&malformed), "malformed_request");
@@ -643,6 +647,7 @@ mod tests {
 
     #[test]
     fn dispatch_audit_subscribe_is_malformed() {
+        let _suite = suite_lock();
         let (shared, audit_path, rules_path) = test_shared("attached");
         let (client, _server) = StdUnixStream::pair().expect("pair");
         let response = dispatch(
@@ -659,6 +664,7 @@ mod tests {
 
     #[test]
     fn rule_list_and_mutations() {
+        let _suite = suite_lock();
         let (shared, audit_path, rules_path) = test_shared("attached");
         let empty = exchange("v1 rule-list\n", &shared);
         assert_eq!(empty.trim(), "v1 rules");
@@ -701,6 +707,7 @@ mod tests {
 
     #[test]
     fn rule_mutate_unauthorized_without_peer_creds() {
+        let _suite = suite_lock();
         let (shared, audit_path, rules_path) = test_shared("attached");
         let stream = stream_without_peer_creds();
         assert_eq!(
@@ -725,6 +732,7 @@ mod tests {
 
     #[test]
     fn rule_persistence_failure_surfaces_error() {
+        let _suite = suite_lock();
         let (audit_path, _) = temp_paths("persist");
         let _ = fs::remove_file(&audit_path);
         let blocker = audit_path.with_extension("blocker");
@@ -775,6 +783,7 @@ mod tests {
 
     #[test]
     fn prompt_list_and_answer_paths() {
+        let _suite = suite_lock();
         let (shared, audit_path, rules_path) = test_shared("attached");
         assert_eq!(exchange("v1 prompt-list\n", &shared).trim(), "v1 prompts");
         let id = enqueue_prompt(&shared, "/usr/bin/curl", 443);
@@ -835,6 +844,7 @@ mod tests {
 
     #[test]
     fn prompt_answer_expired_and_invalid_rule() {
+        let _suite = suite_lock();
         let (audit_path, rules_path) = temp_paths("short");
         let _ = fs::remove_file(&audit_path);
         let _ = fs::remove_file(&rules_path);
@@ -876,6 +886,7 @@ mod tests {
 
     #[test]
     fn prompt_answer_unauthorized() {
+        let _suite = suite_lock();
         let (shared, audit_path, rules_path) = test_shared("attached");
         let stream = stream_without_peer_creds();
         assert_eq!(
@@ -895,6 +906,7 @@ mod tests {
 
     #[test]
     fn dns_list_and_note_validation() {
+        let _suite = suite_lock();
         let (shared, audit_path, rules_path) = test_shared("attached");
         let (client, _server) = StdUnixStream::pair().expect("pair");
         assert_eq!(exchange("v1 dns-list\n", &shared).trim(), "v1 dns");
@@ -943,6 +955,7 @@ mod tests {
 
     #[test]
     fn audit_tail_and_subscribe() {
+        let _suite = suite_lock();
         let (shared, audit_path, rules_path) = test_shared("attached");
         shared.audit.lock().expect("audit").append("one");
         shared.audit.lock().expect("audit").append("two");
@@ -1006,6 +1019,7 @@ mod tests {
 
     #[test]
     fn process_list_returns_rows() {
+        let _suite = suite_lock();
         let (shared, audit_path, rules_path) = test_shared("attached");
         let empty = exchange("v1 process-list\n", &shared);
         assert_eq!(empty.trim(), "v1 processes");
@@ -1055,6 +1069,7 @@ mod tests {
 
     #[test]
     fn network_status_and_mutations() {
+        let _suite = suite_lock();
         let (shared, audit_path, rules_path) = test_shared("attached");
         let status = exchange("v1 network-status\n", &shared);
         assert!(status.starts_with("v1 network "));
@@ -1076,6 +1091,7 @@ mod tests {
 
     #[test]
     fn status_uses_zero_metrics_when_sample_fails() {
+        let _suite = suite_lock();
         let (shared, audit_path, rules_path) = test_shared("attached");
         let _fail = crate::proc_metrics::ForceSampleFailure::arm();
         let frame = exchange("v1 status\n", &shared);
@@ -1086,6 +1102,7 @@ mod tests {
 
     #[test]
     fn network_mutate_success_path() {
+        let _suite = suite_lock();
         let (shared, audit_path, rules_path) = test_shared("nft-ok");
         let _ok = crate::nft::ForceNftOk::arm();
         let (a, _b) = StdUnixStream::pair().unwrap();
@@ -1102,6 +1119,7 @@ mod tests {
 
     #[test]
     fn lock_poisoned_responses() {
+        let _suite = suite_lock();
         let mut paths = Vec::new();
         let (shared, audit_path, rules_path) = test_shared("attached");
         paths.push((audit_path, rules_path));
@@ -1193,6 +1211,7 @@ mod tests {
 
     #[test]
     fn persist_answered_rule_accepts_once_scope() {
+        let _suite = suite_lock();
         let (shared, audit_path, rules_path) = test_shared("persist-once");
         let answered = crate::prompts::Answered {
             id: 1,
@@ -1211,6 +1230,7 @@ mod tests {
 
     #[test]
     fn prompt_answer_permanent_persistence_failure() {
+        let _suite = suite_lock();
         let (audit_path, _) = temp_paths("prompt-persist");
         let _ = fs::remove_file(&audit_path);
         let blocker = audit_path.with_extension("blocker");

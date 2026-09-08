@@ -16,6 +16,22 @@ use tracing::{info, warn};
 #[cfg(test)]
 static FORCE_NFT_OK: AtomicBool = AtomicBool::new(false);
 #[cfg(test)]
+static FORCE_NFT_LIST_MISSING: AtomicBool = AtomicBool::new(false);
+#[cfg(test)]
+static FORCE_NFT_LIST_FAIL: AtomicBool = AtomicBool::new(false);
+#[cfg(test)]
+static FORCE_NFT_LIST_OUTPUT: AtomicBool = AtomicBool::new(false);
+#[cfg(test)]
+static FORCE_NFT_SPAWN_FAIL: AtomicBool = AtomicBool::new(false);
+#[cfg(test)]
+static FORCE_NFT_STDIN_UNAVAILABLE: AtomicBool = AtomicBool::new(false);
+#[cfg(test)]
+static FORCE_NFT_INSTALL_SUCCESS: AtomicBool = AtomicBool::new(false);
+#[cfg(test)]
+static FORCE_NFT_INSTALL_REJECT: AtomicBool = AtomicBool::new(false);
+#[cfg(test)]
+static FORCE_NFT_REMOVE_REJECT: AtomicBool = AtomicBool::new(false);
+#[cfg(test)]
 static NFT_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 /// Force install/remove success without calling `nft` (unit tests only).
@@ -38,6 +54,190 @@ impl ForceNftOk {
 impl Drop for ForceNftOk {
     fn drop(&mut self) {
         FORCE_NFT_OK.store(false, Ordering::Relaxed);
+    }
+}
+
+/// Force `nft list` missing-table handling in [`status`] (unit tests only).
+#[cfg(test)]
+pub struct ForceNftListMissing {
+    _guard: std::sync::MutexGuard<'static, ()>,
+}
+
+#[cfg(test)]
+impl ForceNftListMissing {
+    #[must_use]
+    pub fn arm() -> Self {
+        let guard = NFT_TEST_LOCK.lock().expect("nft test lock");
+        FORCE_NFT_LIST_MISSING.store(true, Ordering::Relaxed);
+        Self { _guard: guard }
+    }
+}
+
+#[cfg(test)]
+impl Drop for ForceNftListMissing {
+    fn drop(&mut self) {
+        FORCE_NFT_LIST_MISSING.store(false, Ordering::Relaxed);
+    }
+}
+
+/// Force `nft list` failure in [`status`] (unit tests only).
+#[cfg(test)]
+pub struct ForceNftListFail {
+    _guard: std::sync::MutexGuard<'static, ()>,
+}
+
+#[cfg(test)]
+impl ForceNftListFail {
+    #[must_use]
+    pub fn arm() -> Self {
+        let guard = NFT_TEST_LOCK.lock().expect("nft test lock");
+        FORCE_NFT_LIST_FAIL.store(true, Ordering::Relaxed);
+        Self { _guard: guard }
+    }
+}
+
+#[cfg(test)]
+impl Drop for ForceNftListFail {
+    fn drop(&mut self) {
+        FORCE_NFT_LIST_FAIL.store(false, Ordering::Relaxed);
+    }
+}
+
+/// Force successful `nft list` output for [`status`] (unit tests only).
+#[cfg(test)]
+pub struct ForceNftListOutput {
+    _guard: std::sync::MutexGuard<'static, ()>,
+}
+
+#[cfg(test)]
+impl ForceNftListOutput {
+    #[must_use]
+    pub fn arm() -> Self {
+        let guard = NFT_TEST_LOCK.lock().expect("nft test lock");
+        FORCE_NFT_LIST_OUTPUT.store(true, Ordering::Relaxed);
+        Self { _guard: guard }
+    }
+}
+
+#[cfg(test)]
+impl Drop for ForceNftListOutput {
+    fn drop(&mut self) {
+        FORCE_NFT_LIST_OUTPUT.store(false, Ordering::Relaxed);
+    }
+}
+
+/// Force `nft` spawn failure for mutating commands (unit tests only).
+#[cfg(test)]
+pub struct ForceNftSpawnFail {
+    _guard: std::sync::MutexGuard<'static, ()>,
+}
+
+#[cfg(test)]
+impl ForceNftSpawnFail {
+    #[must_use]
+    pub fn arm() -> Self {
+        let guard = NFT_TEST_LOCK.lock().expect("nft test lock");
+        FORCE_NFT_SPAWN_FAIL.store(true, Ordering::Relaxed);
+        Self { _guard: guard }
+    }
+}
+
+#[cfg(test)]
+impl Drop for ForceNftSpawnFail {
+    fn drop(&mut self) {
+        FORCE_NFT_SPAWN_FAIL.store(false, Ordering::Relaxed);
+    }
+}
+
+/// Force install stdin-unavailable path (unit tests only).
+#[cfg(test)]
+pub struct ForceNftStdinUnavailable {
+    _guard: std::sync::MutexGuard<'static, ()>,
+}
+
+#[cfg(test)]
+impl ForceNftStdinUnavailable {
+    #[must_use]
+    pub fn arm() -> Self {
+        let guard = NFT_TEST_LOCK.lock().expect("nft test lock");
+        FORCE_NFT_STDIN_UNAVAILABLE.store(true, Ordering::Relaxed);
+        Self { _guard: guard }
+    }
+}
+
+#[cfg(test)]
+impl Drop for ForceNftStdinUnavailable {
+    fn drop(&mut self) {
+        FORCE_NFT_STDIN_UNAVAILABLE.store(false, Ordering::Relaxed);
+    }
+}
+
+/// Force install success without calling `nft` (unit tests only).
+#[cfg(test)]
+pub struct ForceNftInstallSuccess {
+    _guard: std::sync::MutexGuard<'static, ()>,
+}
+
+#[cfg(test)]
+impl ForceNftInstallSuccess {
+    #[must_use]
+    pub fn arm() -> Self {
+        let guard = NFT_TEST_LOCK.lock().expect("nft test lock");
+        FORCE_NFT_INSTALL_SUCCESS.store(true, Ordering::Relaxed);
+        Self { _guard: guard }
+    }
+}
+
+#[cfg(test)]
+impl Drop for ForceNftInstallSuccess {
+    fn drop(&mut self) {
+        FORCE_NFT_INSTALL_SUCCESS.store(false, Ordering::Relaxed);
+    }
+}
+
+/// Force install rejection after spawn (unit tests only).
+#[cfg(test)]
+pub struct ForceNftInstallReject {
+    _guard: std::sync::MutexGuard<'static, ()>,
+}
+
+#[cfg(test)]
+impl ForceNftInstallReject {
+    #[must_use]
+    pub fn arm() -> Self {
+        let guard = NFT_TEST_LOCK.lock().expect("nft test lock");
+        FORCE_NFT_INSTALL_REJECT.store(true, Ordering::Relaxed);
+        Self { _guard: guard }
+    }
+}
+
+#[cfg(test)]
+impl Drop for ForceNftInstallReject {
+    fn drop(&mut self) {
+        FORCE_NFT_INSTALL_REJECT.store(false, Ordering::Relaxed);
+    }
+}
+
+/// Force remove rejection when the table is present (unit tests only).
+#[cfg(test)]
+pub struct ForceNftRemoveReject {
+    _guard: std::sync::MutexGuard<'static, ()>,
+}
+
+#[cfg(test)]
+impl ForceNftRemoveReject {
+    #[must_use]
+    pub fn arm() -> Self {
+        let guard = NFT_TEST_LOCK.lock().expect("nft test lock");
+        FORCE_NFT_REMOVE_REJECT.store(true, Ordering::Relaxed);
+        Self { _guard: guard }
+    }
+}
+
+#[cfg(test)]
+impl Drop for ForceNftRemoveReject {
+    fn drop(&mut self) {
+        FORCE_NFT_REMOVE_REJECT.store(false, Ordering::Relaxed);
     }
 }
 
@@ -69,8 +269,45 @@ pub fn install() -> io::Result<()> {
         );
         return Ok(());
     }
+    #[cfg(test)]
+    if FORCE_NFT_SPAWN_FAIL.load(Ordering::Relaxed) {
+        return Err(io::Error::other("nft spawn failed: forced"));
+    }
     let _ = remove();
     let script = owned_table_script();
+    #[cfg(test)]
+    let mut child = if FORCE_NFT_STDIN_UNAVAILABLE.load(Ordering::Relaxed) {
+        Command::new("true")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|error| io::Error::other(format!("nft spawn failed: {error}")))?
+    } else if FORCE_NFT_INSTALL_SUCCESS.load(Ordering::Relaxed) {
+        Command::new("true")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|error| io::Error::other(format!("nft spawn failed: {error}")))?
+    } else if FORCE_NFT_INSTALL_REJECT.load(Ordering::Relaxed) {
+        Command::new("false")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|error| io::Error::other(format!("nft spawn failed: {error}")))?
+    } else {
+        Command::new("nft")
+            .arg("-f")
+            .arg("-")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|error| io::Error::other(format!("nft spawn failed: {error}")))?
+    };
+    #[cfg(not(test))]
     let mut child = Command::new("nft")
         .arg("-f")
         .arg("-")
@@ -88,6 +325,10 @@ pub fn install() -> io::Result<()> {
     let output = child
         .wait_with_output()
         .map_err(|error| io::Error::other(format!("nft wait failed: {error}")))?;
+    finish_install(&output)
+}
+
+fn finish_install(output: &std::process::Output) -> io::Result<()> {
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(io::Error::other(format!(
@@ -115,12 +356,36 @@ pub fn remove() -> io::Result<()> {
         info!(table = NFT_TABLE, "InterFire nftables table removed");
         return Ok(());
     }
+    #[cfg(test)]
+    if FORCE_NFT_SPAWN_FAIL.load(Ordering::Relaxed) {
+        return Err(io::Error::other("nft spawn failed: forced"));
+    }
+    #[cfg(test)]
+    let output = if FORCE_NFT_REMOVE_REJECT.load(Ordering::Relaxed) {
+        Command::new("false")
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .output()
+            .map_err(|error| io::Error::other(format!("nft spawn failed: {error}")))?
+    } else {
+        Command::new("nft")
+            .args(["delete", "table", "inet", NFT_TABLE])
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .output()
+            .map_err(|error| io::Error::other(format!("nft spawn failed: {error}")))?
+    };
+    #[cfg(not(test))]
     let output = Command::new("nft")
         .args(["delete", "table", "inet", NFT_TABLE])
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
         .output()
         .map_err(|error| io::Error::other(format!("nft spawn failed: {error}")))?;
+    finish_remove(&output)
+}
+
+fn finish_remove(output: &std::process::Output) -> io::Result<()> {
     if output.status.success() {
         info!(table = NFT_TABLE, "InterFire nftables table removed");
         return Ok(());
@@ -155,18 +420,42 @@ const fn body(state: NetworkTableState, rule: &'static str) -> NetworkStatusBody
     }
 }
 
+#[derive(Debug)]
 enum ListError {
     Missing,
     Failed(String),
 }
 
 fn list_owned_table() -> Result<String, ListError> {
+    #[cfg(test)]
+    if FORCE_NFT_LIST_MISSING.load(Ordering::Relaxed) {
+        return Err(ListError::Missing);
+    }
+    #[cfg(test)]
+    if FORCE_NFT_LIST_FAIL.load(Ordering::Relaxed) {
+        return Err(ListError::Failed("forced list failure".into()));
+    }
+    #[cfg(test)]
+    if FORCE_NFT_LIST_OUTPUT.load(Ordering::Relaxed) {
+        return Ok(
+            "table inet interfire { chain output { meta l4proto tcp ct state new queue num 4242 } }"
+                .into(),
+        );
+    }
+    #[cfg(test)]
+    if FORCE_NFT_SPAWN_FAIL.load(Ordering::Relaxed) {
+        return Err(ListError::Failed("nft spawn failed: forced".into()));
+    }
     let output = Command::new("nft")
         .args(["list", "table", "inet", NFT_TABLE])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()
         .map_err(|error| ListError::Failed(format!("nft spawn failed: {error}")))?;
+    interpret_list_output(&output)
+}
+
+fn interpret_list_output(output: &std::process::Output) -> Result<String, ListError> {
     if output.status.success() {
         return Ok(String::from_utf8_lossy(&output.stdout).into_owned());
     }
@@ -272,6 +561,132 @@ table inet interfire {
             normalize_nft_tokens(packaged),
             "daemon owned_table_script() must stay in sync with packaging/nft/interfire.nft"
         );
+    }
+
+    #[test]
+    fn status_reports_missing_when_table_is_absent() {
+        let _missing = ForceNftListMissing::arm();
+        let status = status();
+        assert_eq!(status.state, NetworkTableState::Missing);
+        assert_eq!(status.rule, "none");
+    }
+
+    #[test]
+    fn interpret_list_output_handles_success_missing_and_failure() {
+        let success = Command::new("sh")
+            .args(["-c", "printf 'table inet interfire {}'"])
+            .output()
+            .expect("sh");
+        let stdout = interpret_list_output(&success).expect("list success");
+        assert!(stdout.contains("table inet interfire"));
+
+        let missing = Command::new("sh")
+            .args(["-c", "echo 'Error: No such file or directory' >&2; exit 1"])
+            .output()
+            .expect("sh");
+        assert!(matches!(
+            interpret_list_output(&missing),
+            Err(ListError::Missing)
+        ));
+
+        let failed = Command::new("sh")
+            .args(["-c", "echo permission denied >&2; exit 1"])
+            .output()
+            .expect("sh");
+        assert!(matches!(
+            interpret_list_output(&failed),
+            Err(ListError::Failed(_))
+        ));
+    }
+
+    #[test]
+    fn finish_install_and_remove_cover_success_and_missing() {
+        let install_ok = Command::new("true").output().expect("true");
+        finish_install(&install_ok).expect("install ok");
+
+        let install_fail = Command::new("false").output().expect("false");
+        assert!(finish_install(&install_fail).is_err());
+
+        let remove_ok = Command::new("true").output().expect("true");
+        finish_remove(&remove_ok).expect("remove ok");
+
+        let remove_missing = Command::new("sh")
+            .args(["-c", "echo 'does not exist' >&2; exit 1"])
+            .output()
+            .expect("sh");
+        finish_remove(&remove_missing).expect("remove missing ok");
+    }
+
+    #[test]
+    fn install_success_path_is_ok() {
+        let _success = ForceNftInstallSuccess::arm();
+        install().expect("forced install success");
+    }
+
+    #[test]
+    fn status_reports_missing_when_list_fails() {
+        let _fail = ForceNftListFail::arm();
+        let status = status();
+        assert_eq!(status.state, NetworkTableState::Missing);
+        assert_eq!(status.rule, "none");
+    }
+
+    #[test]
+    fn status_reports_installed_from_list_output() {
+        let _output = ForceNftListOutput::arm();
+        let status = status();
+        assert_eq!(status.state, NetworkTableState::Installed);
+        assert_eq!(status.rule, "tcp_new_queue_4242");
+    }
+
+    #[test]
+    fn install_spawn_failure_is_io_error() {
+        let _fail = ForceNftSpawnFail::arm();
+        let error = install().expect_err("spawn fail");
+        assert!(error.to_string().contains("spawn failed"));
+    }
+
+    #[test]
+    fn install_stdin_unavailable_is_io_error() {
+        let _stdin = ForceNftStdinUnavailable::arm();
+        let error = install().expect_err("stdin unavailable");
+        assert!(error.to_string().contains("stdin unavailable"));
+    }
+
+    #[test]
+    fn install_reject_is_io_error() {
+        let _reject = ForceNftInstallReject::arm();
+        let error = install().expect_err("install reject");
+        assert!(error.to_string().contains("install failed"));
+    }
+
+    #[test]
+    fn remove_spawn_failure_is_io_error() {
+        let _fail = ForceNftSpawnFail::arm();
+        let error = remove().expect_err("spawn fail");
+        assert!(error.to_string().contains("spawn failed"));
+    }
+
+    #[test]
+    fn remove_reject_is_io_error() {
+        let _reject = ForceNftRemoveReject::arm();
+        let error = remove().expect_err("remove reject");
+        assert!(error.to_string().contains("remove failed"));
+    }
+
+    #[test]
+    fn force_ok_short_circuits_install_and_remove() {
+        let _ok = ForceNftOk::arm();
+        install().expect("forced install ok");
+        remove().expect("forced remove ok");
+    }
+
+    #[test]
+    fn stderr_indicates_missing_matches_common_messages() {
+        assert!(stderr_indicates_missing("Error: No such file or directory"));
+        assert!(stderr_indicates_missing("table does not exist"));
+        assert!(stderr_indicates_missing("object not found"));
+        assert!(!stderr_indicates_missing("permission denied"));
     }
 
     fn normalize_nft_tokens(source: &str) -> String {
