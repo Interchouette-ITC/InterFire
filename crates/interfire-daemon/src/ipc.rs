@@ -590,8 +590,8 @@ mod tests {
         };
         let outcome = shared.prompts.lock().expect("prompts").enqueue(key);
         match outcome {
-            EnqueueOutcome::Created(id) => id,
-            other => panic!("expected created prompt, got {other:?}"),
+            EnqueueOutcome::Created(id) | EnqueueOutcome::Deduped(id) => id,
+            EnqueueOutcome::Full => panic!("expected room for prompt"),
         }
     }
 

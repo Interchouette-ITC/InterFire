@@ -354,10 +354,10 @@ mod tests {
             Ok(Fanout::Replaced)
         ));
         log.append("hello");
-        match second.recv_timeout(Duration::from_millis(50)) {
-            Ok(Fanout::Record(record)) => assert_eq!(record.message, "hello"),
-            other => panic!("expected record, got {other:?}"),
-        }
+        let Ok(Fanout::Record(record)) = second.recv_timeout(Duration::from_millis(50)) else {
+            panic!("expected record");
+        };
+        assert_eq!(record.message, "hello");
         let _ = fs::remove_file(path);
     }
 
@@ -453,6 +453,68 @@ mod tests {
         log.append("after-drop");
         assert_eq!(log.subscriber_count(), 0);
         let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn open_creates_parent_directories() {
+        let base = temp_path("nested");
+        let _ = fs::remove_dir_all(&base);
+        let path = base.join("nested/audit.log");
+        let mut log = AuditLog::open(&path, 4_096, 100).unwrap();
+        assert!(path.parent().unwrap().exists());
+        log.append("boot");
+        let _ = fs::remove_dir_all(base);
+    }
+
+    #[test]
+    fn append_survives_read_only_disk_target() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let path = temp_path("readonly.log");
+        let _ = fs::remove_file(&path);
+        let mut log = AuditLog::open(&path, 4_096, 100).unwrap();
+        log.append("seed");
+        let mut perms = fs::metadata(&path).unwrap().permissions();
+        perms.set_mode(0o444);
+        fs::set_permissions(&path, perms).unwrap();
+        log.append("should warn not panic");
+        let mut perms = fs::metadata(&path).unwrap().permissions();
+        perms.set_mode(0o644);
+        let _ = fs::set_permissions(&path, perms);
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn run_subscriber_returns_true_when_channel_closes() {
+        use std::os::unix::net::UnixStream;
+
+        let (_client, server) = UnixStream::pair().unwrap();
+        let (sender, receiver) = mpsc::sync_channel(4);
+        drop(sender);
+        assert!(run_subscriber(&receiver, server, vec![]));
+    }
+
+    #[test]
+    fn run_subscriber_returns_true_when_backlog_write_fails() {
+        struct FailingWrite;
+
+        impl std::io::Write for FailingWrite {
+            fn write(&mut self, _buf: &[u8]) -> std::io::Result<usize> {
+                Err(std::io::Error::other("write failed"))
+            }
+
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+
+        let (sender, receiver) = mpsc::sync_channel(4);
+        drop(sender);
+        let record = BoundedLogRecord {
+            sequence: 1,
+            message: "x".into(),
+        };
+        assert!(run_subscriber(&receiver, FailingWrite, vec![record],));
     }
 
     #[test]

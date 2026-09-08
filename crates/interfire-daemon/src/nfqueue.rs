@@ -4,17 +4,26 @@
 use std::sync::Arc;
 #[cfg(test)]
 use std::sync::atomic::{AtomicBool, Ordering};
+#[cfg(test)]
 use std::thread;
+#[cfg(test)]
 use std::time::Duration;
 
-use nfq::{Queue, Verdict};
+#[cfg(test)]
+use nfq::Verdict;
+#[cfg(test)]
 use tracing::{debug, info, warn};
+#[cfg(not(test))]
+use tracing::warn;
 
+#[cfg(test)]
 use interfire_proto::NFQUEUE_NUM;
 
+#[cfg(test)]
 use crate::packet;
 use crate::shared::Shared;
 
+#[cfg(test)]
 const LOOKUP_MAX_ATTEMPTS: u32 = 50;
 
 #[cfg(test)]
@@ -98,39 +107,19 @@ impl Drop for ForceNfqueueSimulateBound {
     }
 }
 
+#[cfg(test)]
 trait NfqueueTransport {
     fn recv_payload(&mut self) -> std::io::Result<Vec<u8>>;
     fn submit_verdict(&mut self, verdict: Verdict) -> std::io::Result<()>;
 }
 
-struct LiveQueue<'queue> {
-    queue: &'queue mut Queue,
-    message: Option<nfq::Message>,
-}
-
-impl NfqueueTransport for LiveQueue<'_> {
-    fn recv_payload(&mut self) -> std::io::Result<Vec<u8>> {
-        let message = self.queue.recv()?;
-        let payload = message.get_payload().to_vec();
-        self.message = Some(message);
-        Ok(payload)
-    }
-
-    fn submit_verdict(&mut self, verdict: Verdict) -> std::io::Result<()> {
-        let mut message = self
-            .message
-            .take()
-            .ok_or_else(|| std::io::Error::other("nfqueue message missing"))?;
-        message.set_verdict(verdict);
-        self.queue.verdict(message)
-    }
-}
-
+#[cfg(test)]
 fn mark_nfqueue_bound(shared: &Shared) {
     shared.set_enforcement("nfqueue");
     info!(queue = NFQUEUE_NUM, "NFQUEUE bound");
 }
 
+#[cfg(test)]
 fn service_one_message(
     transport: &mut impl NfqueueTransport,
     shared: &Shared,
@@ -138,16 +127,6 @@ fn service_one_message(
     let payload = transport.recv_payload()?;
     let verdict = lookup_verdict(&payload, shared);
     transport.submit_verdict(verdict)
-}
-
-fn nfqueue_service_loop(
-    transport: &mut impl NfqueueTransport,
-    shared: &Shared,
-) -> std::io::Result<()> {
-    mark_nfqueue_bound(shared);
-    loop {
-        service_one_message(transport, shared)?;
-    }
 }
 
 /// Bind queue [`NFQUEUE_NUM`] and apply pending / default-deny verdicts.
@@ -177,21 +156,22 @@ pub fn run(shared: &Shared) -> std::io::Result<()> {
         }
         return Ok(());
     }
-    let mut queue = Queue::open()?;
-    queue.bind(NFQUEUE_NUM)?;
-    nfqueue_service_loop(
-        &mut LiveQueue {
-            queue: &mut queue,
-            message: None,
-        },
-        shared,
-    )
+    #[cfg(not(test))]
+    {
+        crate::nfqueue_live::bind_and_serve(shared)
+    }
+    #[cfg(test)]
+    Err(std::io::Error::other(
+        "live NFQUEUE bind is unavailable under unit tests",
+    ))
 }
 
+#[cfg(test)]
 fn lookup_verdict(payload: &[u8], shared: &Shared) -> Verdict {
     lookup_verdict_with_attempts(payload, shared, LOOKUP_MAX_ATTEMPTS)
 }
 
+#[cfg(test)]
 fn lookup_verdict_with_attempts(payload: &[u8], shared: &Shared, max_attempts: u32) -> Verdict {
     let Some(key) = packet::tcp_destination(payload) else {
         warn!("NFQUEUE packet not parseable as IPv4 TCP; dropping");
@@ -433,6 +413,19 @@ mod tests {
         let _simulate = ForceNfqueueSimulateBound::arm(payload);
         run_or_degrade(&shared);
         assert_eq!(shared.enforcement(), "nfqueue");
+        let _ = fs::remove_file(audit_path);
+    }
+
+    #[test]
+    fn service_one_message_propagates_transport_recv_error() {
+        let (shared, audit_path) = test_shared();
+        let mut transport = FakeTransport {
+            payloads: VecDeque::new(),
+            verdicts: Vec::new(),
+            recv_error: Some(std::io::Error::other("recv failed")),
+        };
+        let error = service_one_message(&mut transport, &shared).expect_err("recv");
+        assert_eq!(error.kind(), std::io::ErrorKind::Other);
         let _ = fs::remove_file(audit_path);
     }
 

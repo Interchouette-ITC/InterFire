@@ -425,6 +425,38 @@ mod tests {
     }
 
     #[test]
+    fn once_deny_drops_without_re_prompt() {
+        let self_pid = std::process::id();
+        let rules = RuleSet::default();
+        let mut cache = ProcessCache::new(8);
+        let mut prompts = PromptQueue::new(8, Duration::from_secs(60));
+        let mut dns = DnsCache::new(8, Duration::from_secs(60));
+        let mut recent = RecentConnects::new(8, 8);
+        let first = decide(
+            event(self_pid, 9_301),
+            &rules,
+            &mut cache,
+            &mut prompts,
+            &mut dns,
+            &mut recent,
+        );
+        let id = first.prompt_id.expect("prompt");
+        prompts
+            .answer(id, RulesVerdict::Deny, RuleScope::Once)
+            .unwrap();
+        let second = decide(
+            event(self_pid, 9_301),
+            &rules,
+            &mut cache,
+            &mut prompts,
+            &mut dns,
+            &mut recent,
+        );
+        assert_eq!(second.packet_verdict, Verdict::Drop);
+        assert!(second.prompt_id.is_none());
+    }
+
+    #[test]
     fn cached_identity_avoids_re_resolve() {
         let self_pid = std::process::id();
         let identity = process::resolve(self_pid, 0).expect("self /proc");

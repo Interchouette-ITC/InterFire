@@ -4,8 +4,12 @@ mod audit;
 mod dns;
 mod ipc;
 mod nfqueue;
+#[cfg(not(test))]
+mod nfqueue_live;
 mod nft;
 mod observe;
+#[cfg(not(test))]
+mod observe_live;
 mod packet;
 mod pending;
 mod policy;

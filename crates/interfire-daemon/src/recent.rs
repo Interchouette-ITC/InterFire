@@ -45,6 +45,7 @@ impl RecentConnects {
                 if let Some(oldest) = self.order.pop_front() {
                     self.entries.remove(&oldest);
                 } else {
+                    self.entries.clear();
                     break;
                 }
             }
@@ -72,6 +73,13 @@ impl RecentConnects {
             .get(&(pid, start_ticks))
             .map(|queue| queue.iter().cloned().collect())
             .unwrap_or_default()
+    }
+}
+
+#[cfg(test)]
+impl RecentConnects {
+    fn insert_orphan_key_for_test(&mut self, pid: u32, start_ticks: u64) {
+        self.entries.insert((pid, start_ticks), VecDeque::new());
     }
 }
 
@@ -118,5 +126,22 @@ mod tests {
     fn unknown_process_returns_empty() {
         let recent = RecentConnects::new(2, 2);
         assert!(recent.for_process(99, 1).is_empty());
+    }
+
+    #[test]
+    fn record_breaks_when_order_empty_but_keys_full() {
+        let mut recent = RecentConnects::new(1, 4);
+        recent.insert_orphan_key_for_test(1, 1);
+        recent.record(
+            2,
+            2,
+            RecentDest {
+                ipv4: Ipv4Addr::new(203, 0, 113, 10),
+                port: 443,
+                verdict: "allow".into(),
+            },
+        );
+        assert!(recent.for_process(1, 1).is_empty());
+        assert_eq!(recent.for_process(2, 2).len(), 1);
     }
 }

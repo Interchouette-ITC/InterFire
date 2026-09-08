@@ -1355,4 +1355,95 @@ mod tests {
         assert_eq!(app.audit.len(), MAX_AUDIT_LINES);
         assert!(app.list_selected <= MAX_AUDIT_LINES);
     }
+
+    #[test]
+    fn tab_labels_indices_and_form_navigation() {
+        assert_eq!(Tab::Apps.index(), 1);
+        assert_eq!(Tab::Rules.index(), 2);
+        assert_eq!(Tab::Prompts.index(), 3);
+        assert_eq!(Tab::Log.index(), 4);
+        assert_eq!(Tab::Help.index(), 5);
+        assert_eq!(Tab::Apps.label(), "Apps");
+        assert_eq!(super::AddField::Executable.next(), super::AddField::Verdict);
+        assert_eq!(super::AddField::Port.prev(), super::AddField::Verdict);
+        assert_eq!(super::AnswerVerdict::Deny.as_str(), "deny");
+        assert_eq!(
+            super::AnswerVerdict::Allow.toggle(),
+            super::AnswerVerdict::Deny
+        );
+        assert_eq!(
+            super::AnswerScope::Session.next(),
+            super::AnswerScope::Permanent
+        );
+        assert_eq!(
+            super::AnswerScope::Permanent.prev(),
+            super::AnswerScope::Session
+        );
+    }
+
+    #[test]
+    fn apply_action_ok_and_overlay_field_edits() {
+        let mut app = App::new("/tmp/x.sock".into());
+        app.apply(IpcEvent::ActionOk("saved".into()));
+        assert_eq!(app.status_message.as_deref(), Some("saved"));
+        app.handle_key(KeyCode::Char('3'));
+        app.handle_key(KeyCode::Char('a'));
+        app.handle_key(KeyCode::Tab);
+        app.handle_key(KeyCode::Tab);
+        app.handle_key(KeyCode::Backspace);
+        app.handle_key(KeyCode::Char('9'));
+        app.handle_key(KeyCode::Esc);
+        assert_eq!(app.overlay, Overlay::None);
+    }
+
+    #[test]
+    fn status_help_visible_lists_and_connecting_detail() {
+        let mut app = App::new("/tmp/s.sock".into());
+        let list = app.visible_list(10);
+        assert_eq!(list.total, 0);
+        assert!(
+            app.detail_lines()
+                .iter()
+                .any(|line| line.contains("waiting"))
+        );
+        app.tab = Tab::Help;
+        assert!(app.visible_list(5).items.is_empty());
+    }
+
+    #[test]
+    fn process_ports_split_and_list_motion_edges() {
+        let mut app = App::new("/tmp/x.sock".into());
+        app.handle_key(KeyCode::Char('2'));
+        app.apply(IpcEvent::Processes(vec![ProcessRow {
+            pid: 7,
+            start_ticks: 1,
+            uid: 1000,
+            executable: "/bin/curl".into(),
+            cmdline: "curl".into(),
+            verdict: "allow".into(),
+            ports: "1.2.3.4:443/allow+5.6.7.8:80/deny".into(),
+        }]));
+        assert!(
+            app.detail_lines()
+                .iter()
+                .any(|line| line.contains("1.2.3.4:443/allow"))
+        );
+        app.handle_key(KeyCode::Char('j'));
+        app.handle_key(KeyCode::Left);
+        assert_eq!(app.tab, Tab::Status);
+        app.handle_key(KeyCode::Char('4'));
+        assert_eq!(app.handle_key(KeyCode::Enter), KeyAction::None);
+        app.tab = Tab::Prompts;
+        app.overlay = Overlay::None;
+        let hints = super::footer_hints(&app);
+        assert!(hints.contains("a/r prompts"));
+    }
+
+    #[test]
+    fn prev_tab_wraps_from_status_to_help() {
+        let mut app = App::new("/tmp/x.sock".into());
+        assert_eq!(app.tab, Tab::Status);
+        app.handle_key(KeyCode::Left);
+        assert_eq!(app.tab, Tab::Help);
+    }
 }

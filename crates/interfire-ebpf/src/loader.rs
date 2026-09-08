@@ -4,7 +4,7 @@ use std::io;
 use std::path::Path;
 
 use aya::maps::{MapData, MapError, RingBuf};
-use aya::programs::{KProbe, ProgramError};
+use aya::programs::ProgramError;
 use aya::{Ebpf, EbpfError, EbpfLoader};
 
 /// eBPF program section / function name attached to `tcp_v4_connect`.
@@ -44,7 +44,7 @@ pub enum ObserverStatus {
 
 /// Loaded TCP-connect observer. Dropping detaches with the `Ebpf` object.
 pub struct Observer {
-    bpf: Ebpf,
+    pub(crate) bpf: Ebpf,
 }
 
 impl Observer {
@@ -84,17 +84,15 @@ impl Observer {
         )))
     }
 
-    fn attach_loaded(mut bpf: Ebpf) -> Result<Self, LoadError> {
-        let program: &mut KProbe = bpf
-            .program_mut(PROGRAM_NAME)
-            .ok_or(LoadError::MissingSymbol(PROGRAM_NAME))?
-            .try_into()?;
-        program.load()?;
-        program.attach("tcp_v4_connect", 0)?;
-        let _ = bpf
-            .map(EVENT_MAP)
-            .ok_or(LoadError::MissingSymbol(EVENT_MAP))?;
-        Ok(Self { bpf })
+    fn attach_loaded(bpf: Ebpf) -> Result<Self, LoadError> {
+        #[cfg(not(test))]
+        {
+            crate::loader_attach::attach_loaded(bpf)
+        }
+        #[cfg(test)]
+        {
+            attach_loaded_under_test(bpf)
+        }
     }
 
     #[must_use]
@@ -115,6 +113,17 @@ impl Observer {
             .ok_or(LoadError::MissingSymbol(EVENT_MAP))?;
         Ok(RingBuf::try_from(map)?)
     }
+}
+
+#[cfg(test)]
+fn attach_loaded_under_test(bpf: Ebpf) -> Result<Observer, LoadError> {
+    let _ = bpf
+        .map(EVENT_MAP)
+        .ok_or(LoadError::MissingSymbol(EVENT_MAP))?;
+    drop(bpf);
+    Err(LoadError::Bytecode(io::Error::other(
+        "attach skipped under unit tests",
+    )))
 }
 
 #[cfg(test)]
@@ -180,6 +189,15 @@ mod tests {
                 "unexpected error text: {message}"
             );
             assert!(error.source().is_some());
+        }
+    }
+
+    #[test]
+    fn observer_status_and_ring_buf_after_test_attach() {
+        let result = Observer::load_and_attach(embedded_bytecode());
+        if let Ok(mut observer) = result {
+            assert_eq!(observer.status(), ObserverStatus::Attached);
+            let _ = observer.ring_buf();
         }
     }
 

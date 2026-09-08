@@ -365,6 +365,19 @@ mod tests {
     }
 
     #[test]
+    fn store_path_accessor_and_rootless_save_error() {
+        let path =
+            std::env::temp_dir().join(format!("interfire-rules-path-{}.toml", std::process::id()));
+        let store = RulesStore::new(&path);
+        assert_eq!(store.path(), path.as_path());
+        let rootless = RulesStore::new(PathBuf::from(""));
+        assert!(matches!(
+            rootless.save(&RuleSet::default()),
+            Err(PersistenceError::Io(_))
+        ));
+    }
+
+    #[test]
     fn load_rejects_unsupported_schema() {
         let path = std::env::temp_dir().join(format!(
             "interfire-rules-schema-{}.toml",

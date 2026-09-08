@@ -160,6 +160,24 @@ mod tests {
     }
 
     #[test]
+    fn new_fails_when_audit_path_is_a_directory() {
+        let audit_dir = temp_audit("dir");
+        let _ = fs::remove_dir_all(&audit_dir);
+        fs::create_dir_all(&audit_dir).expect("mkdir");
+        let store = RulesStore::new(audit_dir.join("rules.toml"));
+        let result = Shared::new(
+            RuleSet::default(),
+            store,
+            "attached",
+            8,
+            Duration::from_secs(5),
+            8,
+            audit_dir,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
     fn enforcement_setters_and_getters() {
         let audit_path = temp_audit("enforce.log");
         let _ = fs::remove_file(&audit_path);

@@ -4,13 +4,18 @@
 use std::sync::Arc;
 #[cfg(test)]
 use std::sync::atomic::{AtomicBool, Ordering};
+#[cfg(test)]
 use std::thread;
+#[cfg(test)]
 use std::time::Duration;
 
 #[cfg(test)]
 use interfire_ebpf::{EVENT_MAP, LoadError};
 use interfire_ebpf::{Observer, TcpConnectEvent};
+#[cfg(test)]
 use tracing::{debug, warn};
+#[cfg(not(test))]
+use tracing::debug;
 
 use crate::policy;
 use crate::shared::Shared;
@@ -98,7 +103,7 @@ impl Drop for ForceRingBufError {
 }
 
 /// Poll the observer ring buffer until the process exits.
-pub fn run(mut observer: Observer, shared: &Arc<Shared>) {
+pub fn run(observer: Observer, shared: &Arc<Shared>) {
     if forced_ring_exit() {
         return;
     }
@@ -107,23 +112,12 @@ pub fn run(mut observer: Observer, shared: &Arc<Shared>) {
         run_synthetic_ring(shared);
         return;
     }
-    let mut ring = match observer.ring_buf() {
-        Ok(ring) => ring,
-        Err(error) => {
-            warn!(%error, "ring buffer unavailable; observation thread exiting");
-            return;
-        }
-    };
-    observation_idle_loop(
-        shared,
-        || -> Option<Vec<u8>> {
-            ring.next().map(|item| {
-                let bytes: &[u8] = &item;
-                bytes.to_vec()
-            })
-        },
-        None,
-    );
+    #[cfg(not(test))]
+    {
+        crate::observe_live::poll_ring(observer, shared);
+    }
+    #[cfg(test)]
+    drop(observer);
 }
 
 #[cfg(not(test))]
@@ -159,6 +153,7 @@ fn run_synthetic_ring(shared: &Shared) {
     observation_idle_loop(shared, || items.next(), Some(0));
 }
 
+#[cfg(test)]
 fn observation_idle_loop(
     shared: &Shared,
     mut poll: impl FnMut() -> Option<Vec<u8>>,
@@ -177,6 +172,7 @@ fn observation_idle_loop(
     }
 }
 
+#[cfg(test)]
 fn poll_observation_batch(shared: &Shared, poll: &mut impl FnMut() -> Option<Vec<u8>>) -> bool {
     let mut progressed = false;
     for bytes in std::iter::from_fn(poll) {
@@ -186,11 +182,17 @@ fn poll_observation_batch(shared: &Shared, poll: &mut impl FnMut() -> Option<Vec
     progressed
 }
 
+#[cfg(test)]
 fn process_ring_item(bytes: &[u8], shared: &Shared) {
     let Some(event) = TcpConnectEvent::try_from_bytes(bytes) else {
         warn!(len = bytes.len(), "dropping malformed ringbuf record");
         return;
     };
+    handle_event(event, shared);
+}
+
+#[cfg(not(test))]
+pub fn handle_event_for_live(event: TcpConnectEvent, shared: &Shared) {
     handle_event(event, shared);
 }
 

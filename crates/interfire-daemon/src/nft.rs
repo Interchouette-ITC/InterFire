@@ -298,14 +298,9 @@ pub fn install() -> io::Result<()> {
             .spawn()
             .map_err(|error| io::Error::other(format!("nft spawn failed: {error}")))?
     } else {
-        Command::new("nft")
-            .arg("-f")
-            .arg("-")
-            .stdin(Stdio::piped())
-            .stdout(Stdio::null())
-            .stderr(Stdio::piped())
-            .spawn()
-            .map_err(|error| io::Error::other(format!("nft spawn failed: {error}")))?
+        return Err(io::Error::other(
+            "live nft install is unavailable under unit tests",
+        ));
     };
     #[cfg(not(test))]
     let mut child = Command::new("nft")
@@ -368,12 +363,9 @@ pub fn remove() -> io::Result<()> {
             .output()
             .map_err(|error| io::Error::other(format!("nft spawn failed: {error}")))?
     } else {
-        Command::new("nft")
-            .args(["delete", "table", "inet", NFT_TABLE])
-            .stdout(Stdio::null())
-            .stderr(Stdio::piped())
-            .output()
-            .map_err(|error| io::Error::other(format!("nft spawn failed: {error}")))?
+        return Err(io::Error::other(
+            "live nft remove is unavailable under unit tests",
+        ));
     };
     #[cfg(not(test))]
     let output = Command::new("nft")
@@ -446,13 +438,18 @@ fn list_owned_table() -> Result<String, ListError> {
     if FORCE_NFT_SPAWN_FAIL.load(Ordering::Relaxed) {
         return Err(ListError::Failed("nft spawn failed: forced".into()));
     }
-    let output = Command::new("nft")
-        .args(["list", "table", "inet", NFT_TABLE])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
-        .map_err(|error| ListError::Failed(format!("nft spawn failed: {error}")))?;
-    interpret_list_output(&output)
+    #[cfg(not(test))]
+    {
+        let output = Command::new("nft")
+            .args(["list", "table", "inet", NFT_TABLE])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .map_err(|error| ListError::Failed(format!("nft spawn failed: {error}")))?;
+        interpret_list_output(&output)
+    }
+    #[cfg(test)]
+    Err(ListError::Missing)
 }
 
 fn interpret_list_output(output: &std::process::Output) -> Result<String, ListError> {

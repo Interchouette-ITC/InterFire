@@ -61,6 +61,7 @@ impl DnsCache {
             if let Some(oldest) = self.order.pop_front() {
                 self.by_ip.remove(&oldest);
             } else {
+                self.by_ip.clear();
                 break;
             }
         }
@@ -105,6 +106,19 @@ impl DnsCache {
             self.by_ip.remove(&ipv4);
         }
         self.order.retain(|ipv4| self.by_ip.contains_key(ipv4));
+    }
+}
+
+#[cfg(test)]
+impl DnsCache {
+    fn insert_orphan_for_test(&mut self, ipv4: u32, hostname: &str) {
+        self.by_ip.insert(
+            ipv4,
+            Entry {
+                hostname: hostname.to_ascii_lowercase(),
+                expires_at: Instant::now() + self.default_ttl,
+            },
+        );
     }
 }
 
@@ -159,5 +173,14 @@ mod tests {
         cache.observe("first.test", ip, None);
         cache.observe("second.test", ip, None);
         assert_eq!(cache.hostname_for(ip).as_deref(), Some("second.test"));
+    }
+
+    #[test]
+    fn observe_breaks_when_order_empty_but_cache_full() {
+        let mut cache = DnsCache::new(1, Duration::from_secs(60));
+        let first = u32::from_ne_bytes([1, 0, 0, 1]);
+        cache.insert_orphan_for_test(first, "orphan.test");
+        cache.observe("b.test", u32::from_ne_bytes([1, 0, 0, 2]), None);
+        assert!(cache.hostname_for(first).is_none());
     }
 }

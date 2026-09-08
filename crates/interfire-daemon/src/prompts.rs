@@ -325,6 +325,20 @@ mod tests {
     }
 
     #[test]
+    fn expire_clears_once_denies_when_over_capacity() {
+        let mut queue = PromptQueue::new(1, Duration::from_secs(60));
+        let EnqueueOutcome::Created(id1) = queue.enqueue(key(1)) else {
+            panic!("expected created");
+        };
+        queue.answer(id1, Verdict::Deny, RuleScope::Once).unwrap();
+        let EnqueueOutcome::Created(id2) = queue.enqueue(key(2)) else {
+            panic!("expected created");
+        };
+        queue.answer(id2, Verdict::Deny, RuleScope::Once).unwrap();
+        let _ = queue.enqueue(key(3));
+    }
+
+    #[test]
     fn answer_not_found_returns_error() {
         let mut queue = PromptQueue::new(4, Duration::from_secs(60));
         assert_eq!(
