@@ -45,8 +45,9 @@ Pop!_OS. Production latency/coexistence measurements remain open.
 | `interfire-ui` | GPUI desktop shell: tray, alert, Rules, Applications, Network, Log, Profiling |
 | Docs | Architecture, threat model, UX contract and studies |
 
-Not present yet: Debian packaging (systemd unit, `.deb`, install matrix on
-Debian GNOME and Pop!_OS).
+Not present yet: Debian `.deb` build and the install/upgrade matrix on
+Debian GNOME and Pop!_OS. systemd units and reboot recovery notes live under
+`packaging/` and [`packaging.md`](packaging.md).
 
 ## Quick start
 
@@ -96,6 +97,7 @@ isolated NFQUEUE test is scoped.
 | Doc | Topic |
 | --- | --- |
 | [`architecture.md`](architecture.md) | Event flow, NFQUEUE verdict path, baseline |
+| [`packaging.md`](packaging.md) | systemd units, paths, reboot recovery |
 | [`threat-model.md`](threat-model.md) | Assets, trust boundaries, controls |
 | [`ux-interfire.md`](ux-interfire.md) | Locked UI contract |
 | [`ux-kerio.md`](ux-kerio.md) | Kerio-era interaction study |
@@ -123,7 +125,11 @@ docs/brand/                      public brand masters + size variants
 docs-dev/                        developer notes
 fixtures/                        rule fixtures
 scripts/                         capability probe + NFQUEUE test helpers
-packaging/debian/                empty (Debian packaging not implemented)
+packaging/systemd/               interfired + interfire-nft units
+packaging/nft/                   owned inet interfire script
+packaging/tmpfiles.d/            run/state/config dirs
+packaging/defaults/              default rules.toml
+packaging/debian/                Debian package (not built yet)
 ```
 
 ## Contributing

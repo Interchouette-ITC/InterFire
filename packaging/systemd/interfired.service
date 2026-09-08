@@ -1,0 +1,41 @@
+# InterFire daemon (privileged application firewall)
+[Unit]
+Description=InterFire application firewall daemon
+Documentation=https://github.com/Interchouette-ITC/InterFire
+After=network-pre.target interfire-nft.service
+Wants=interfire-nft.service
+RequiresMountsFor=/var/lib/interfire /etc/interfire
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/interfired
+Restart=on-failure
+RestartSec=2s
+
+# Paths (also created via tmpfiles.d / package)
+RuntimeDirectory=interfire
+RuntimeDirectoryMode=0750
+StateDirectory=interfire
+StateDirectoryMode=0750
+ConfigurationDirectory=interfire
+ConfigurationDirectoryMode=0750
+ReadWritePaths=/run/interfire /var/lib/interfire /etc/interfire
+
+# Bound capabilities for eBPF attach + NFQUEUE (root still required for netfilter)
+CapabilityBoundingSet=CAP_BPF CAP_PERFMON CAP_NET_ADMIN CAP_NET_RAW CAP_SYS_ADMIN
+AmbientCapabilities=CAP_BPF CAP_PERFMON CAP_NET_ADMIN CAP_NET_RAW CAP_SYS_ADMIN
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+
+# Stay under the documented under-prompt-load daemon budget
+MemoryHigh=64M
+MemoryMax=80M
+
+[Install]
+WantedBy=multi-user.target
