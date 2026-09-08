@@ -9,6 +9,7 @@ mod alert_view;
 mod app;
 mod applications_view;
 mod audit_host;
+mod brand;
 mod ipc_poll;
 mod log_buf;
 mod log_view;
@@ -17,6 +18,7 @@ mod rss_probe;
 mod rules;
 mod rules_view;
 mod section;
+mod theme;
 mod tray;
 #[cfg(target_os = "linux")]
 mod tray_host;
@@ -44,6 +46,8 @@ fn main() {
 
     gpui_kit::application().run(move |cx| {
         gpui_kit::init(cx);
+        theme::apply_phoenix_theme(cx);
+        cx.set_app_identity("net.interchouette.InterFire", "InterFire");
         cx.spawn(async move |cx| {
             cx.open_window(
                 WindowOptions {
@@ -51,6 +55,7 @@ fn main() {
                         title: Some("InterFire".into()),
                         ..TitlebarOptions::default()
                     }),
+                    window_background: WindowBackgroundAppearance::Opaque,
                     ..WindowOptions::default()
                 },
                 |window, cx| {

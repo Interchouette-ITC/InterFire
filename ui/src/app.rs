@@ -14,6 +14,7 @@ use crate::alert::{AlertScope, AlertVerdict, ConnectionAlert};
 use crate::alert_view::alert_overlay;
 use crate::applications_view::{ProcessViewer, applications_body, try_open_viewer};
 use crate::audit_host::{AuditEvent, AuditHost};
+use crate::brand;
 use crate::ipc_poll;
 use crate::log_buf::LogBuffer;
 use crate::log_view::log_body;
@@ -22,6 +23,7 @@ use crate::rss_probe::{RssProbeMode, prompt_load_fixture};
 use crate::rules::{RuleVerdict, next_rule_id, validate_new_rule};
 use crate::rules_view::{add_rule_overlay, rules_body};
 use crate::section::Section;
+use crate::theme;
 use crate::tray::{DaemonLink, TrayState};
 #[cfg(target_os = "linux")]
 use crate::tray_host::TrayHost;
@@ -467,38 +469,95 @@ impl Render for App {
 fn nav_column(selected: Section, cx: &Context<App>) -> impl IntoElement {
     let mut column = div()
         .id("nav")
-        .w(px(180.))
+        .w(px(196.))
         .h_full()
         .flex()
         .flex_col()
         .gap_1()
-        .p_3()
+        .px_3()
+        .py_3()
+        .bg(cx.theme().sidebar)
         .border_r_1()
-        .border_color(cx.theme().border)
-        .child(div().text_sm().font_semibold().mb_2().child("InterFire"));
+        .border_color(cx.theme().sidebar_border)
+        .child(nav_brand(cx));
 
     for section in Section::ALL {
         let is_selected = section == selected;
         column = column.child(nav_button(section, is_selected, cx));
     }
 
-    column
+    column.child(nav_footer(cx))
+}
+
+fn nav_brand(cx: &Context<App>) -> impl IntoElement {
+    div()
+        .id("nav-brand")
+        .flex()
+        .items_center()
+        .gap_2()
+        .mb_3()
+        .px_1()
+        .child(
+            img(brand::nav_mark_source())
+                .id("nav-mark")
+                .w(px(36.))
+                .h(px(36.))
+                .rounded_md()
+                .object_fit(ObjectFit::Contain),
+        )
+        .child(
+            div()
+                .v_flex()
+                .gap_0()
+                .child(
+                    div()
+                        .text_sm()
+                        .font_semibold()
+                        .text_color(cx.theme().sidebar_foreground)
+                        .child("InterFire"),
+                )
+                .child(
+                    div()
+                        .text_xs()
+                        .text_color(cx.theme().muted_foreground)
+                        .child("FIREWALL"),
+                ),
+        )
+}
+
+fn nav_footer(cx: &Context<App>) -> impl IntoElement {
+    div()
+        .id("nav-footer")
+        .mt_auto()
+        .pt_3()
+        .border_t_1()
+        .border_color(cx.theme().sidebar_border)
+        .text_xs()
+        .text_color(cx.theme().muted_foreground)
+        .child("SECURE · CONTROL")
 }
 
 fn nav_button(section: Section, selected: bool, cx: &Context<App>) -> impl IntoElement {
     let label = section.label();
     div()
         .id(ElementId::Name(label.into()))
-        .px_2()
-        .py_1()
+        .px_3()
+        .py_2()
         .rounded_md()
         .cursor_pointer()
+        .text_sm()
         .when(selected, |this| {
-            this.bg(cx.theme().accent)
-                .text_color(cx.theme().accent_foreground)
+            this.bg(cx.theme().sidebar_accent)
+                .text_color(cx.theme().sidebar_accent_foreground)
+                .font_semibold()
         })
         .when(!selected, |this| {
-            this.hover(|style| style.bg(cx.theme().accent.opacity(0.15)))
+            this.text_color(cx.theme().sidebar_foreground)
+                .hover(|style| {
+                    style
+                        .bg(cx.theme().sidebar_accent.opacity(0.18))
+                        .text_color(cx.theme().foreground)
+                })
         })
         .on_click(cx.listener(move |app, _, _, cx| app.select(section, cx)))
         .child(label)
@@ -511,30 +570,79 @@ fn content_column(content: &ShellContent<'_>, cx: &Context<App>) -> impl IntoEle
         .h_full()
         .flex()
         .flex_col()
+        .bg(cx.theme().background)
         .p_4()
         .gap_3()
+        .child(content_header(content, cx))
+        .child(
+            div()
+                .id("content-panel")
+                .flex_1()
+                .v_flex()
+                .gap_3()
+                .p_3()
+                .rounded_lg()
+                .border_1()
+                .border_color(cx.theme().border)
+                .bg(theme::hex(theme::SURFACE))
+                .child(section_body(content, cx)),
+        )
+        .child(status_bar(content, cx))
+}
+
+fn content_header(content: &ShellContent<'_>, cx: &Context<App>) -> impl IntoElement {
+    div()
+        .id("content-header")
+        .flex()
+        .items_center()
+        .justify_between()
         .child(
             div()
                 .text_lg()
                 .font_semibold()
+                .text_color(cx.theme().foreground)
                 .child(content.section.label()),
         )
-        .child(section_body(content, cx))
-        .child(
-            div()
-                .mt_auto()
-                .pt_2()
-                .border_t_1()
-                .border_color(cx.theme().border)
-                .text_xs()
-                .text_color(cx.theme().muted_foreground)
-                .child(format!(
-                    "{}  |  tray: {}  |  {}",
-                    content.section.label(),
-                    content.tray_state.label(),
-                    content.socket
-                )),
-        )
+        .child(tray_chip(content.tray_state, cx))
+}
+
+fn tray_chip(state: TrayState, cx: &Context<App>) -> impl IntoElement {
+    let (fill, label_color) = match state {
+        TrayState::Protected => (theme::hex(theme::OK).opacity(0.2), theme::hex(theme::OK)),
+        TrayState::Prompting => (cx.theme().accent.opacity(0.25), cx.theme().accent),
+        TrayState::Degraded => (
+            theme::hex(theme::WARN).opacity(0.22),
+            theme::hex(theme::WARN),
+        ),
+        TrayState::Unavailable => (cx.theme().danger.opacity(0.22), cx.theme().danger),
+    };
+    div()
+        .id("tray-chip")
+        .px_2()
+        .py_1()
+        .rounded_md()
+        .bg(fill)
+        .text_xs()
+        .font_semibold()
+        .text_color(label_color)
+        .child(state.label().to_uppercase())
+}
+
+fn status_bar(content: &ShellContent<'_>, cx: &Context<App>) -> impl IntoElement {
+    div()
+        .id("status-bar")
+        .mt_auto()
+        .pt_2()
+        .border_t_1()
+        .border_color(cx.theme().border)
+        .text_xs()
+        .text_color(cx.theme().muted_foreground)
+        .child(format!(
+            "{}  ·  tray {}  ·  {}",
+            content.section.label(),
+            content.tray_state.label(),
+            content.socket
+        ))
 }
 
 fn section_body(content: &ShellContent<'_>, cx: &Context<App>) -> Div {
@@ -559,21 +667,53 @@ fn section_body(content: &ShellContent<'_>, cx: &Context<App>) -> Div {
             .text_color(muted)
             .child("InterFire-owned nftables controls are not available yet."),
         Section::Profiling => profiling_body(content.profiling, muted),
-        Section::Settings => div()
-            .v_flex()
-            .gap_2()
-            .child("Socket path, diagnostics, reconnect.")
-            .child(
-                div()
-                    .text_color(muted)
-                    .child(format!("socket = {}", content.socket)),
-            )
-            .child(
-                div()
-                    .text_color(muted)
-                    .child(format!("tray = {}", content.tray_state.label())),
-            ),
+        Section::Settings => settings_body(content.socket, content.tray_state, muted, cx),
     }
+}
+
+fn settings_body(socket: &str, tray_state: TrayState, muted: Hsla, cx: &Context<App>) -> Div {
+    div()
+        .v_flex()
+        .gap_3()
+        .child(
+            img(brand::logo_horizontal_source())
+                .id("settings-logo")
+                .w(px(220.))
+                .h(px(82.))
+                .object_fit(ObjectFit::Contain),
+        )
+        .child(
+            div()
+                .text_xs()
+                .text_color(muted)
+                .child("FIREWALL · SECURE · CONTROL"),
+        )
+        .child(settings_row("Socket", socket, muted, cx))
+        .child(settings_row("Tray", tray_state.label(), muted, cx))
+        .child(settings_row(
+            "Theme",
+            "phoenix dark (orange / black / white)",
+            muted,
+            cx,
+        ))
+        .child(div().text_color(muted).text_xs().child(
+            "Diagnostics and reconnect live on Status. Packaging lands with the install slice.",
+        ))
+}
+
+fn settings_row(label: &str, value: &str, muted: Hsla, cx: &Context<App>) -> Div {
+    div()
+        .flex()
+        .items_center()
+        .justify_between()
+        .px_3()
+        .py_2()
+        .rounded_md()
+        .border_1()
+        .border_color(cx.theme().border)
+        .bg(theme::hex(theme::ELEVATED))
+        .child(div().text_sm().font_semibold().child(label.to_owned()))
+        .child(div().text_sm().text_color(muted).child(value.to_owned()))
 }
 
 fn profiling_body(snap: &ProfilingSnapshot, muted: Hsla) -> Div {
@@ -629,15 +769,23 @@ fn format_mib(kib: u64) -> String {
 fn status_body(socket: &str, tray_state: TrayState, link: &DaemonLink, muted: Hsla) -> Div {
     let body = div()
         .v_flex()
-        .gap_2()
-        .child(format!("Tray: {}", tray_state.label()))
+        .gap_3()
+        .child(
+            div()
+                .font_semibold()
+                .child(format!("Tray: {}", tray_state.label())),
+        )
         .child(div().text_color(muted).child(tray_state.guidance()))
         .child(div().text_color(muted).child(format!("socket = {socket}")));
 
     match link {
         DaemonLink::Down { reason } => body.child(
             div()
-                .text_color(muted)
+                .px_3()
+                .py_2()
+                .rounded_md()
+                .bg(theme::hex(theme::DANGER_STRONG).opacity(0.18))
+                .text_color(theme::hex(theme::DANGER))
                 .child(format!("last error: {reason}")),
         ),
         DaemonLink::Up {

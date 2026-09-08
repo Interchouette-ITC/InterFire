@@ -18,6 +18,7 @@ hotpath-alloc = ["hotpath/hotpath-alloc"]
 [dependencies]
 gpui-kit = { workspace = true }
 hotpath = { workspace = true }
+image = { version = "0.25", default-features = false, features = ["png"] }
 interfire-proto = { path = "../crates/interfire-proto" }
 
 [target.'cfg(target_os = "linux")'.dependencies]

@@ -65,14 +65,14 @@ impl TrayState {
         }
     }
 
-    /// Freedesktop icon name for `StatusNotifierItem` (theme icons).
+    /// Embedded brand PNG for tray / attention icons (not stock dialog names).
     #[must_use]
-    pub const fn icon_name(self) -> &'static str {
+    pub const fn brand_png(self) -> &'static [u8] {
         match self {
-            Self::Protected => "security-high",
-            Self::Prompting => "dialog-question",
-            Self::Degraded => "dialog-warning",
-            Self::Unavailable => "dialog-error",
+            Self::Protected => crate::brand::icon_protected_png(),
+            Self::Prompting => crate::brand::icon_prompting_png(),
+            Self::Degraded => crate::brand::icon_degraded_png(),
+            Self::Unavailable => crate::brand::icon_unavailable_png(),
         }
     }
 }

@@ -6,6 +6,7 @@
 
 mod app;
 mod ipc;
+mod palette;
 mod ui;
 
 use std::env;

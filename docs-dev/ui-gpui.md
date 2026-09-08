@@ -8,6 +8,29 @@ Linux desktop client with Kerio-feeling chrome (left nav + dense Rules) and a
 personal-firewall tray/alert path. Same Unix IPC as `interfirectl` /
 `interfire-tui`. Rules is the primary surface.
 
+## Theme (phoenix chrome)
+
+InterFire overrides the kit dark theme after `gpui_kit::init` via
+`ui/src/theme.rs` (`apply_phoenix_theme`). Brand PNGs live under
+[`docs/brand/`](../docs/brand/) and are embedded from `ui/src/brand.rs`.
+
+| Role | Hex | Use |
+| --- | --- | --- |
+| Canvas | `#0E1114` | Window / sidebar background |
+| Surface | `#161B20` | Content panel |
+| Elevated | `#1E252C` | Overlays, Settings rows |
+| Border | `#2C3540` | Separators |
+| Text | `#E8EDF2` | Primary labels |
+| Muted | `#8B97A5` | Secondary labels |
+| Accent | `#F84800` / `#F03105` | Selected nav, Allow, primary CTA |
+| Brand deep | `#D00000` | Active / pressed brand |
+| Danger | `#EF5350` / `#DC3545` | Deny |
+| Ok / Warn | `#3DDC97` / `#F5A623` | Tray chips |
+
+Orange is brand identity. Do not fall back to stock kit blue for selected
+chrome. Tray icons use brand pixmaps (not stock `dialog-*` names). The TUI
+reuses the same role colors in `crates/interfire-tui/src/palette.rs`.
+
 ## Layout wireframe
 
 ```text

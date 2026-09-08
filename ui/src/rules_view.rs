@@ -10,6 +10,7 @@ use interfire_proto::RuleRow;
 
 use crate::app::{AddRuleFormState, App};
 use crate::rules::RuleVerdict;
+use crate::theme;
 
 pub fn rules_body(
     rules: &[RuleRow],
@@ -30,6 +31,7 @@ pub fn rules_body(
                     "add-rule",
                     "Add rule",
                     !adding,
+                    true,
                     cx,
                     App::begin_add_rule,
                 ))
@@ -37,6 +39,7 @@ pub fn rules_body(
                     "delete-rule",
                     "Delete selected",
                     selected_id.is_some() && !adding,
+                    false,
                     cx,
                     App::delete_selected_rule,
                 )),
@@ -52,7 +55,7 @@ pub fn rules_body(
     if let Some(id) = selected_id
         && let Some(rule) = rules.iter().find(|row| row.id == id)
     {
-        body = body.child(rule_detail(rule, muted));
+        body = body.child(rule_detail(rule, muted, cx));
     }
 
     if let Some(message) = message {
@@ -71,17 +74,18 @@ pub fn add_rule_overlay(form: &AddRuleFormState, cx: &Context<App>) -> impl Into
         .flex()
         .items_center()
         .justify_center()
-        .bg(cx.theme().background.opacity(0.72))
+        .bg(cx.theme().overlay)
         .child(
             div()
                 .id("add-rule-card")
-                .w(px(480.))
+                .w(px(500.))
                 .max_w_full()
-                .p_4()
-                .rounded_lg()
+                .p_5()
+                .rounded_xl()
                 .border_1()
                 .border_color(cx.theme().border)
-                .bg(cx.theme().background)
+                .bg(theme::hex(theme::ELEVATED))
+                .shadow_lg()
                 .v_flex()
                 .gap_3()
                 .child(div().text_lg().font_semibold().child("Add rule"))
@@ -94,7 +98,7 @@ pub fn add_rule_overlay(form: &AddRuleFormState, cx: &Context<App>) -> impl Into
                 .child(field_label("verdict", muted))
                 .child(verdict_row(form.verdict, cx))
                 .when_some(form.error.clone(), |this, error| {
-                    this.child(div().text_color(muted).child(error))
+                    this.child(div().text_color(cx.theme().danger).child(error))
                 })
                 .child(
                     div()
@@ -104,6 +108,7 @@ pub fn add_rule_overlay(form: &AddRuleFormState, cx: &Context<App>) -> impl Into
                             "submit-add-rule",
                             "Save",
                             true,
+                            true,
                             cx,
                             App::submit_add_rule,
                         ))
@@ -111,6 +116,7 @@ pub fn add_rule_overlay(form: &AddRuleFormState, cx: &Context<App>) -> impl Into
                             "cancel-add-rule",
                             "Cancel",
                             true,
+                            false,
                             cx,
                             App::cancel_add_rule,
                         )),
@@ -162,12 +168,17 @@ fn rules_table(rules: &[RuleRow], selected_id: Option<u64>, cx: &Context<App>) -
     table.into_any_element()
 }
 
-fn rule_detail(rule: &RuleRow, muted: Hsla) -> Div {
+fn rule_detail(rule: &RuleRow, muted: Hsla, cx: &Context<App>) -> Div {
     div()
         .v_flex()
         .gap_1()
         .pt_2()
-        .border_t_1()
+        .px_3()
+        .py_2()
+        .rounded_md()
+        .border_1()
+        .border_color(cx.theme().border)
+        .bg(theme::hex(theme::CANVAS))
         .child(div().font_semibold().child("Selected"))
         .child(div().text_color(muted).child(format!("id: {}", rule.id)))
         .child(
@@ -192,6 +203,7 @@ fn verdict_row(selected: RuleVerdict, cx: &Context<App>) -> impl IntoElement {
     for verdict in RuleVerdict::ALL {
         let is_selected = verdict == selected;
         let label = verdict.label();
+        let is_allow = matches!(verdict, RuleVerdict::Allow);
         row = row.child(
             div()
                 .id(ElementId::Name(format!("add-verdict-{label}").into()))
@@ -199,12 +211,18 @@ fn verdict_row(selected: RuleVerdict, cx: &Context<App>) -> impl IntoElement {
                 .py_1()
                 .rounded_md()
                 .border_1()
-                .border_color(cx.theme().border)
                 .cursor_pointer()
-                .when(is_selected, |this| {
+                .when(is_selected && is_allow, |this| {
                     this.bg(cx.theme().accent)
                         .text_color(cx.theme().accent_foreground)
+                        .border_color(cx.theme().accent)
                 })
+                .when(is_selected && !is_allow, |this| {
+                    this.bg(cx.theme().danger)
+                        .text_color(cx.theme().danger_foreground)
+                        .border_color(cx.theme().danger)
+                })
+                .when(!is_selected, |this| this.border_color(cx.theme().border))
                 .on_click(cx.listener(move |app, _, _, cx| app.set_add_verdict(verdict, cx)))
                 .child(label),
         );
@@ -216,16 +234,24 @@ fn action_chip(
     id: &'static str,
     label: &'static str,
     enabled: bool,
+    primary: bool,
     cx: &Context<App>,
     on_click: impl Fn(&mut App, &mut Window, &mut Context<App>) + 'static,
 ) -> impl IntoElement {
     div()
         .id(ElementId::Name(id.into()))
-        .px_2()
+        .px_3()
         .py_1()
         .rounded_md()
         .border_1()
-        .border_color(cx.theme().border)
+        .when(primary && enabled, |this| {
+            this.border_color(cx.theme().accent)
+                .bg(cx.theme().accent)
+                .text_color(cx.theme().accent_foreground)
+        })
+        .when(!primary || !enabled, |this| {
+            this.border_color(cx.theme().border)
+        })
         .when(enabled, |this| {
             this.cursor_pointer()
                 .on_click(cx.listener(move |app, _, window, cx| on_click(app, window, cx)))
