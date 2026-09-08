@@ -13,7 +13,10 @@ This folder holds:
 1. Byte-identical renamed masters (`logo-banner.png`, …)
 2. Width/size variants (`-readme`, `-desktop`, `-mobile`, `-256`, `-128`, `-64`, favicons)
 
-Processing rule: **copy + LANCZOS resize only**. No flood-fill, no alpha rewriting.
+Processing rule: **byte-identical copy** of local slices for masters, then
+**LANCZOS scale** (up or down) for `-readme` / `-desktop` / `-mobile` /
+`-256` / `-128` / `-64` / favicons so the artwork fills the target size.
+Do not mutate `assets/`. Do not pad a small master into a larger empty canvas.
 
 ## Export timestamp → name map
 
