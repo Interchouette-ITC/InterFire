@@ -6,6 +6,7 @@
 set -euo pipefail
 
 PATH="/usr/sbin:/usr/bin:/sbin:/bin:${PATH}"
+# Must match interfire_proto::NFQUEUE_NUM (production queue).
 readonly queue_number=4242
 readonly port=18080
 readonly script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"

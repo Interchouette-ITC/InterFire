@@ -28,9 +28,10 @@ over IPC). Live filtering needs the InterFire-owned nftables table
 `interfirectl network install`, plus root/caps; use `--no-ebpf` and/or
 `--no-nfqueue` for non-root smoke. Interactive
 ops use `interfire-tui`. GPUI desktop shell (`interfire-ui`) includes tray,
-connection alert, Rules, Applications, Network, Log, Profiling, and RSS gates;
-Debian packaging is not shipped. Primary targets: Debian (stable) with GNOME, and
-Pop!_OS. Production latency/coexistence measurements remain open.
+connection alert, Rules, Applications, Network, Log, Profiling, and RSS gates.
+Build an installable `.deb` with `make deb` (see [`packaging.md`](packaging.md)
+and [`install-matrix.md`](install-matrix.md)). Primary targets: Debian (stable)
+with GNOME, and Pop!_OS. Production latency/coexistence measurements remain open.
 
 ## What you get today
 
@@ -153,7 +154,7 @@ packaging/debian/                desktop entry + deb staging helpers
 | [Rust](https://www.rust-lang.org/) | Daemon, CLI, TUI, desktop shell, and crates |
 | [Tokio](https://tokio.rs/) | Async runtime where the control plane needs it |
 | [aya](https://aya-rs.dev/) | eBPF loader and TCP-connect observation path |
-| [nftables](https://netfilter.org/projects/nftables/) / Netfilter | Operator-owned queue rule + NFQUEUE verdict path |
+| [nftables](https://netfilter.org/projects/nftables/) / Netfilter | InterFire-owned table (operator-installed) + NFQUEUE verdict path |
 | [ratatui](https://ratatui.rs/) | `interfire-tui` control plane |
 | [GPUI](https://www.gpui.rs/) / [gpui-kit](https://crates.io/crates/gpui-kit) | `interfire-ui` desktop shell |
 | [nix](https://docs.rs/nix) | Unix IPC peer credentials and related syscalls |

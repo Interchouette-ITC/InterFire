@@ -34,6 +34,7 @@
 | `make memcheck-ui` | Release UI RSS gates (idle / prompt-load / combined)                                                  |
 | `make profile-ui`  | Optional [hotpath](https://hotpath.rs/) alloc report for `interfire-ui`                               |
 | `make integration` | Root netns allow/deny gate (not in `make ci`)                                                         |
+| `make deb`         | Build amd64 `.deb` (release binaries + packaging/; needs `dpkg-deb`, `fakeroot`)                      |
 
 Extra operator scripts and smoke recipes: [`../docs-dev/DEVELOPMENT.md`](../docs-dev/DEVELOPMENT.md).
 

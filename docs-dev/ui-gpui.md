@@ -106,7 +106,7 @@ Use `make ui-test` (and CI) when the packages are present.
 - Binary name: `interfire-ui`
 - Tree: [`ui/`](../ui/) (workspace member)
 - Local smoke: `make run-ui` (shared `SOCKET`, default `/tmp/interfire.sock`; see [`DEVELOPMENT.md`](DEVELOPMENT.md))
-- Install targets for the future `.deb`: Debian (stable) GNOME and Pop!\_OS (not packaged yet)
+- Packaging: `make deb` builds `interfire_*.deb` for Debian (stable) GNOME and Pop!\_OS; verify with [`../docs/install-matrix.md`](../docs/install-matrix.md)
 
 ## Renderer (software by default)
 

@@ -38,6 +38,7 @@ make memcheck       # idle interfired VmRSS vs < 40 MiB (non-root)
 make memcheck-ui    # release UI RSS gates (needs DISPLAY or xvfb-run)
 make profile-ui     # optional hotpath-alloc report for interfire-ui
 make integration    # root netns allow/deny (not in make ci)
+make deb            # amd64 .deb (needs dpkg-deb, fakeroot; see docs/packaging.md)
 ```
 
 CI mirrors `make ci`, plus coverage upload to Codecov and a supply-chain job. Live eBPF attach needs root (or `CAP_BPF` / `CAP_PERFMON`) and is not required for `make ci`.
@@ -78,6 +79,10 @@ cargo run -p interfire-daemon -- --socket=/tmp/interfire.sock --no-ebpf --no-nfq
 cargo run -p interfirectl -- --socket=/tmp/interfire.sock ping
 cargo run -p interfirectl -- --socket=/tmp/interfire.sock status
 cargo run -p interfirectl -- --socket=/tmp/interfire.sock prompts list
+cargo run -p interfirectl -- --socket=/tmp/interfire.sock network status
+# privileged peer (same UID as daemon / root):
+# cargo run -p interfirectl -- --socket=/tmp/interfire.sock network install
+# cargo run -p interfirectl -- --socket=/tmp/interfire.sock network remove
 ```
 
 Override the shared socket path: `make run-ui SOCKET=/path/to.sock` (same `SOCKET` for daemon / TUI / ctl).
@@ -94,9 +99,9 @@ Audit: capped on-disk log (`--audit=PATH`, default under `/var/lib/interfire/aud
 
 | Client                 | Role                                                                                                                              |
 | ---------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `interfirectl`         | **One-shot** only: `ping`, `status`, single `rules` / `prompts` / `dns` / `audit` commands. No REPL, no multi-screen browse loop. |
+| `interfirectl`         | **One-shot** only: `ping`, `status`, single `rules` / `prompts` / `dns` / `audit` / `network` commands. No REPL, no multi-screen browse loop. |
 | `interfire-tui`        | Interactive control plane: tabs Status \| Rules \| Prompts \| Log \| Help, overlays for add-rule and answer-prompt.               |
-| `interfire-ui` (`ui/`) | GPUI desktop shell: tray, alert, Rules, Log, RSS gates (same IPC).                                                                |
+| `interfire-ui` (`ui/`) | GPUI desktop shell: tray, alert, Status, Applications, Rules, Log, Network, Profiling, Settings, RSS gates (same IPC).            |
 
 Use the CLI from scripts and smoke checks. Use the TUI when you need to browse lists, answer prompts, or watch the log. The UX contract (`docs/ux-interfire.md`) locks this split.
 

@@ -4,7 +4,7 @@
 
 use gpui_kit::component::*;
 use gpui_kit::*;
-use interfire_proto::{NetworkStatus, NetworkTableState};
+use interfire_proto::{NFQUEUE_NUM, NetworkStatus, NetworkTableState};
 
 use crate::app::App;
 use crate::rules_view::action_chip;
@@ -130,7 +130,9 @@ fn guidance(network: &NetworkStatus, link: &DaemonLink) -> String {
     };
     match network.state {
         NetworkTableState::Missing => {
-            "Queue rule not installed. Install to send new outbound TCP to NFQUEUE 4242.".to_owned()
+            format!(
+                "Queue rule not installed. Install to send new outbound TCP to NFQUEUE {NFQUEUE_NUM}."
+            )
         }
         NetworkTableState::Incomplete => {
             "Table inet interfire exists but the expected TCP queue rule is missing or mismatched."
