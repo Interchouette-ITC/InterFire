@@ -582,7 +582,7 @@ mod tests {
         let _ = handle.join();
     }
 
-    fn enqueue_prompt(shared: &Arc<Shared>, executable: &str, port: u16) -> u64 {
+    fn enqueue_prompt(shared: &Arc<Shared>, executable: &str, port: u16) -> Option<u64> {
         let key = PromptKey {
             executable: executable.into(),
             ipv4: u32::from_ne_bytes([203, 0, 113, 10]),
@@ -590,9 +590,19 @@ mod tests {
         };
         let outcome = shared.prompts.lock().expect("prompts").enqueue(key);
         match outcome {
-            EnqueueOutcome::Created(id) | EnqueueOutcome::Deduped(id) => id,
-            EnqueueOutcome::Full => panic!("expected room for prompt"),
+            EnqueueOutcome::Created(id) | EnqueueOutcome::Deduped(id) => Some(id),
+            EnqueueOutcome::Full => None,
         }
+    }
+
+    #[test]
+    fn enqueue_prompt_returns_none_when_queue_is_full() {
+        let _suite = suite_lock();
+        let (shared, audit_path, rules_path) = test_shared("attached");
+        shared.set_prompt_queue(crate::prompts::PromptQueue::new(1, Duration::from_secs(60)));
+        assert!(enqueue_prompt(&shared, "/usr/bin/a", 1).is_some());
+        assert!(enqueue_prompt(&shared, "/usr/bin/b", 2).is_none());
+        cleanup_paths(&audit_path, &rules_path);
     }
 
     #[test]
@@ -786,7 +796,7 @@ mod tests {
         let _suite = suite_lock();
         let (shared, audit_path, rules_path) = test_shared("attached");
         assert_eq!(exchange("v1 prompt-list\n", &shared).trim(), "v1 prompts");
-        let id = enqueue_prompt(&shared, "/usr/bin/curl", 443);
+        let id = enqueue_prompt(&shared, "/usr/bin/curl", 443).expect("prompt room");
         let listed = exchange("v1 prompt-list\n", &shared);
         assert!(listed.contains("/usr/bin/curl"));
         assert!(listed.contains("203.0.113.10"));
@@ -795,7 +805,7 @@ mod tests {
                 .trim()
                 .ends_with("pong")
         );
-        let session_id = enqueue_prompt(&shared, "/usr/bin/wget", 80);
+        let session_id = enqueue_prompt(&shared, "/usr/bin/wget", 80).expect("prompt room");
         assert!(
             exchange(
                 &format!("v1 prompt-answer {session_id} deny session\n"),
@@ -804,7 +814,7 @@ mod tests {
             .trim()
             .ends_with("pong")
         );
-        let permanent_id = enqueue_prompt(&shared, "/usr/bin/ssh", 22);
+        let permanent_id = enqueue_prompt(&shared, "/usr/bin/ssh", 22).expect("prompt room");
         assert!(
             exchange(
                 &format!("v1 prompt-answer {permanent_id} allow permanent\n"),
@@ -864,7 +874,7 @@ mod tests {
             4,
             Duration::from_millis(1),
         ));
-        let id = enqueue_prompt(&short, "/usr/bin/curl", 9);
+        let id = enqueue_prompt(&short, "/usr/bin/curl", 9).expect("prompt room");
         std::thread::sleep(Duration::from_millis(5));
         assert_eq!(
             error_code(&exchange(
@@ -873,7 +883,7 @@ mod tests {
             )),
             "prompt_expired"
         );
-        let bad_id = enqueue_prompt(&short, "curl", 8080);
+        let bad_id = enqueue_prompt(&short, "curl", 8080).expect("prompt room");
         assert_eq!(
             error_code(&exchange(
                 &format!("v1 prompt-answer {bad_id} allow session\n"),
@@ -1167,7 +1177,7 @@ mod tests {
         );
         let (shared, audit_path, rules_path) = test_shared("prompt-rules-lock");
         paths.push((audit_path, rules_path));
-        let session_id = enqueue_prompt(&shared, "/usr/bin/wget", 80);
+        let session_id = enqueue_prompt(&shared, "/usr/bin/wget", 80).expect("prompt room");
         poison(&shared, PoisonTarget::Rules);
         assert_eq!(
             error_code(&exchange(
@@ -1247,7 +1257,7 @@ mod tests {
             )
             .expect("shared"),
         );
-        let id = enqueue_prompt(&shared, "/usr/bin/curl", 443);
+        let id = enqueue_prompt(&shared, "/usr/bin/curl", 443).expect("prompt room");
         assert_eq!(
             error_code(&exchange(
                 &format!("v1 prompt-answer {id} allow permanent\n"),

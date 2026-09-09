@@ -288,18 +288,7 @@ pub fn install() -> io::Result<()> {
     }
     #[cfg(test)]
     if FORCE_NFT_STDIN_UNAVAILABLE.load(Ordering::Relaxed) {
-        let mut child = Command::new("true")
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::piped())
-            .spawn()
-            .map_err(|error| io::Error::other(format!("nft spawn failed: {error}")))?;
-        let Some(_stdin) = child.stdin.as_mut() else {
-            return Err(io::Error::other("nft stdin unavailable"));
-        };
-        return Err(io::Error::other(
-            "nft stdin unavailable: unexpected piped stdin under force flag",
-        ));
+        return Err(io::Error::other("nft stdin unavailable"));
     }
     #[cfg(test)]
     {
@@ -656,7 +645,15 @@ table inet interfire {
     fn install_stdin_unavailable_is_io_error() {
         let _stdin = ForceNftStdinUnavailable::arm();
         let error = install().expect_err("stdin unavailable");
-        assert!(error.to_string().contains("stdin unavailable"));
+        assert!(error.to_string().contains("nft stdin unavailable"));
+    }
+
+    #[test]
+    fn list_spawn_failure_via_force_flag() {
+        let _fail = ForceNftSpawnFail::arm();
+        let status = status();
+        assert_eq!(status.state, NetworkTableState::Missing);
+        assert_eq!(status.rule, "none");
     }
 
     #[test]

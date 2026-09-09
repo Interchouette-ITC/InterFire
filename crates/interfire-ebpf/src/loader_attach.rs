@@ -20,5 +20,5 @@ pub fn attach_loaded(mut bpf: Ebpf) -> Result<Observer, LoadError> {
         .try_into()?;
     program.load()?;
     program.attach("tcp_v4_connect", 0)?;
-    Ok(Observer { bpf })
+    Ok(Observer { bpf: Some(bpf) })
 }

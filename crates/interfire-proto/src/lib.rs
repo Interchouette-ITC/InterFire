@@ -1317,11 +1317,66 @@ mod tests {
     }
 
     #[test]
-    fn network_status_ignores_unknown_keys() {
-        let status = NetworkStatus::parse(
-            "v1 network table=interfire queue=4242 state=installed rule=x future=1\n",
-        )
-        .expect("network");
-        assert_eq!(status.table, "interfire");
+    fn frame_parse_error_branches() {
+        assert_eq!(
+            Request::parse("v1 dns-note only-host\n"),
+            Err(ProtocolError::Malformed)
+        );
+        assert_eq!(
+            Request::parse("v1 audit-subscribe ui since=3 extra\n"),
+            Err(ProtocolError::Malformed)
+        );
+        assert_eq!(
+            NetworkStatus::parse("not-a-frame\n"),
+            Err(ProtocolError::Malformed)
+        );
+        assert_eq!(
+            NetworkStatus::parse(
+                "v1 network table=interfire queue=4242 state=installed rule=tcp_new_queue_4242 extra=1\n"
+            ),
+            Ok(NetworkStatus {
+                table: "interfire".into(),
+                queue: 4242,
+                state: NetworkTableState::Installed,
+                rule: "tcp_new_queue_4242".into(),
+            })
+        );
+        assert_eq!(
+            NetworkStatus::parse(
+                "v1 network table=interfire queue=4242 state=installed rule=tcp_new_queue_4242 bare\n"
+            ),
+            Err(ProtocolError::Malformed)
+        );
+        assert_eq!(
+            DaemonStatus::parse(
+                "v1 status enforcement=none observation=attached ipc_version=1 bad\n"
+            ),
+            Err(ProtocolError::Malformed)
+        );
+        assert_eq!(
+            DaemonStatus::parse("not-status\n"),
+            Err(ProtocolError::Malformed)
+        );
+        assert_eq!(
+            AuditStreamRecord::parse("not audit\n"),
+            Err(ProtocolError::Malformed)
+        );
+        assert_eq!(
+            RuleRow::parse_frame("not-rules\n"),
+            Err(ProtocolError::Malformed)
+        );
+        assert_eq!(
+            PromptRow::parse_frame("not-prompts\n"),
+            Err(ProtocolError::Malformed)
+        );
+        assert_eq!(
+            ProcessRow::parse_frame("not-processes\n"),
+            Err(ProtocolError::Malformed)
+        );
+        assert_eq!(PromptRow::parse_frame("v1 prompts\n"), Ok(vec![]));
+        assert_eq!(
+            PromptRow::parse_frame("v1 prompts 1|/bin/c|127.0.0.1\n"),
+            Err(ProtocolError::Malformed)
+        );
     }
 }

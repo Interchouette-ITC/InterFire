@@ -41,7 +41,9 @@ pub struct ForceSyntheticRing {
 impl ForceSyntheticRing {
     #[must_use]
     pub fn arm(items: Vec<Vec<u8>>) -> Self {
-        let guard = OBSERVE_TEST_LOCK.lock().expect("observe test lock");
+        let guard = OBSERVE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         *SYNTHETIC_RING_ITEMS.lock().expect("synthetic ring items") = Some(items);
         FORCE_SYNTHETIC_RING.store(true, Ordering::Relaxed);
         Self { _guard: guard }
@@ -66,7 +68,9 @@ pub struct ForceRingUnavailable {
 impl ForceRingUnavailable {
     #[must_use]
     pub fn arm() -> Self {
-        let guard = OBSERVE_TEST_LOCK.lock().expect("observe test lock");
+        let guard = OBSERVE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         FORCE_RING_UNAVAILABLE.store(true, Ordering::Relaxed);
         Self { _guard: guard }
     }
@@ -89,7 +93,9 @@ pub struct ForceRingBufError {
 impl ForceRingBufError {
     #[must_use]
     pub fn arm() -> Self {
-        let guard = OBSERVE_TEST_LOCK.lock().expect("observe test lock");
+        let guard = OBSERVE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         FORCE_RING_BUF_ERROR.store(true, Ordering::Relaxed);
         Self { _guard: guard }
     }
@@ -104,12 +110,7 @@ impl Drop for ForceRingBufError {
 
 /// Poll the observer ring buffer until the process exits.
 pub fn run(observer: Observer, shared: &Arc<Shared>) {
-    if forced_ring_exit() {
-        return;
-    }
-    #[cfg(test)]
-    if FORCE_SYNTHETIC_RING.load(Ordering::Relaxed) {
-        run_synthetic_ring(shared);
+    if run_test_early(shared) {
         return;
     }
     #[cfg(not(test))]
@@ -118,6 +119,23 @@ pub fn run(observer: Observer, shared: &Arc<Shared>) {
     }
     #[cfg(test)]
     drop(observer);
+}
+
+#[cfg(not(test))]
+const fn run_test_early(_shared: &Shared) -> bool {
+    forced_ring_exit()
+}
+
+#[cfg(test)]
+fn run_test_early(shared: &Shared) -> bool {
+    if forced_ring_exit() {
+        return true;
+    }
+    if FORCE_SYNTHETIC_RING.load(Ordering::Relaxed) {
+        run_synthetic_ring(shared);
+        return true;
+    }
+    false
 }
 
 #[cfg(not(test))]
@@ -491,15 +509,35 @@ mod tests {
     }
 
     #[test]
+    fn run_unit_test_hooks_cover_forced_paths() {
+        let (shared, audit_path) = test_shared();
+        {
+            let _unavailable = ForceRingUnavailable::arm();
+            assert!(run_test_early(&shared));
+        }
+        {
+            let valid = event_bytes(u32::MAX, 5556);
+            let _synthetic = ForceSyntheticRing::arm(vec![valid]);
+            assert!(run_test_early(&shared));
+            let key = DestKey {
+                ipv4: u32::from_ne_bytes([127, 0, 0, 1]),
+                port: 5556,
+            };
+            assert_eq!(
+                shared.pending.lock().expect("pending").take(key),
+                Some(Verdict::Drop)
+            );
+        }
+        assert!(!run_test_early(&shared));
+        let _ = fs::remove_file(audit_path);
+    }
+
+    #[test]
     fn run_processes_synthetic_ring_without_ebpf() {
         let (shared, audit_path) = test_shared();
         let valid = event_bytes(u32::MAX, 5555);
         let _synthetic = ForceSyntheticRing::arm(vec![valid]);
-        if let Ok(observer) = interfire_ebpf::Observer::load_embedded_and_attach() {
-            run(observer, &shared);
-        } else {
-            run_synthetic_ring(&shared);
-        }
+        run(interfire_ebpf::Observer::placeholder_for_tests(), &shared);
         let key = DestKey {
             ipv4: u32::from_ne_bytes([127, 0, 0, 1]),
             port: 5555,
@@ -508,6 +546,13 @@ mod tests {
             shared.pending.lock().expect("pending").take(key),
             Some(Verdict::Drop)
         );
+        let _ = fs::remove_file(audit_path);
+    }
+
+    #[test]
+    fn run_drops_observer_when_test_hooks_inactive() {
+        let (shared, audit_path) = test_shared();
+        run(interfire_ebpf::Observer::placeholder_for_tests(), &shared);
         let _ = fs::remove_file(audit_path);
     }
 

@@ -63,19 +63,13 @@ pub fn spawn(
 ) {
     let status_socket = socket.clone();
     let status_tx = tx.clone();
-    tokio::spawn(async move {
-        status_loop(status_socket, status_tx).await;
-    });
+    tokio::spawn(status_loop(status_socket, status_tx));
     let audit_socket = socket.clone();
     let audit_tx = tx.clone();
-    tokio::spawn(async move {
-        audit_loop(audit_socket, audit_tx).await;
-    });
+    tokio::spawn(audit_loop(audit_socket, audit_tx));
     let lists_socket = socket.clone();
     let lists_tx = tx.clone();
-    tokio::spawn(async move {
-        lists_poll_loop(lists_socket, lists_tx).await;
-    });
+    tokio::spawn(lists_poll_loop(lists_socket, lists_tx));
     tokio::spawn(async move {
         while let Some(command) = commands.recv().await {
             handle_command(&socket, &tx, command).await;
@@ -316,7 +310,8 @@ mod tests {
 
     use super::{
         AUDIT_SUBSCRIBER_ID, IpcCommand, IpcEvent, fetch_processes, fetch_prompts, fetch_rules,
-        fetch_status, handle_command, one_shot, spawn, subscribe_session,
+        fetch_status, handle_command, lists_poll_loop, one_shot, spawn, status_loop,
+        subscribe_session,
     };
 
     #[test]
@@ -405,6 +400,20 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn fake_daemon_handles_client_disconnect_without_request() {
+        let daemon = FakeDaemon::start();
+        {
+            let _stream = UnixStream::connect(&daemon.path).await.expect("connect");
+        }
+        time::sleep(Duration::from_millis(50)).await;
+        let status = fetch_status(&daemon.path)
+            .await
+            .expect("status after disconnect");
+        assert!(status.pid.is_some());
+        daemon.shutdown().await;
+    }
+
+    #[tokio::test]
     async fn subscribe_session_rejects_malformed_audit_and_oversized_lines() {
         let path_malformed = temp_socket("malformed");
         let _ = std::fs::remove_file(&path_malformed);
@@ -474,6 +483,41 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn subscribe_session_stops_when_receiver_dropped_after_ready() {
+        let path = temp_socket("drop-rx-audit");
+        let _ = std::fs::remove_file(&path);
+        let listener = UnixListener::bind(&path).expect("bind");
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.expect("accept");
+            let (_, mut writer) = stream.into_split();
+            writer
+                .write_all(b"v1 subscribed interfire-tui\n")
+                .await
+                .expect("subscribed");
+            time::sleep(Duration::from_millis(50)).await;
+            writer.write_all(b"v1 audit 2|line\n").await.expect("audit");
+            time::sleep(Duration::from_millis(200)).await;
+        });
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let drain = tokio::spawn(async move {
+            let ready = rx.recv().await;
+            assert!(matches!(ready, Some(IpcEvent::SubscriptionReady)));
+            drop(rx);
+        });
+        let since = time::timeout(
+            Duration::from_secs(3),
+            subscribe_session(&path.to_string_lossy(), 0, &tx),
+        )
+        .await
+        .expect("subscribe timeout")
+        .expect("closed after ready");
+        assert_eq!(since, 2);
+        drain.await.expect("drain");
+        server.await.expect("server");
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[tokio::test]
     async fn handle_command_refresh_mutations_and_errors() {
         let daemon = FakeDaemon::start();
         let (tx, mut rx) = mpsc::unbounded_channel();
@@ -537,17 +581,16 @@ mod tests {
 
         let status = time::timeout(Duration::from_secs(3), async {
             loop {
-                match rx.recv().await {
-                    Some(IpcEvent::Status(status)) => break IpcEvent::Status(status),
-                    Some(IpcEvent::SubscriptionReady | IpcEvent::Audit(_)) => {}
-                    Some(other) => panic!("unexpected event before status: {other:?}"),
-                    None => panic!("channel closed before status"),
-                }
+                let event = rx.recv().await.expect("ipc channel");
+                let IpcEvent::Status(status) = event else {
+                    continue;
+                };
+                break status;
             }
         })
         .await
         .expect("status timeout");
-        assert!(matches!(status, IpcEvent::Status(_)));
+        assert!(status.pid.is_some());
 
         cmd_tx.send(IpcCommand::RefreshRules).expect("send refresh");
         let rules = time::timeout(Duration::from_secs(2), rx.recv())
@@ -559,17 +602,20 @@ mod tests {
         let lists = time::timeout(Duration::from_secs(4), async {
             let mut saw = [false; 3];
             while saw.iter().any(|hit| !*hit) {
-                match rx.recv().await {
-                    Some(IpcEvent::Rules(_)) => saw[0] = true,
-                    Some(IpcEvent::Prompts(_)) => saw[1] = true,
-                    Some(IpcEvent::Processes(_)) => saw[2] = true,
-                    Some(IpcEvent::SubscriptionReady | IpcEvent::Audit(_)) => {}
-                    other => panic!("unexpected poll event: {other:?}"),
+                let event = rx.recv().await.expect("ipc channel");
+                if matches!(event, IpcEvent::Rules(_)) {
+                    saw[0] = true;
+                } else if matches!(event, IpcEvent::Prompts(_)) {
+                    saw[1] = true;
+                } else if matches!(event, IpcEvent::Processes(_)) {
+                    saw[2] = true;
                 }
             }
+            saw
         })
-        .await;
-        lists.expect("lists poll");
+        .await
+        .expect("lists poll");
+        assert!(lists.iter().all(|hit| *hit));
 
         drop(cmd_tx);
         daemon.shutdown().await;
@@ -607,6 +653,195 @@ mod tests {
         .expect("second subscribe");
 
         drop(cmd_tx);
+        daemon.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn background_loops_stop_when_receiver_dropped() {
+        let daemon = FakeDaemon::start();
+        let (tx, rx) = mpsc::unbounded_channel();
+        drop(rx);
+        tokio::time::timeout(
+            Duration::from_secs(3),
+            status_loop(daemon.path.clone(), tx.clone()),
+        )
+        .await
+        .expect("status_loop should exit after dropped receiver");
+        tokio::time::timeout(
+            Duration::from_secs(5),
+            lists_poll_loop(daemon.path.clone(), tx),
+        )
+        .await
+        .expect("lists_poll_loop should exit after dropped receiver");
+
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let drain = tokio::spawn(async move {
+            assert!(matches!(rx.recv().await, Some(IpcEvent::Rules(_))));
+            drop(rx);
+        });
+        tokio::time::timeout(
+            Duration::from_secs(5),
+            lists_poll_loop(daemon.path.clone(), tx),
+        )
+        .await
+        .expect("lists_poll_loop should exit after prompts send fails");
+        drain.await.expect("drain rules");
+
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let drain = tokio::spawn(async move {
+            assert!(matches!(rx.recv().await, Some(IpcEvent::Rules(_))));
+            assert!(matches!(rx.recv().await, Some(IpcEvent::Prompts(_))));
+            drop(rx);
+        });
+        tokio::time::timeout(
+            Duration::from_secs(5),
+            lists_poll_loop(daemon.path.clone(), tx),
+        )
+        .await
+        .expect("lists_poll_loop should exit after processes send fails");
+        drain.await.expect("drain rules+prompts");
+        daemon.shutdown().await;
+
+        let (tx, rx) = mpsc::unbounded_channel();
+        drop(rx);
+        let missing = temp_socket("status-down");
+        let _ = std::fs::remove_file(&missing);
+        tokio::time::timeout(
+            Duration::from_secs(3),
+            status_loop(missing.to_string_lossy().into_owned(), tx),
+        )
+        .await
+        .expect("status_loop Down path should exit after dropped receiver");
+
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let missing = temp_socket("status-down-live");
+        let _ = std::fs::remove_file(&missing);
+        let loop_task = tokio::spawn(status_loop(missing.to_string_lossy().into_owned(), tx));
+        let down = time::timeout(Duration::from_secs(3), rx.recv())
+            .await
+            .expect("down timeout")
+            .expect("down event");
+        assert!(matches!(down, IpcEvent::Down(_)));
+        drop(rx);
+        let _ = time::timeout(Duration::from_secs(3), loop_task).await;
+    }
+
+    #[tokio::test]
+    async fn handle_command_refresh_prompts_and_mutation_errors() {
+        let daemon = FakeDaemon::start();
+        let (tx, mut rx) = mpsc::unbounded_channel();
+
+        handle_command(&daemon.path, &tx, IpcCommand::RefreshPrompts).await;
+        assert!(matches!(rx.recv().await, Some(IpcEvent::Prompts(_))));
+
+        let bad_path = temp_socket("prompt-error");
+        let _ = std::fs::remove_file(&bad_path);
+        handle_command(&bad_path.to_string_lossy(), &tx, IpcCommand::RefreshPrompts).await;
+        assert!(matches!(rx.recv().await, Some(IpcEvent::ActionError(_))));
+
+        let error_daemon = FakeDaemon::start_with(FakeDaemonConfig {
+            rule_add_error: true,
+            ..FakeDaemonConfig::default()
+        });
+        handle_command(
+            &error_daemon.path,
+            &tx,
+            IpcCommand::AddRule {
+                id: 1,
+                executable: "/bin/c".into(),
+                verdict: "allow".into(),
+                port: 80,
+            },
+        )
+        .await;
+        assert!(matches!(rx.recv().await, Some(IpcEvent::ActionError(_))));
+
+        let prompt_error = FakeDaemon::start_with(FakeDaemonConfig {
+            prompt_answer_error: true,
+            ..FakeDaemonConfig::default()
+        });
+        handle_command(
+            &prompt_error.path,
+            &tx,
+            IpcCommand::AnswerPrompt {
+                id: 4,
+                verdict: "allow".into(),
+                scope: "once".into(),
+            },
+        )
+        .await;
+        assert!(matches!(rx.recv().await, Some(IpcEvent::ActionError(_))));
+
+        let missing = temp_socket("answer-io");
+        let _ = std::fs::remove_file(&missing);
+        handle_command(
+            &missing.to_string_lossy(),
+            &tx,
+            IpcCommand::AnswerPrompt {
+                id: 9,
+                verdict: "allow".into(),
+                scope: "once".into(),
+            },
+        )
+        .await;
+        assert!(matches!(rx.recv().await, Some(IpcEvent::ActionError(_))));
+        handle_command(
+            &missing.to_string_lossy(),
+            &tx,
+            IpcCommand::AddRule {
+                id: 9,
+                executable: "/bin/c".into(),
+                verdict: "allow".into(),
+                port: 80,
+            },
+        )
+        .await;
+        assert!(matches!(rx.recv().await, Some(IpcEvent::ActionError(_))));
+    }
+
+    #[tokio::test]
+    async fn subscribe_session_ignores_audit_replaced_line() {
+        let path = temp_socket("replaced");
+        let _ = std::fs::remove_file(&path);
+        let listener = UnixListener::bind(&path).expect("bind");
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.expect("accept");
+            let (reader, mut writer) = stream.into_split();
+            let mut lines = BufReader::new(reader).lines();
+            let _ = lines.next_line().await;
+            writer
+                .write_all(b"v1 subscribed interfire-tui\n")
+                .await
+                .expect("subscribed");
+            writer
+                .write_all(b"v1 audit-replaced\n")
+                .await
+                .expect("replaced");
+            writer.write_all(b"v1 audit 2|ok\n").await.expect("audit");
+            let _ = writer.shutdown().await;
+        });
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let since = subscribe_session(&path.to_string_lossy(), 0, &tx)
+            .await
+            .expect("subscribe");
+        assert_eq!(since, 2);
+        assert_eq!(rx.recv().await, Some(IpcEvent::SubscriptionReady));
+        assert_eq!(
+            rx.recv().await,
+            Some(IpcEvent::Audit(AuditStreamRecord {
+                sequence: 2,
+                message: "ok".into(),
+            }))
+        );
+        server.await.expect("server");
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[tokio::test]
+    async fn fake_daemon_unknown_request_returns_error() {
+        let daemon = FakeDaemon::start();
+        let frame = one_shot(&daemon.path, "v1 unknown\n").await.expect("frame");
+        assert!(frame.starts_with("v1 error"));
         daemon.shutdown().await;
     }
 
@@ -656,6 +891,8 @@ mod tests {
     #[derive(Clone)]
     struct FakeDaemonConfig {
         rule_delete_error: bool,
+        rule_add_error: bool,
+        prompt_answer_error: bool,
         subscribe_count: Arc<AtomicUsize>,
     }
 
@@ -663,6 +900,8 @@ mod tests {
         fn default() -> Self {
             Self {
                 rule_delete_error: false,
+                rule_add_error: false,
+                prompt_answer_error: false,
                 subscribe_count: Arc::new(AtomicUsize::new(0)),
             }
         }
@@ -716,8 +955,19 @@ mod tests {
                     Response::Pong.encode()
                 }
             }
-            line if line.starts_with("v1 rule-add") || line.starts_with("v1 prompt-answer") => {
-                Response::Pong.encode()
+            line if line.starts_with("v1 rule-add") => {
+                if config.rule_add_error {
+                    Response::Error("invalid rule").encode()
+                } else {
+                    Response::Pong.encode()
+                }
+            }
+            line if line.starts_with("v1 prompt-answer") => {
+                if config.prompt_answer_error {
+                    Response::Error("prompt_expired").encode()
+                } else {
+                    Response::Pong.encode()
+                }
             }
             _ => Response::Error("unknown").encode(),
         };

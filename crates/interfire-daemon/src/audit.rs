@@ -5,7 +5,7 @@ use std::collections::{HashMap, VecDeque};
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, BufRead, BufReader, Write};
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, SyncSender, TrySendError};
 use std::thread;
 
@@ -46,9 +46,8 @@ impl AuditLog {
     pub fn open(path: impl Into<PathBuf>, max_bytes: u64, max_records: usize) -> io::Result<Self> {
         assert!(max_records > 0, "audit memory must be bounded");
         let path = path.into();
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)?;
-        }
+        let parent = path.parent().unwrap_or_else(|| Path::new("."));
+        fs::create_dir_all(parent)?;
         let mut log = Self {
             path,
             max_bytes,
@@ -354,10 +353,10 @@ mod tests {
             Ok(Fanout::Replaced)
         ));
         log.append("hello");
-        let Ok(Fanout::Record(record)) = second.recv_timeout(Duration::from_millis(50)) else {
-            panic!("expected record");
-        };
-        assert_eq!(record.message, "hello");
+        assert!(matches!(
+            second.recv_timeout(Duration::from_millis(50)),
+            Ok(Fanout::Record(ref record)) if record.message == "hello"
+        ));
         let _ = fs::remove_file(path);
     }
 
@@ -485,6 +484,28 @@ mod tests {
     }
 
     #[test]
+    fn attach_subscriber_invokes_on_exit_when_stream_write_fails() {
+        use std::os::unix::net::UnixStream;
+        use std::sync::{Arc, Mutex};
+
+        let path = temp_path("attach.log");
+        let _ = fs::remove_file(&path);
+        let mut log = AuditLog::open(&path, 4_096, 100).unwrap();
+        log.append("seed");
+        let (client, server) = UnixStream::pair().unwrap();
+        drop(client);
+        let removed = Arc::new(Mutex::new(false));
+        let flag = Arc::clone(&removed);
+        log.attach_subscriber("ui".into(), 0, server, move |id| {
+            assert_eq!(id, "ui");
+            *flag.lock().expect("flag") = true;
+        });
+        std::thread::sleep(Duration::from_millis(50));
+        assert!(*removed.lock().expect("flag"));
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
     fn run_subscriber_returns_true_when_channel_closes() {
         use std::os::unix::net::UnixStream;
 
@@ -507,6 +528,8 @@ mod tests {
                 Ok(())
             }
         }
+
+        assert!(FailingWrite.flush().is_ok());
 
         let (sender, receiver) = mpsc::sync_channel(4);
         drop(sender);

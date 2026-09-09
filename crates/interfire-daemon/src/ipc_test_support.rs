@@ -10,7 +10,9 @@ static IPC_SUITE_LOCK: Mutex<()> = Mutex::new(());
 
 /// Serialize IPC integration tests (peer creds FDs and nft force flags).
 pub fn suite_lock() -> MutexGuard<'static, ()> {
-    IPC_SUITE_LOCK.lock().expect("ipc suite lock")
+    IPC_SUITE_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 /// Unix stream handle where `SO_PEERCRED` is unavailable (mutate must fail closed).

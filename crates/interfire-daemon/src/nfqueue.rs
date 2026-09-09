@@ -97,6 +97,15 @@ impl ForceNfqueueSimulateBound {
         FORCE_NFQUEUE_SIMULATE_BOUND.store(true, Ordering::Relaxed);
         Self { _guard: guard }
     }
+
+    /// Simulate bind without a one-shot payload (marks nfqueue only).
+    #[must_use]
+    pub fn arm_without_payload() -> Self {
+        let guard = NFQUEUE_TEST_LOCK.lock().expect("nfqueue test lock");
+        *NFQUEUE_ONE_SHOT_PAYLOAD.lock().expect("one-shot payload") = None;
+        FORCE_NFQUEUE_SIMULATE_BOUND.store(true, Ordering::Relaxed);
+        Self { _guard: guard }
+    }
 }
 
 #[cfg(test)]
@@ -426,6 +435,24 @@ mod tests {
         };
         let error = service_one_message(&mut transport, &shared).expect_err("recv");
         assert_eq!(error.kind(), std::io::ErrorKind::Other);
+        let _ = fs::remove_file(audit_path);
+    }
+
+    #[test]
+    fn run_without_live_bind_is_unavailable() {
+        let _guard = NFQUEUE_TEST_LOCK.lock().expect("nfqueue test lock");
+        let (shared, audit_path) = test_shared();
+        let error = run(&shared).expect_err("live bind unavailable");
+        assert!(error.to_string().contains("unavailable"));
+        let _ = fs::remove_file(audit_path);
+    }
+
+    #[test]
+    fn simulated_bound_without_payload_marks_nfqueue() {
+        let (shared, audit_path) = test_shared();
+        let _simulate = ForceNfqueueSimulateBound::arm_without_payload();
+        run(&shared).expect("simulated idle bind");
+        assert_eq!(shared.enforcement(), "nfqueue");
         let _ = fs::remove_file(audit_path);
     }
 

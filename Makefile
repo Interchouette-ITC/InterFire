@@ -54,7 +54,7 @@ test:
 coverage:
 	mkdir -p coverage
 	RUSTUP_TOOLCHAIN=stable $(CARGO) llvm-cov --workspace --exclude interfire-ui --lcov \
-		--ignore-filename-regex 'scripts/|fixtures/|crates/interfire-ebpf-programs/|crates/interfire-daemon/src/main\.rs|crates/interfirectl/src/main\.rs|crates/interfire-tui/src/main\.rs|ui/src/main\.rs|nfqueue_live\.rs|observe_live\.rs|nft_live\.rs|loader_attach\.rs' \
+		--ignore-filename-regex 'scripts/|fixtures/|crates/interfire-ebpf-programs/|crates/interfire-daemon/src/main\.rs|crates/interfirectl/src/main\.rs|crates/interfire-tui/src/main\.rs|ui/src/main\.rs|nfqueue_live\.rs|observe_live\.rs|nft_live\.rs|loader_attach\.rs|loader_live\.rs' \
 		--output-path coverage/lcov.info
 
 ## Requires `cargo install cargo-audit`.

@@ -264,9 +264,8 @@ mod tests {
     #[test]
     fn answer_is_idempotent() {
         let mut queue = PromptQueue::new(4, Duration::from_secs(60));
-        let EnqueueOutcome::Created(id) = queue.enqueue(key(80)) else {
-            panic!("expected created");
-        };
+        assert_eq!(queue.enqueue(key(80)), EnqueueOutcome::Created(1));
+        let id = 1;
         let first = queue
             .answer(id, Verdict::Allow, RuleScope::Once)
             .expect("answer");
@@ -282,10 +281,8 @@ mod tests {
     #[test]
     fn once_allow_token_is_single_use() {
         let mut queue = PromptQueue::new(4, Duration::from_secs(60));
-        let EnqueueOutcome::Created(id) = queue.enqueue(key(443)) else {
-            panic!("expected created");
-        };
-        queue.answer(id, Verdict::Allow, RuleScope::Once).unwrap();
+        assert_eq!(queue.enqueue(key(443)), EnqueueOutcome::Created(1));
+        queue.answer(1, Verdict::Allow, RuleScope::Once).unwrap();
         assert!(queue.take_once_allow(&key(443)));
         assert!(!queue.take_once_allow(&key(443)));
     }
@@ -293,12 +290,10 @@ mod tests {
     #[test]
     fn expired_prompt_cannot_be_answered() {
         let mut queue = PromptQueue::new(4, Duration::from_millis(1));
-        let EnqueueOutcome::Created(id) = queue.enqueue(key(9)) else {
-            panic!("expected created");
-        };
+        assert_eq!(queue.enqueue(key(9)), EnqueueOutcome::Created(1));
         std::thread::sleep(Duration::from_millis(5));
         assert_eq!(
-            queue.answer(id, Verdict::Allow, RuleScope::Once),
+            queue.answer(1, Verdict::Allow, RuleScope::Once),
             Err(AnswerError::Expired)
         );
     }
@@ -316,10 +311,8 @@ mod tests {
     #[test]
     fn once_deny_token_is_single_use() {
         let mut queue = PromptQueue::new(4, Duration::from_secs(60));
-        let EnqueueOutcome::Created(id) = queue.enqueue(key(8080)) else {
-            panic!("expected created");
-        };
-        queue.answer(id, Verdict::Deny, RuleScope::Once).unwrap();
+        assert_eq!(queue.enqueue(key(8080)), EnqueueOutcome::Created(1));
+        queue.answer(1, Verdict::Deny, RuleScope::Once).unwrap();
         assert!(queue.consume_once_deny(&key(8080)));
         assert!(!queue.consume_once_deny(&key(8080)));
     }
@@ -327,14 +320,10 @@ mod tests {
     #[test]
     fn expire_clears_once_denies_when_over_capacity() {
         let mut queue = PromptQueue::new(1, Duration::from_secs(60));
-        let EnqueueOutcome::Created(id1) = queue.enqueue(key(1)) else {
-            panic!("expected created");
-        };
-        queue.answer(id1, Verdict::Deny, RuleScope::Once).unwrap();
-        let EnqueueOutcome::Created(id2) = queue.enqueue(key(2)) else {
-            panic!("expected created");
-        };
-        queue.answer(id2, Verdict::Deny, RuleScope::Once).unwrap();
+        assert_eq!(queue.enqueue(key(1)), EnqueueOutcome::Created(1));
+        queue.answer(1, Verdict::Deny, RuleScope::Once).unwrap();
+        assert_eq!(queue.enqueue(key(2)), EnqueueOutcome::Created(2));
+        queue.answer(2, Verdict::Deny, RuleScope::Once).unwrap();
         let _ = queue.enqueue(key(3));
     }
 
