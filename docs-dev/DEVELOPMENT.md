@@ -20,7 +20,7 @@ Build and link notes for `interfire-ui` are in [`ui-gpui.md`](ui-gpui.md).
 
 ```bash
 make fmt
-make lint           # excludes interfire-ebpf-programs (BPF target only)
+make lint           # clippy workspace (+ interfire-ui); BPF crate is a separate workspace
 make test
 make doc            # writes docs/api-rust/ (gitignored except README)
 make coverage       # needs cargo-llvm-cov + llvm-tools-preview
@@ -42,6 +42,8 @@ make deb            # amd64 .deb (needs dpkg-deb, fakeroot; see docs/packaging.m
 ```
 
 CI mirrors `make ci`, plus coverage upload to Codecov and a supply-chain job. Live eBPF attach needs root (or `CAP_BPF` / `CAP_PERFMON`) and is not required for `make ci`.
+
+`crates/interfire-ebpf-programs/` is a **separate Cargo workspace** (bpfel-only kprobe). It is not a member of the userspace workspace, so host rust-analyzer / `cargo check` on the root tree never loads it. Rebuild the embedded object with `make ebpf`.
 
 ## Smoke (non-root)
 
@@ -97,11 +99,11 @@ Audit: capped on-disk log (`--audit=PATH`, default under `/var/lib/interfire/aud
 
 ## CLI vs TUI
 
-| Client                 | Role                                                                                                                              |
-| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| Client                 | Role                                                                                                                                          |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
 | `interfirectl`         | **One-shot** only: `ping`, `status`, single `rules` / `prompts` / `dns` / `audit` / `network` commands. No REPL, no multi-screen browse loop. |
-| `interfire-tui`        | Interactive control plane: tabs Status \| Rules \| Prompts \| Log \| Help, overlays for add-rule and answer-prompt.               |
-| `interfire-ui` (`ui/`) | GPUI desktop shell: tray, alert, Status, Applications, Rules, Log, Network, Profiling, Settings, RSS gates (same IPC).            |
+| `interfire-tui`        | Interactive control plane: tabs Status \| Rules \| Prompts \| Log \| Help, overlays for add-rule and answer-prompt.                           |
+| `interfire-ui` (`ui/`) | GPUI desktop shell: tray, alert, Status, Applications, Rules, Log, Network, Profiling, Settings, RSS gates (same IPC).                        |
 
 Use the CLI from scripts and smoke checks. Use the TUI when you need to browse lists, answer prompts, or watch the log. The UX contract (`docs/ux-interfire.md`) locks this split.
 

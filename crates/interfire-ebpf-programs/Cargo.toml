@@ -1,11 +1,16 @@
+[workspace]
+members = ["."]
+resolver = "2"
+
 [package]
 name = "interfire-ebpf-programs"
 version = "0.1.0"
-edition.workspace = true
-license.workspace = true
-rust-version.workspace = true
+edition = "2024"
+license = "Apache-2.0"
+rust-version = "1.85"
 description = "aya TCP-connect eBPF program (bpfel target)"
 autobins = false
+publish = false
 
 [[bin]]
 name = "interfire-ebpf-programs"
@@ -14,5 +19,5 @@ test = false
 bench = false
 
 [dependencies]
-aya-ebpf = { workspace = true }
+aya-ebpf = "0.2"
 interfire-ebpf = { path = "../interfire-ebpf", default-features = false }

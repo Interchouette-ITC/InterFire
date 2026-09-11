@@ -120,7 +120,7 @@ crates/interfirectl/             one-shot CLI
 crates/interfire-tui/            ratatui control-plane TUI
 ui/                              interfire-ui (GPUI desktop)
 crates/interfire-ebpf/           TCP event contract + aya loader
-crates/interfire-ebpf-programs/  TCP-connect eBPF program (bpfel)
+crates/interfire-ebpf-programs/  TCP-connect eBPF program (own Cargo workspace, bpfel)
 docs/                            product docs (this hub)
 docs/brand/                      public brand masters + size variants
 docs-dev/                        developer notes

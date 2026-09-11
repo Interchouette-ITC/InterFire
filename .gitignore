@@ -1,6 +1,7 @@
 node_modules
 .venv-pdf
 target/
+crates/interfire-ebpf-programs/target/
 .cargo/
 !.cargo/
 !.cargo/config.toml
