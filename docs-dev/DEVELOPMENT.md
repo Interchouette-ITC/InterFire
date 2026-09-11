@@ -24,6 +24,12 @@ make lint           # clippy workspace (+ interfire-ui); BPF crate is a separate
 make test
 make doc            # writes docs/api-rust/ (gitignored except README)
 make coverage       # needs cargo-llvm-cov + llvm-tools-preview
+make coverage-summary  # local llvm-cov summary
+make coverage-html  # local HTML → coverage/html/
+make machete        # unused deps; needs cargo-machete
+make outdated       # needs cargo-outdated
+make fuzz           # nightly + cargo-fuzz; default parse-request
+make geiger         # needs cargo-geiger
 make audit          # needs cargo-audit
 make deny           # needs cargo-deny; config deny.toml
 make ci             # lint + test + doc

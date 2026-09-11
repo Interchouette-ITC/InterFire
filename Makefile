@@ -4,12 +4,19 @@ CLIPPY_FLAGS := -D warnings -D clippy::all -D clippy::pedantic -D clippy::nurser
 CARGO ?= cargo +stable
 DOC_OUT ?= target/doc
 
-.PHONY: help fmt format lint test coverage audit deny doc doc-open doc-clean ci memcheck memcheck-ui profile-ui integration ebpf ui ui-test run-daemon run-ui run-tui run-ctl deb
+.PHONY: help fmt format lint test coverage coverage-summary coverage-html machete outdated fuzz fuzz-build geiger audit deny doc doc-open doc-clean ci memcheck memcheck-ui profile-ui integration ebpf ui ui-test run-daemon run-ui run-tui run-ctl deb
 
 .DEFAULT_GOAL := help
 
 # Dev smoke socket (override: `make run-ui SOCKET=/path/to.sock`).
 SOCKET ?= /tmp/interfire.sock
+
+## Paths filtered from llvm-cov / Codecov upload (bins, BPF, live OS glue).
+COVERAGE_IGNORE := scripts/|fixtures/|crates/interfire-ebpf-programs/|crates/interfire-daemon/src/main\.rs|crates/interfirectl/src/main\.rs|crates/interfire-tui/src/main\.rs|ui/src/main\.rs|nfqueue_live\.rs|observe_live\.rs|nft_live\.rs|loader_attach\.rs|loader_live\.rs
+
+## Default fuzz target: interfire_proto::Request::parse. Override: FUZZ_TARGET=… FUZZ_TIME=…
+FUZZ_TARGET ?= parse-request
+FUZZ_TIME ?= 10
 
 help:
 	@echo "InterFire targets"
@@ -17,6 +24,13 @@ help:
 	@echo "  make lint           fmt check + clippy (workspace)"
 	@echo "  make test           cargo test --workspace"
 	@echo "  make coverage       cargo llvm-cov → coverage/lcov.info"
+	@echo "  make coverage-summary  cargo llvm-cov --summary-only"
+	@echo "  make coverage-html  cargo llvm-cov HTML → coverage/html/"
+	@echo "  make machete        unused workspace deps (cargo-machete)"
+	@echo "  make outdated       outdated crates report (cargo-outdated)"
+	@echo "  make fuzz           cargo +nightly fuzz (default: parse-request)"
+	@echo "  make fuzz-build     build fuzz targets only"
+	@echo "  make geiger         unsafe surface report (cargo-geiger)"
 	@echo "  make doc            rustdoc → docs/api-rust/"
 	@echo "  make doc-open       build docs and open docs/api-rust/index.html"
 	@echo "  make audit          cargo audit"
@@ -51,13 +65,53 @@ lint: fmt
 test:
 	$(CARGO) test --workspace --exclude interfire-ui
 
-## Requires cargo-llvm-cov + llvm-tools-preview. Writes coverage/lcov.info.
+## Requires `cargo install cargo-llvm-cov` + llvm-tools-preview. Writes coverage/lcov.info.
 ## Exclude interfire-ui: GPUI needs system fontconfig/xkb; covered by `make ui-test` in CI.
 coverage:
 	mkdir -p coverage
-	RUSTUP_TOOLCHAIN=stable $(CARGO) llvm-cov --workspace --exclude interfire-ui --lcov \
-		--ignore-filename-regex 'scripts/|fixtures/|crates/interfire-ebpf-programs/|crates/interfire-daemon/src/main\.rs|crates/interfirectl/src/main\.rs|crates/interfire-tui/src/main\.rs|ui/src/main\.rs|nfqueue_live\.rs|observe_live\.rs|nft_live\.rs|loader_attach\.rs|loader_live\.rs' \
+	RUSTUP_TOOLCHAIN=stable $(CARGO) llvm-cov --workspace --locked --exclude interfire-ui --lcov \
+		--ignore-filename-regex '$(COVERAGE_IGNORE)' \
 		--output-path coverage/lcov.info
+
+## Terminal summary only (fast local check).
+coverage-summary:
+	RUSTUP_TOOLCHAIN=stable $(CARGO) llvm-cov --workspace --locked --summary-only \
+		--exclude interfire-ui \
+		--ignore-filename-regex '$(COVERAGE_IGNORE)'
+
+## HTML report → coverage/html/.
+coverage-html:
+	mkdir -p coverage
+	RUSTUP_TOOLCHAIN=stable $(CARGO) llvm-cov --workspace --locked --html \
+		--exclude interfire-ui \
+		--ignore-filename-regex '$(COVERAGE_IGNORE)' \
+		--output-dir coverage/html
+
+## Unused workspace dependencies. Requires `cargo install cargo-machete`.
+machete:
+	$(CARGO) machete
+
+## Outdated crates report. Requires `cargo install cargo-outdated`.
+outdated:
+	$(CARGO) outdated --workspace
+
+## Requires nightly + `cargo install cargo-fuzz`.
+fuzz-build:
+	cargo +nightly fuzz build
+
+fuzz:
+	cargo +nightly fuzz run $(FUZZ_TARGET) -- -max_total_time=$(FUZZ_TIME)
+
+## Unsafe Rust surface. Requires `cargo install cargo-geiger`.
+## cargo-geiger rejects virtual workspace roots; scan each package manifest.
+## Advisory only: geiger exits non-zero when unsafe appears in the tree.
+GEIGER_PACKAGES := crates/interfire-rules crates/interfire-proto crates/interfire-daemon crates/interfire-ebpf crates/interfirectl crates/interfire-tui ui
+
+geiger:
+	@root=$$(pwd); for dir in $(GEIGER_PACKAGES); do \
+		echo "== $$dir =="; \
+		$(CARGO) geiger --manifest-path "$$root/$$dir/Cargo.toml" || true; \
+	done
 
 ## Requires `cargo install cargo-audit`.
 audit:

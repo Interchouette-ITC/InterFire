@@ -9,6 +9,10 @@ crates/interfire-ebpf-programs/target/
 .cursor/
 .github_credentials
 coverage/
+fuzz/target/
+fuzz/corpus/
+fuzz/artifacts/
+fuzz/coverage/
 /docs/api-rust/**
 !/docs/api-rust/README.md
 

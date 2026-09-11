@@ -1,0 +1,19 @@
+[package]
+name = "interfire-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+interfire-proto = { path = "../crates/interfire-proto" }
+
+[[bin]]
+name = "parse-request"
+path = "fuzz_targets/parse_request.rs"
+test = false
+doc = false
+bench = false
