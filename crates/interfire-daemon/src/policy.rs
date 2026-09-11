@@ -121,9 +121,10 @@ fn decide_attributed(ctx: AttributedDecide<'_>) -> Decision {
         },
     };
     record_recent(recent, identity, event, label);
+    let executable = identity.executable.display().to_string();
     debug!(
         pid = identity.pid,
-        executable = %identity.executable.display(),
+        executable = %executable,
         port = event.destination_port,
         hostname = ?connection.hostname,
         ?rule_verdict,
@@ -356,6 +357,26 @@ mod tests {
             &mut recent,
         );
         assert_eq!(decision.packet_verdict, Verdict::Accept);
+    }
+
+    #[test]
+    fn attributed_connect_emits_debug_record() {
+        let _ = tracing_subscriber::fmt().with_test_writer().try_init();
+        let self_pid = std::process::id();
+        let rules = RuleSet::default();
+        let mut cache = ProcessCache::new(8);
+        let mut prompts = PromptQueue::new(8, Duration::from_secs(60));
+        let mut dns = DnsCache::new(8, Duration::from_secs(60));
+        let mut recent = RecentConnects::new(8, 8);
+        let decision = decide(
+            event(self_pid, 9_400),
+            &rules,
+            &mut cache,
+            &mut prompts,
+            &mut dns,
+            &mut recent,
+        );
+        assert!(decision.attributed);
     }
 
     #[test]

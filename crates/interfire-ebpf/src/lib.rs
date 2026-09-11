@@ -9,6 +9,8 @@
 mod loader;
 #[cfg(all(feature = "loader", not(test)))]
 mod loader_attach;
+#[cfg(all(feature = "loader", not(test)))]
+mod loader_live;
 
 #[cfg(feature = "loader")]
 pub use loader::{EVENT_MAP, LoadError, Observer, ObserverStatus, PROGRAM_NAME};

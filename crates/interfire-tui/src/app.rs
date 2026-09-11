@@ -385,89 +385,85 @@ impl App {
     }
 
     fn handle_add_overlay_key(&mut self, code: KeyCode) -> KeyAction {
-        match code {
-            KeyCode::Esc => {
-                self.overlay = Overlay::None;
-                return KeyAction::None;
-            }
-            KeyCode::Enter => {
-                let command = match &self.overlay {
-                    Overlay::AddRule(form) => form.to_command(),
-                    Overlay::None | Overlay::Notice(_) | Overlay::AnswerPrompt(_) => {
-                        return KeyAction::None;
-                    }
-                };
-                return match command {
-                    Ok(command) => {
-                        self.overlay = Overlay::None;
-                        KeyAction::Command(command)
-                    }
-                    Err(message) => {
-                        self.status_message = Some(message);
-                        KeyAction::None
-                    }
-                };
-            }
-            _ => {}
-        }
         let Overlay::AddRule(form) = &mut self.overlay else {
             return KeyAction::None;
         };
         match code {
+            KeyCode::Esc => {
+                self.overlay = Overlay::None;
+                KeyAction::None
+            }
+            KeyCode::Enter => match form.to_command() {
+                Ok(command) => {
+                    self.overlay = Overlay::None;
+                    KeyAction::Command(command)
+                }
+                Err(message) => {
+                    self.status_message = Some(message);
+                    KeyAction::None
+                }
+            },
             KeyCode::Tab => {
                 form.focus = form.focus.next();
+                KeyAction::None
             }
             KeyCode::BackTab => {
                 form.focus = form.focus.prev();
+                KeyAction::None
             }
             KeyCode::Backspace => {
                 form.focused_mut().pop();
+                KeyAction::None
             }
             KeyCode::Char(ch) if !ch.is_control() => {
                 form.focused_mut().push(ch);
+                KeyAction::None
             }
-            _ => {}
+            _ => KeyAction::None,
         }
-        KeyAction::None
     }
 
     fn handle_answer_overlay_key(&mut self, code: KeyCode) -> KeyAction {
-        match code {
-            KeyCode::Esc => {
-                self.overlay = Overlay::None;
-                return KeyAction::None;
-            }
-            KeyCode::Enter => {
-                let command = match &self.overlay {
-                    Overlay::AnswerPrompt(form) => {
-                        if !form.prompt.can_answer() {
-                            self.overlay =
-                                Overlay::Notice("prompt expired or stale; actions disabled".into());
-                            return KeyAction::None;
-                        }
-                        form.to_command()
-                    }
-                    Overlay::None | Overlay::Notice(_) | Overlay::AddRule(_) => {
-                        return KeyAction::None;
-                    }
-                };
-                self.overlay = Overlay::None;
-                return KeyAction::Command(command);
-            }
-            _ => {}
-        }
         let Overlay::AnswerPrompt(form) = &mut self.overlay else {
             return KeyAction::None;
         };
         match code {
-            KeyCode::Char('a' | 'A') => form.verdict = AnswerVerdict::Allow,
-            KeyCode::Char('d' | 'D') => form.verdict = AnswerVerdict::Deny,
-            KeyCode::Left | KeyCode::Right => form.verdict = form.verdict.toggle(),
-            KeyCode::Tab => form.scope = form.scope.next(),
-            KeyCode::BackTab => form.scope = form.scope.prev(),
-            _ => {}
+            KeyCode::Esc => {
+                self.overlay = Overlay::None;
+                KeyAction::None
+            }
+            KeyCode::Enter => {
+                if !form.prompt.can_answer() {
+                    self.overlay =
+                        Overlay::Notice("prompt expired or stale; actions disabled".into());
+                    return KeyAction::None;
+                }
+                let command = form.to_command();
+                self.overlay = Overlay::None;
+                KeyAction::Command(command)
+            }
+            KeyCode::Char('a' | 'A') => {
+                form.verdict = AnswerVerdict::Allow;
+                KeyAction::None
+            }
+            KeyCode::Char('d' | 'D') => {
+                form.verdict = AnswerVerdict::Deny;
+                KeyAction::None
+            }
+            KeyCode::Left | KeyCode::Right => {
+                form.verdict = form.verdict.toggle();
+                KeyAction::None
+            }
+            KeyCode::Tab => {
+                form.scope = form.scope.next();
+                KeyAction::None
+            }
+            KeyCode::BackTab => {
+                form.scope = form.scope.prev();
+                KeyAction::None
+            }
+            _ => KeyAction::None,
         }
-        KeyAction::None
     }
 
     fn handle_root_key(&mut self, code: KeyCode) -> KeyAction {
@@ -828,13 +824,14 @@ pub fn help_lines() -> Vec<String> {
 
 #[must_use]
 pub fn footer_hints(app: &App) -> String {
-    if !matches!(app.overlay, Overlay::None) {
-        return match &app.overlay {
-            Overlay::AddRule(_) => "Tab fields  Enter submit  Esc cancel".into(),
-            Overlay::AnswerPrompt(_) => "a/d verdict  Tab scope  Enter submit  Esc cancel".into(),
-            Overlay::Notice(_) => "Esc dismiss overlay".into(),
-            Overlay::None => String::new(),
-        };
+    if let Overlay::AddRule(_) = &app.overlay {
+        return "Tab fields  Enter submit  Esc cancel".into();
+    }
+    if let Overlay::AnswerPrompt(_) = &app.overlay {
+        return "a/d verdict  Tab scope  Enter submit  Esc cancel".into();
+    }
+    if let Overlay::Notice(_) = &app.overlay {
+        return "Esc dismiss overlay".into();
     }
     let mut parts = vec![
         format!("{} · {}", app.chrome_title(), app.tab.label()),
@@ -1364,13 +1361,38 @@ mod tests {
         assert_eq!(Tab::Log.index(), 4);
         assert_eq!(Tab::Help.index(), 5);
         assert_eq!(Tab::Apps.label(), "Apps");
+        let mut field = super::AddField::Id;
+        for _ in 0..4 {
+            field = field.next();
+        }
+        assert_eq!(field, super::AddField::Id);
+        for _ in 0..4 {
+            field = field.prev();
+        }
+        assert_eq!(field, super::AddField::Id);
         assert_eq!(super::AddField::Executable.next(), super::AddField::Verdict);
         assert_eq!(super::AddField::Port.prev(), super::AddField::Verdict);
+        assert_eq!(super::AnswerScope::Once.as_str(), "once");
+        assert_eq!(super::AnswerScope::Session.as_str(), "session");
+        assert_eq!(super::AnswerScope::Permanent.as_str(), "permanent");
         assert_eq!(super::AnswerVerdict::Deny.as_str(), "deny");
         assert_eq!(
             super::AnswerVerdict::Allow.toggle(),
             super::AnswerVerdict::Deny
         );
+        assert_eq!(
+            super::AnswerVerdict::Deny.toggle(),
+            super::AnswerVerdict::Allow
+        );
+        let mut scope = super::AnswerScope::Once;
+        for _ in 0..3 {
+            scope = scope.next();
+        }
+        assert_eq!(scope, super::AnswerScope::Once);
+        for _ in 0..3 {
+            scope = scope.prev();
+        }
+        assert_eq!(scope, super::AnswerScope::Once);
         assert_eq!(
             super::AnswerScope::Session.next(),
             super::AnswerScope::Permanent
@@ -1392,8 +1414,49 @@ mod tests {
         app.handle_key(KeyCode::Tab);
         app.handle_key(KeyCode::Backspace);
         app.handle_key(KeyCode::Char('9'));
+        app.handle_key(KeyCode::Null);
         app.handle_key(KeyCode::Esc);
         assert_eq!(app.overlay, Overlay::None);
+        assert_eq!(app.handle_add_overlay_key(KeyCode::Enter), KeyAction::None);
+        assert_eq!(
+            app.handle_answer_overlay_key(KeyCode::Enter),
+            KeyAction::None
+        );
+        app.handle_key(KeyCode::Char('4'));
+        app.apply(IpcEvent::Prompts(vec![PromptRow {
+            id: 9,
+            executable: "/bin/curl".into(),
+            destination: "203.0.113.9".into(),
+            port: 443,
+            protocol: "tcp".into(),
+            remaining_secs: 30,
+        }]));
+        app.handle_key(KeyCode::Char('a'));
+        assert!(matches!(app.overlay, Overlay::AnswerPrompt(_)));
+        app.handle_key(KeyCode::Null);
+        app.handle_key(KeyCode::Esc);
+        assert_eq!(app.overlay, Overlay::None);
+    }
+
+    #[test]
+    fn audit_pop_front_decrements_log_selection() {
+        use super::MAX_AUDIT_LINES;
+
+        let mut app = App::new("/tmp/x.sock".into());
+        app.handle_key(KeyCode::Char('5'));
+        for sequence in 1..=MAX_AUDIT_LINES as u64 {
+            app.apply(IpcEvent::Audit(interfire_proto::AuditStreamRecord {
+                sequence,
+                message: format!("m{sequence}"),
+            }));
+        }
+        app.list_selected = 3;
+        app.apply(IpcEvent::Audit(interfire_proto::AuditStreamRecord {
+            sequence: MAX_AUDIT_LINES as u64 + 1,
+            message: "overflow".into(),
+        }));
+        assert_eq!(app.audit.len(), MAX_AUDIT_LINES);
+        assert_eq!(app.list_selected, 2);
     }
 
     #[test]
@@ -1445,5 +1508,54 @@ mod tests {
         assert_eq!(app.tab, Tab::Status);
         app.handle_key(KeyCode::Left);
         assert_eq!(app.tab, Tab::Help);
+    }
+
+    #[test]
+    fn add_field_navigation_and_focused_edits_cover_all_fields() {
+        assert_eq!(super::AddField::Port.next(), super::AddField::Id);
+        assert_eq!(super::AddField::Executable.prev(), super::AddField::Id);
+        assert_eq!(super::AnswerScope::Once.as_str(), "once");
+
+        let mut app = App::new("/tmp/x.sock".into());
+        app.handle_key(KeyCode::Char('3'));
+        app.handle_key(KeyCode::Char('a'));
+        for _ in 0..3 {
+            app.handle_key(KeyCode::Tab);
+        }
+        app.handle_key(KeyCode::Char('8'));
+        app.handle_key(KeyCode::Char('0'));
+        app.handle_key(KeyCode::Esc);
+        assert_eq!(app.overlay, Overlay::None);
+    }
+
+    #[test]
+    fn list_motion_and_empty_log_states() {
+        let mut app = App::new("/tmp/x.sock".into());
+        app.handle_key(KeyCode::Char('5'));
+        app.handle_key(KeyCode::Char('j'));
+        assert_eq!(app.list_selected, 0);
+        assert_eq!(app.visible_list(5).total, 0);
+        app.handle_key(KeyCode::Char('4'));
+        assert!(
+            app.detail_lines()
+                .iter()
+                .any(|line| line.contains("no pending prompts"))
+        );
+        app.apply(IpcEvent::Audit(interfire_proto::AuditStreamRecord {
+            sequence: 1,
+            message: "only".into(),
+        }));
+        app.handle_key(KeyCode::Up);
+        app.handle_key(KeyCode::Char('k'));
+    }
+
+    #[test]
+    fn add_overlay_ignores_control_characters() {
+        let mut app = App::new("/tmp/x.sock".into());
+        app.handle_key(KeyCode::Char('3'));
+        app.handle_key(KeyCode::Char('a'));
+        app.handle_key(KeyCode::Char('\0'));
+        app.handle_key(KeyCode::F(1));
+        assert!(matches!(app.overlay, Overlay::AddRule(_)));
     }
 }
