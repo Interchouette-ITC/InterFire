@@ -223,7 +223,17 @@ mod tests {
             border(),
         );
         set_mode(Mode::Light);
-        let _ = (body(), muted(), border());
+        let _ = (
+            body(),
+            muted(),
+            border(),
+            overlay_panel(),
+            chrome(),
+            panel(),
+            elevated(),
+            surface(),
+            canvas(),
+        );
         assert_eq!(Mode::parse("light"), Some(Mode::Light));
         assert_eq!(Mode::parse("dark"), Some(Mode::Dark));
         assert_eq!(Mode::parse("nope"), None);

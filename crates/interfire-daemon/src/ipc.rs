@@ -487,6 +487,41 @@ mod tests {
 
     static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
+    /// Outcome of one `read_line` attempt inside [`read_line_within`].
+    #[derive(Debug)]
+    enum ReadLineStep {
+        Done(io::Result<String>),
+        Retry,
+    }
+
+    /// Map one `read_line` result (extracted so EOF / timeout / other errors are unit-testable).
+    fn classify_read_line(
+        result: io::Result<usize>,
+        line: String,
+        past_deadline: bool,
+    ) -> ReadLineStep {
+        match result {
+            Ok(0) => ReadLineStep::Done(Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "socket closed before line",
+            ))),
+            Ok(_) => ReadLineStep::Done(Ok(line)),
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
+                ) =>
+            {
+                if past_deadline {
+                    ReadLineStep::Done(Err(error))
+                } else {
+                    ReadLineStep::Retry
+                }
+            }
+            Err(error) => ReadLineStep::Done(Err(error)),
+        }
+    }
+
     /// Read one line, retrying `WouldBlock` / `TimedOut` until `budget` elapses.
     ///
     /// Audit subscribe backlog is written on a helper thread after `v1 subscribed`.
@@ -495,27 +530,78 @@ mod tests {
         stream.set_read_timeout(Some(Duration::from_millis(50)))?;
         loop {
             let mut line = String::new();
-            match BufReader::new(&mut *stream).read_line(&mut line) {
-                Ok(0) => {
-                    return Err(io::Error::new(
-                        io::ErrorKind::UnexpectedEof,
-                        "socket closed before line",
-                    ));
-                }
-                Ok(_) => return Ok(line),
-                Err(error)
-                    if matches!(
-                        error.kind(),
-                        io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
-                    ) =>
-                {
-                    if Instant::now() >= deadline {
-                        return Err(error);
-                    }
-                }
-                Err(error) => return Err(error),
+            let step = classify_read_line(
+                BufReader::new(&mut *stream).read_line(&mut line),
+                line,
+                Instant::now() >= deadline,
+            );
+            match step {
+                ReadLineStep::Done(result) => return result,
+                ReadLineStep::Retry => {}
             }
         }
+    }
+
+    #[test]
+    fn classify_read_line_covers_eof_timeout_retry_and_other_errors() {
+        let eof = classify_read_line(Ok(0), String::new(), false);
+        assert!(matches!(
+            &eof,
+            ReadLineStep::Done(Err(error)) if error.kind() == io::ErrorKind::UnexpectedEof
+        ));
+
+        let ok_line = classify_read_line(Ok(4), "ping".into(), false);
+        assert!(matches!(
+            &ok_line,
+            ReadLineStep::Done(Ok(line)) if line == "ping"
+        ));
+
+        assert!(matches!(
+            classify_read_line(
+                Err(io::Error::new(io::ErrorKind::WouldBlock, "wait")),
+                String::new(),
+                false,
+            ),
+            ReadLineStep::Retry
+        ));
+
+        let timed_out = classify_read_line(
+            Err(io::Error::new(io::ErrorKind::TimedOut, "deadline")),
+            String::new(),
+            true,
+        );
+        assert!(matches!(
+            &timed_out,
+            ReadLineStep::Done(Err(error)) if error.kind() == io::ErrorKind::TimedOut
+        ));
+
+        let reset = classify_read_line(
+            Err(io::Error::new(io::ErrorKind::ConnectionReset, "rst")),
+            String::new(),
+            false,
+        );
+        assert!(matches!(
+            &reset,
+            ReadLineStep::Done(Err(error)) if error.kind() == io::ErrorKind::ConnectionReset
+        ));
+    }
+
+    #[test]
+    fn read_line_within_eof_when_peer_dropped() {
+        let (mut reader, writer) = StdUnixStream::pair().expect("pair");
+        drop(writer);
+        let error = read_line_within(&mut reader, Duration::from_millis(200)).expect_err("eof");
+        assert_eq!(error.kind(), io::ErrorKind::UnexpectedEof);
+    }
+
+    #[test]
+    fn read_line_within_times_out_when_peer_silent() {
+        let (mut reader, _keeper) = StdUnixStream::pair().expect("pair");
+        let error = read_line_within(&mut reader, Duration::from_millis(120)).expect_err("timeout");
+        assert!(matches!(
+            error.kind(),
+            io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
+        ));
     }
 
     fn temp_paths(tag: &str) -> (PathBuf, PathBuf) {
