@@ -8,6 +8,7 @@ members = [
   "crates/interfire-tui",
   "ui",
 ]
+exclude = ["fuzz"]
 resolver = "2"
 
 [workspace.package]
