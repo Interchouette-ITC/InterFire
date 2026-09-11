@@ -467,7 +467,7 @@ mod tests {
     use std::os::unix::net::UnixStream as StdUnixStream;
     use std::path::PathBuf;
     use std::sync::Arc;
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
 
     use interfire_proto::{
         DaemonStatus, IPC_VERSION, MAX_FRAME_BYTES, Request, Response, RuleScope,
@@ -486,6 +486,37 @@ mod tests {
     use super::*;
 
     static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+    /// Read one line, retrying `WouldBlock` / `TimedOut` until `budget` elapses.
+    ///
+    /// Audit subscribe backlog is written on a helper thread after `v1 subscribed`.
+    fn read_line_within(stream: &mut StdUnixStream, budget: Duration) -> io::Result<String> {
+        let deadline = Instant::now() + budget;
+        stream.set_read_timeout(Some(Duration::from_millis(50)))?;
+        loop {
+            let mut line = String::new();
+            match BufReader::new(&mut *stream).read_line(&mut line) {
+                Ok(0) => {
+                    return Err(io::Error::new(
+                        io::ErrorKind::UnexpectedEof,
+                        "socket closed before line",
+                    ));
+                }
+                Ok(_) => return Ok(line),
+                Err(error)
+                    if matches!(
+                        error.kind(),
+                        io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
+                    ) =>
+                {
+                    if Instant::now() >= deadline {
+                        return Err(error);
+                    }
+                }
+                Err(error) => return Err(error),
+            }
+        }
+    }
 
     fn temp_paths(tag: &str) -> (PathBuf, PathBuf) {
         let serial = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
@@ -1000,20 +1031,10 @@ mod tests {
             .read_line(&mut line)
             .expect("subscribed");
         assert_eq!(line.trim(), "v1 subscribed ui");
-        client
-            .set_read_timeout(Some(Duration::from_millis(500)))
-            .expect("timeout");
-        std::thread::sleep(Duration::from_millis(50));
-        line.clear();
-        BufReader::new(&mut client)
-            .read_line(&mut line)
-            .expect("backlog");
+        line = read_line_within(&mut client, Duration::from_secs(2)).expect("backlog");
         assert!(line.contains("before"), "backlog frame: {line:?}");
         shared.audit.lock().expect("audit").append("live");
-        line.clear();
-        BufReader::new(&mut client)
-            .read_line(&mut line)
-            .expect("live");
+        line = read_line_within(&mut client, Duration::from_secs(2)).expect("live");
         assert!(line.contains("live"));
         drop(client);
         shared.audit.lock().expect("audit").append("flush");
