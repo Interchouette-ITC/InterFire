@@ -212,7 +212,16 @@ mod tests {
     fn accent_is_phoenix_orange() {
         assert_eq!(ACCENT, Color::Rgb(248, 72, 0));
         set_mode(Mode::Dark);
-        let _ = (ok(), err(), warn(), overlay_panel(), chrome(), panel());
+        let _ = (
+            ok(),
+            err(),
+            warn(),
+            overlay_panel(),
+            chrome(),
+            panel(),
+            muted(),
+            border(),
+        );
         set_mode(Mode::Light);
         let _ = (body(), muted(), border());
         assert_eq!(Mode::parse("light"), Some(Mode::Light));
