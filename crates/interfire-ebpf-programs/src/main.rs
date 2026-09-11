@@ -1,6 +1,12 @@
 #![no_std]
 #![no_main]
 
+//! BPF program for `tcp_v4_connect` observation (`bpfel-unknown-none` only).
+//!
+//! Host `cargo check` / rust-analyzer cannot analyze this crate: it is `no_std`
+//! with a local `#[panic_handler]`, while workspace feature unification can pull
+//! `std` into `interfire-ebpf` and redefine `panic_impl`. Build with `make ebpf`.
+
 use aya_ebpf::helpers::{bpf_get_current_pid_tgid, bpf_probe_read_user};
 use aya_ebpf::macros::{kprobe, map};
 use aya_ebpf::maps::RingBuf;

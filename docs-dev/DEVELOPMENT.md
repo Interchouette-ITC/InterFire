@@ -43,6 +43,8 @@ make deb            # amd64 .deb (needs dpkg-deb, fakeroot; see docs/packaging.m
 
 CI mirrors `make ci`, plus coverage upload to Codecov and a supply-chain job. Live eBPF attach needs root (or `CAP_BPF` / `CAP_PERFMON`) and is not required for `make ci`.
 
+`interfire-ebpf-programs` is BPF-only (`bpfel-unknown-none`). It is a workspace member for `make ebpf`, but not a `default-members` crate, and `.vscode/settings.json` excludes it (and `interfire-ui`) from rust-analyzer host `cargo check`. Opening `main.rs` there can still show a stale `panic_impl` diagnostic until the analyzer reloads with those settings; that error is host analysis, not a broken `make ebpf` build.
+
 ## Smoke (non-root)
 
 Terminal 1:

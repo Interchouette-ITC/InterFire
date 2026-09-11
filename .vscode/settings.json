@@ -1,0 +1,9 @@
+{
+  "rust-analyzer.check.extraArgs": [
+    "--exclude",
+    "interfire-ebpf-programs",
+    "--exclude",
+    "interfire-ui"
+  ],
+  "rust-analyzer.cargo.features": "selected"
+}

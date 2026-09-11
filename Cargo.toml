@@ -9,6 +9,14 @@ members = [
   "crates/interfire-tui",
   "ui",
 ]
+default-members = [
+  "crates/interfire-rules",
+  "crates/interfire-proto",
+  "crates/interfire-daemon",
+  "crates/interfire-ebpf",
+  "crates/interfirectl",
+  "crates/interfire-tui",
+]
 resolver = "2"
 
 [workspace.package]
