@@ -16,6 +16,7 @@ default-members = [
   "crates/interfire-ebpf",
   "crates/interfirectl",
   "crates/interfire-tui",
+  "ui",
 ]
 resolver = "2"
 
