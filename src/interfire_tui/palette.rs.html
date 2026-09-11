@@ -212,12 +212,21 @@
 <a href=#212 id=212 data-nosnippet>212</a>    </span><span class="kw">fn </span>accent_is_phoenix_orange() {
 <a href=#213 id=213 data-nosnippet>213</a>        <span class="macro">assert_eq!</span>(ACCENT, Color::Rgb(<span class="number">248</span>, <span class="number">72</span>, <span class="number">0</span>));
 <a href=#214 id=214 data-nosnippet>214</a>        set_mode(Mode::Dark);
-<a href=#215 id=215 data-nosnippet>215</a>        <span class="kw">let _ </span>= (ok(), err(), warn(), overlay_panel(), chrome(), panel());
-<a href=#216 id=216 data-nosnippet>216</a>        set_mode(Mode::Light);
-<a href=#217 id=217 data-nosnippet>217</a>        <span class="kw">let _ </span>= (body(), muted(), border());
-<a href=#218 id=218 data-nosnippet>218</a>        <span class="macro">assert_eq!</span>(Mode::parse(<span class="string">"light"</span>), <span class="prelude-val">Some</span>(Mode::Light));
-<a href=#219 id=219 data-nosnippet>219</a>        <span class="macro">assert_eq!</span>(Mode::parse(<span class="string">"dark"</span>), <span class="prelude-val">Some</span>(Mode::Dark));
-<a href=#220 id=220 data-nosnippet>220</a>        <span class="macro">assert_eq!</span>(Mode::parse(<span class="string">"nope"</span>), <span class="prelude-val">None</span>);
-<a href=#221 id=221 data-nosnippet>221</a>    }
-<a href=#222 id=222 data-nosnippet>222</a>}
+<a href=#215 id=215 data-nosnippet>215</a>        <span class="kw">let _ </span>= (
+<a href=#216 id=216 data-nosnippet>216</a>            ok(),
+<a href=#217 id=217 data-nosnippet>217</a>            err(),
+<a href=#218 id=218 data-nosnippet>218</a>            warn(),
+<a href=#219 id=219 data-nosnippet>219</a>            overlay_panel(),
+<a href=#220 id=220 data-nosnippet>220</a>            chrome(),
+<a href=#221 id=221 data-nosnippet>221</a>            panel(),
+<a href=#222 id=222 data-nosnippet>222</a>            muted(),
+<a href=#223 id=223 data-nosnippet>223</a>            border(),
+<a href=#224 id=224 data-nosnippet>224</a>        );
+<a href=#225 id=225 data-nosnippet>225</a>        set_mode(Mode::Light);
+<a href=#226 id=226 data-nosnippet>226</a>        <span class="kw">let _ </span>= (body(), muted(), border());
+<a href=#227 id=227 data-nosnippet>227</a>        <span class="macro">assert_eq!</span>(Mode::parse(<span class="string">"light"</span>), <span class="prelude-val">Some</span>(Mode::Light));
+<a href=#228 id=228 data-nosnippet>228</a>        <span class="macro">assert_eq!</span>(Mode::parse(<span class="string">"dark"</span>), <span class="prelude-val">Some</span>(Mode::Dark));
+<a href=#229 id=229 data-nosnippet>229</a>        <span class="macro">assert_eq!</span>(Mode::parse(<span class="string">"nope"</span>), <span class="prelude-val">None</span>);
+<a href=#230 id=230 data-nosnippet>230</a>    }
+<a href=#231 id=231 data-nosnippet>231</a>}
 </code></pre></div></section></main></body></html>
