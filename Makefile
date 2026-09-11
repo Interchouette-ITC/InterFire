@@ -38,12 +38,14 @@ help:
 
 fmt:
 	$(CARGO) fmt --check
+	$(CARGO) fmt --check --manifest-path crates/interfire-ebpf-programs/Cargo.toml
 
 format:
 	$(CARGO) fmt
+	$(CARGO) fmt --manifest-path crates/interfire-ebpf-programs/Cargo.toml
 
 lint: fmt
-	$(CARGO) clippy --workspace --all-targets --exclude interfire-ebpf-programs --exclude interfire-ui -- $(CLIPPY_FLAGS)
+	$(CARGO) clippy --workspace --all-targets --exclude interfire-ui -- $(CLIPPY_FLAGS)
 	$(CARGO) clippy -p interfire-ui --all-targets -- $(CLIPPY_FLAGS)
 
 test:
@@ -67,7 +69,7 @@ deny:
 
 ## rustdoc → `docs/api-rust/` (gitignored except README).
 doc:
-	RUSTDOCFLAGS='-D warnings' $(CARGO) doc --workspace --no-deps --exclude interfire-ebpf-programs --exclude interfire-ui
+	RUSTDOCFLAGS='-D warnings' $(CARGO) doc --workspace --no-deps --exclude interfire-ui
 	@test -d "$(DOC_OUT)" || (echo "missing $(DOC_OUT)"; exit 1)
 	@rm -rf docs/api-rust
 	@mkdir -p docs/api-rust
@@ -79,7 +81,8 @@ doc:
 		'' \
 		'Workspace crates include `interfire-rules`, `interfire-proto`, `interfire-daemon`' \
 		'(`interfired`), `interfirectl`, `interfire-tui`, and `interfire-ebpf` (loader). The BPF program' \
-		'crate is built with `make ebpf`, not rustdoc.' \
+		'crate is a separate Cargo workspace under `crates/interfire-ebpf-programs/` (built with `make ebpf`,' \
+		'not rustdoc).' \
 		> docs/api-rust/README.md
 	@touch docs/api-rust/.nojekyll
 
@@ -119,10 +122,11 @@ run-ctl:
 	$(CARGO) run -p interfirectl -- --socket=$(SOCKET) ping
 
 ## Rebuild `crates/interfire-ebpf/bpf/interfire-ebpf-programs` (needs nightly + bpf-linker).
+## BPF sources live in a separate Cargo workspace under crates/interfire-ebpf-programs/.
 ebpf:
-	cargo +nightly build -Z build-std=core --target bpfel-unknown-none \
-		-p interfire-ebpf-programs --release
-	cp -f target/bpfel-unknown-none/release/interfire-ebpf-programs \
+	cargo +nightly build -Z build-std=core --target bpfel-unknown-none --release \
+		--manifest-path crates/interfire-ebpf-programs/Cargo.toml
+	cp -f crates/interfire-ebpf-programs/target/bpfel-unknown-none/release/interfire-ebpf-programs \
 		crates/interfire-ebpf/bpf/interfire-ebpf-programs
 
 memcheck:
