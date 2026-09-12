@@ -1161,6 +1161,26 @@ mod tests {
         assert!(footer.contains("t traffic"));
         app.handle_key(KeyCode::Char('t'));
         assert!(super::footer_hints(&app).contains("Tab scope"));
+        assert_eq!(app.handle_key(KeyCode::Tab), KeyAction::None);
+        assert_eq!(app.handle_key(KeyCode::Tab), KeyAction::None);
+        assert_eq!(app.handle_key(KeyCode::Char('u')), KeyAction::None);
+        assert_eq!(
+            app.handle_key(KeyCode::Enter),
+            KeyAction::Command(IpcCommand::TrafficUnblock {
+                scope: "user".into(),
+            })
+        );
+        app.handle_key(KeyCode::Char('t'));
+        assert_eq!(app.handle_key(KeyCode::Right), KeyAction::None);
+        assert_eq!(app.handle_key(KeyCode::Right), KeyAction::None);
+        assert_eq!(app.handle_key(KeyCode::Right), KeyAction::None);
+        assert_eq!(
+            app.handle_key(KeyCode::Enter),
+            KeyAction::Command(IpcCommand::TrafficBlock {
+                scope: "user".into(),
+                direction: "out".into(),
+            })
+        );
     }
 
     #[test]

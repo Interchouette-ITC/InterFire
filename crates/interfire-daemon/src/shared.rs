@@ -472,6 +472,11 @@ mod tests {
         shared
             .traffic_unblock(TrafficScope::Machine, 0)
             .expect("unblock without bind");
+        assert!(
+            shared
+                .traffic_block(TrafficScope::User, TrafficPreference::Open, 1000)
+                .is_err()
+        );
         let _ = fs::remove_file(&audit_path);
         let _ = fs::remove_file(mode_path);
         let _ = fs::remove_file(traffic_mode::user_path(&traffic_path, 1000));

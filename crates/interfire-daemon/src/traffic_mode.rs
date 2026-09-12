@@ -296,6 +296,19 @@ mod tests {
             effective(TrafficPreference::All, TrafficPreference::Out, 1000),
             super::EffectiveTraffic::Machine(TrafficPreference::All)
         ));
+        assert_eq!(super::EffectiveTraffic::Open.label(), "open");
+        assert_eq!(
+            super::EffectiveTraffic::Machine(TrafficPreference::In).label(),
+            "machine:in"
+        );
+        assert_eq!(
+            super::EffectiveTraffic::User {
+                uid: 7,
+                preference: TrafficPreference::All
+            }
+            .label(),
+            "user:7:all"
+        );
     }
 
     #[test]
@@ -306,6 +319,41 @@ mod tests {
         fs::write(&legacy, "blocked\n").expect("legacy");
         migrate_legacy(&machine);
         assert_eq!(load(&machine), TrafficPreference::Out);
+        migrate_legacy(&machine);
+        assert_eq!(load(&machine), TrafficPreference::Out);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn load_unreadable_defaults_open() {
+        let dir = temp_dir();
+        let as_dir = dir.join("as-dir");
+        fs::create_dir_all(&as_dir).expect("dir");
+        assert_eq!(load(&as_dir), TrafficPreference::Open);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn migrate_legacy_store_failure_is_soft() {
+        let dir = temp_dir();
+        let machine = dir.join("traffic.machine");
+        let legacy = dir.join("traffic.mode");
+        fs::write(&legacy, "blocked\n").expect("legacy");
+        let mut perms = fs::metadata(&dir).expect("meta").permissions();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            perms.set_mode(0o555);
+            fs::set_permissions(&dir, perms.clone()).expect("ro");
+        }
+        migrate_legacy(&machine);
+        assert!(!machine.is_file());
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            perms.set_mode(0o755);
+            fs::set_permissions(&dir, perms).expect("rw");
+        }
         let _ = fs::remove_dir_all(&dir);
     }
 

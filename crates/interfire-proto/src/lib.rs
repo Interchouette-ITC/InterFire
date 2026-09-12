@@ -1069,6 +1069,24 @@ mod tests {
                 scope: "machine".into(),
             })
         );
+        let blocked = Response::Status(StatusBody {
+            enforcement: "paused",
+            observation: "attached",
+            traffic: "blocked",
+            traffic_machine: "all".into(),
+            traffic_user: "out".into(),
+            traffic_effective: "machine:all".into(),
+            ipc_version: 1,
+            pid: 1,
+            rss_kib: 1,
+            cpu_jiffies: 1,
+        })
+        .encode();
+        assert!(blocked.contains("traffic_machine=all"));
+        assert!(blocked.contains("traffic_effective=machine:all"));
+        let parsed = DaemonStatus::parse(&blocked).expect("status");
+        assert_eq!(parsed.traffic_machine, "all");
+        assert_eq!(parsed.traffic_effective, "machine:all");
         let frame = Response::Network(NetworkStatusBody {
             table: NFT_TABLE,
             queue: NFQUEUE_NUM,

@@ -1477,6 +1477,48 @@ mod tests {
     }
 
     #[test]
+    fn traffic_mutate_rejects_malformed_scope_and_direction() {
+        let _suite = suite_lock();
+        let (shared, audit_path, rules_path) = test_shared("traffic-malformed");
+        let _ok = crate::nft::ForceNftOk::arm();
+        let (a, _b) = StdUnixStream::pair().unwrap();
+        assert_eq!(
+            dispatch(
+                Request::TrafficBlock {
+                    scope: "bogus".into(),
+                    direction: "out".into(),
+                },
+                &shared,
+                &a
+            ),
+            Response::Error("malformed_request")
+        );
+        assert_eq!(
+            dispatch(
+                Request::TrafficBlock {
+                    scope: "user".into(),
+                    direction: "open".into(),
+                },
+                &shared,
+                &a
+            ),
+            Response::Error("malformed_request")
+        );
+        assert_eq!(
+            dispatch(
+                Request::TrafficBlock {
+                    scope: "user".into(),
+                    direction: "nope".into(),
+                },
+                &shared,
+                &a
+            ),
+            Response::Error("malformed_request")
+        );
+        cleanup_paths(&audit_path, &rules_path);
+    }
+
+    #[test]
     fn pause_and_resume_round_trip() {
         let _suite = suite_lock();
         let (shared, audit_path, rules_path) = test_shared("pause-resume");
