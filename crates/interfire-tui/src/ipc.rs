@@ -53,6 +53,13 @@ pub enum IpcCommand {
         verdict: String,
         scope: String,
     },
+    TrafficBlock {
+        scope: String,
+        direction: String,
+    },
+    TrafficUnblock {
+        scope: String,
+    },
 }
 
 /// Spawn non-blocking status, audit, list poll, and command loops.
@@ -174,6 +181,42 @@ async fn handle_command(socket: &str, tx: &mpsc::UnboundedSender<IpcEvent>, comm
                     if let Ok(prompts) = fetch_prompts(socket).await {
                         let _ = tx.send(IpcEvent::Prompts(prompts));
                     }
+                }
+                Ok(frame) => {
+                    let message =
+                        parse_error_message(&frame).unwrap_or_else(|| frame.trim().to_owned());
+                    let _ = tx.send(IpcEvent::ActionError(message));
+                }
+                Err(error) => {
+                    let _ = tx.send(IpcEvent::ActionError(error.to_string()));
+                }
+            }
+        }
+        IpcCommand::TrafficBlock { scope, direction } => {
+            let request = format!("v1 traffic-block scope={scope} direction={direction}\n");
+            match one_shot(socket, &request).await {
+                Ok(frame) if frame.starts_with("v1 pong") => {
+                    let _ = tx.send(IpcEvent::ActionOk(format!(
+                        "traffic blocked scope={scope} direction={direction}"
+                    )));
+                }
+                Ok(frame) => {
+                    let message =
+                        parse_error_message(&frame).unwrap_or_else(|| frame.trim().to_owned());
+                    let _ = tx.send(IpcEvent::ActionError(message));
+                }
+                Err(error) => {
+                    let _ = tx.send(IpcEvent::ActionError(error.to_string()));
+                }
+            }
+        }
+        IpcCommand::TrafficUnblock { scope } => {
+            let request = format!("v1 traffic-unblock scope={scope}\n");
+            match one_shot(socket, &request).await {
+                Ok(frame) if frame.starts_with("v1 pong") => {
+                    let _ = tx.send(IpcEvent::ActionOk(format!(
+                        "traffic unblocked scope={scope}"
+                    )));
                 }
                 Ok(frame) => {
                     let message =
@@ -925,6 +968,9 @@ mod tests {
                 enforcement: "nfqueue",
                 observation: "attached",
                 traffic: "open",
+                traffic_machine: "open".into(),
+                traffic_user: "open".into(),
+                traffic_effective: "open".into(),
                 ipc_version: 1,
                 pid: 42,
                 rss_kib: 6400,

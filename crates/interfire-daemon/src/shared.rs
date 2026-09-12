@@ -14,7 +14,7 @@ use crate::pending::PendingTable;
 use crate::process::ProcessCache;
 use crate::prompts::PromptQueue;
 use crate::recent::RecentConnects;
-use crate::traffic_mode::{self, TrafficMode};
+use crate::traffic_mode::{self, TrafficPreference};
 use interfire_proto::MAX_LOG_RECORDS_PER_SUBSCRIBER;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
@@ -37,9 +37,10 @@ pub struct Shared {
     pub dns: Mutex<DnsCache>,
     pub audit: Mutex<AuditLog>,
     mode_path: PathBuf,
+    /// Machine traffic preference file (`traffic.machine`).
     traffic_path: PathBuf,
     paused: AtomicBool,
-    traffic_blocked: AtomicBool,
+    machine_traffic: std::sync::Mutex<TrafficPreference>,
     /// Live NFQUEUE bind state (`none` / `nfqueue` / `degraded`), independent of pause.
     bind_state: AtomicU8,
     observation: AtomicU8,
@@ -66,7 +67,8 @@ impl Shared {
     /// Returns I/O failures while opening the audit log.
     pub fn new(config: SharedConfig) -> std::io::Result<Self> {
         let mode = enforcement_mode::load(&config.mode_path);
-        let traffic = traffic_mode::load(&config.traffic_path);
+        traffic_mode::migrate_legacy(&config.traffic_path);
+        let machine = traffic_mode::load(&config.traffic_path);
         Ok(Self {
             rules: Mutex::new(config.rules),
             store: config.store,
@@ -86,7 +88,7 @@ impl Shared {
             mode_path: config.mode_path,
             traffic_path: config.traffic_path,
             paused: AtomicBool::new(mode == EnforcementMode::Paused),
-            traffic_blocked: AtomicBool::new(traffic == TrafficMode::Blocked),
+            machine_traffic: Mutex::new(machine),
             bind_state: AtomicU8::new(ENFORCEMENT_NONE),
             observation: AtomicU8::new(observation_code(config.observation)),
         })
@@ -102,9 +104,10 @@ impl Shared {
         self.paused.load(Ordering::Relaxed)
     }
 
+    /// True when machine kill-switch is active (overrides user).
     #[must_use]
     pub fn is_traffic_blocked(&self) -> bool {
-        self.traffic_blocked.load(Ordering::Relaxed)
+        self.machine_preference().is_blocked()
     }
 
     #[must_use]
@@ -115,6 +118,19 @@ impl Shared {
     #[must_use]
     pub fn traffic_path(&self) -> &Path {
         self.traffic_path.as_path()
+    }
+
+    #[must_use]
+    pub fn machine_preference(&self) -> TrafficPreference {
+        *self
+            .machine_traffic
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    #[must_use]
+    pub fn user_preference(&self, uid: u32) -> TrafficPreference {
+        traffic_mode::load(&traffic_mode::user_path(&self.traffic_path, uid))
     }
 
     #[must_use]
@@ -130,31 +146,38 @@ impl Shared {
         }
     }
 
-    fn traffic_mode(&self) -> TrafficMode {
-        if self.is_traffic_blocked() {
-            TrafficMode::Blocked
-        } else {
-            TrafficMode::Open
-        }
+    fn queue_bound(&self) -> bool {
+        self.bind_label() == "nfqueue"
     }
 
-    fn apply_owned_table(&self) -> std::io::Result<()> {
-        match self.traffic_mode() {
-            TrafficMode::Blocked => crate::nft::install_block(),
-            TrafficMode::Open => match self.rules_mode() {
-                EnforcementMode::Paused => crate::nft::remove(),
-                EnforcementMode::Active => {
-                    if self.bind_label() == "nfqueue" {
-                        crate::nft::install()
-                    } else {
-                        crate::nft::remove()
-                    }
-                }
-            },
+    fn reapply_table(&self) -> std::io::Result<()> {
+        let machine = self.machine_preference();
+        let users = traffic_mode::load_user_blocks(&self.traffic_path);
+        let rules = self.rules_mode();
+        let queue_bound = self.queue_bound();
+        let rules_active = rules == EnforcementMode::Active;
+        let machine_blocks = machine.is_blocked();
+        let users_block = users.iter().any(|(_, preference)| preference.is_blocked());
+
+        if !machine_blocks && !users_block && !rules_active {
+            return crate::nft::remove();
         }
+        if !machine_blocks && !users_block && rules_active {
+            return if queue_bound {
+                crate::nft::install()
+            } else {
+                crate::nft::remove()
+            };
+        }
+        crate::nft::install_composed(&crate::nft::TrafficCompose {
+            machine,
+            users: &users,
+            rules_active: rules_active && !machine.wants_out(),
+            queue_bound,
+        })
     }
 
-    /// Persist pause; drop queue table unless Traffic is Blocked.
+    /// Persist pause; keep Traffic kill-switch table when any block is active.
     ///
     /// # Errors
     ///
@@ -162,14 +185,10 @@ impl Shared {
     pub fn pause(&self) -> std::io::Result<()> {
         enforcement_mode::store(&self.mode_path, EnforcementMode::Paused)?;
         self.paused.store(true, Ordering::Relaxed);
-        if self.is_traffic_blocked() {
-            crate::nft::install_block()
-        } else {
-            crate::nft::remove()
-        }
+        self.reapply_table()
     }
 
-    /// Persist active and install the owned queue table (or keep Block table).
+    /// Persist active and install the owned queue table (or keep Traffic table).
     ///
     /// # Errors
     ///
@@ -182,33 +201,65 @@ impl Shared {
         }
         enforcement_mode::store(&self.mode_path, EnforcementMode::Active)?;
         self.paused.store(false, Ordering::Relaxed);
-        if self.is_traffic_blocked() {
-            crate::nft::install_block()
-        } else {
-            crate::nft::install()
+        self.reapply_table()
+    }
+
+    /// Persist a Traffic Block for machine or one UID, then reapply nft.
+    ///
+    /// # Errors
+    ///
+    /// Returns mode-file or nft failures.
+    pub fn traffic_block(
+        &self,
+        scope: TrafficScope,
+        preference: TrafficPreference,
+        uid: u32,
+    ) -> std::io::Result<()> {
+        if matches!(preference, TrafficPreference::Open) {
+            return Err(std::io::Error::other(
+                "traffic block requires out, in, or all",
+            ));
         }
+        match scope {
+            TrafficScope::Machine => {
+                traffic_mode::store(&self.traffic_path, preference)?;
+                *self
+                    .machine_traffic
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner) = preference;
+            }
+            TrafficScope::User => {
+                traffic_mode::store(
+                    &traffic_mode::user_path(&self.traffic_path, uid),
+                    preference,
+                )?;
+            }
+        }
+        self.reapply_table()
     }
 
-    /// Persist Traffic Block and install the fail-closed drop table.
+    /// Persist Traffic Open for a scope and restore Rules-owned table as needed.
     ///
     /// # Errors
     ///
     /// Returns mode-file or nft failures.
-    pub fn traffic_block(&self) -> std::io::Result<()> {
-        traffic_mode::store(&self.traffic_path, TrafficMode::Blocked)?;
-        self.traffic_blocked.store(true, Ordering::Relaxed);
-        crate::nft::install_block()
-    }
-
-    /// Persist Traffic Open and restore the Rules-owned table.
-    ///
-    /// # Errors
-    ///
-    /// Returns mode-file or nft failures.
-    pub fn traffic_unblock(&self) -> std::io::Result<()> {
-        traffic_mode::store(&self.traffic_path, TrafficMode::Open)?;
-        self.traffic_blocked.store(false, Ordering::Relaxed);
-        self.apply_owned_table()
+    pub fn traffic_unblock(&self, scope: TrafficScope, uid: u32) -> std::io::Result<()> {
+        match scope {
+            TrafficScope::Machine => {
+                traffic_mode::store(&self.traffic_path, TrafficPreference::Open)?;
+                *self
+                    .machine_traffic
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner) = TrafficPreference::Open;
+            }
+            TrafficScope::User => {
+                traffic_mode::store(
+                    &traffic_mode::user_path(&self.traffic_path, uid),
+                    TrafficPreference::Open,
+                )?;
+            }
+        }
+        self.reapply_table()
     }
 
     #[must_use]
@@ -219,9 +270,20 @@ impl Shared {
         self.bind_label()
     }
 
+    /// Effective traffic label for status (`open` or `machine:…` / `user:…`).
+    #[must_use]
+    pub fn traffic_effective(&self, uid: u32) -> String {
+        traffic_mode::effective(self.machine_preference(), self.user_preference(uid), uid).label()
+    }
+
+    /// Compact tray/status token: `open` or `blocked`.
     #[must_use]
     pub fn traffic(&self) -> &'static str {
-        self.traffic_mode().as_str()
+        if self.is_traffic_blocked() || traffic_mode::any_block_active(&self.traffic_path) {
+            "blocked"
+        } else {
+            "open"
+        }
     }
 
     #[must_use]
@@ -234,6 +296,13 @@ impl Shared {
     pub fn set_prompt_queue(&self, queue: PromptQueue) {
         *self.prompts.lock().expect("prompts lock") = queue;
     }
+}
+
+/// Traffic mutate scope.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TrafficScope {
+    Machine,
+    User,
 }
 
 fn enforcement_code(label: &str) -> u8 {
@@ -368,7 +437,9 @@ mod tests {
         assert_eq!(shared.enforcement(), "paused");
         shared.resume().expect("resume");
         assert_eq!(shared.enforcement(), "nfqueue");
-        shared.traffic_block().expect("block");
+        shared
+            .traffic_block(TrafficScope::Machine, TrafficPreference::Out, 0)
+            .expect("block");
         assert_eq!(shared.traffic(), "blocked");
         assert!(shared.is_traffic_blocked());
         shared.pause().expect("pause while blocked");
@@ -377,21 +448,33 @@ mod tests {
         shared.resume().expect("resume while blocked");
         assert_eq!(shared.enforcement(), "nfqueue");
         assert_eq!(shared.traffic(), "blocked");
-        shared.traffic_unblock().expect("unblock");
-        assert_eq!(shared.traffic(), "open");
-        shared.pause().expect("pause open");
-        shared.traffic_block().expect("block while paused");
-        shared.traffic_unblock().expect("unblock while paused");
+        shared
+            .traffic_block(TrafficScope::User, TrafficPreference::In, 1000)
+            .expect("user block while machine on");
+        assert_eq!(shared.user_preference(1000), TrafficPreference::In);
+        shared
+            .traffic_unblock(TrafficScope::Machine, 0)
+            .expect("unblock machine");
+        assert_eq!(shared.traffic_effective(1000), "user:1000:in");
+        shared.pause().expect("pause open machine");
+        shared
+            .traffic_unblock(TrafficScope::User, 1000)
+            .expect("unblock user");
         assert_eq!(shared.traffic(), "open");
         shared.set_enforcement("degraded");
         assert!(shared.resume().is_err());
         shared.set_enforcement("nfqueue");
         shared.resume().expect("resume active");
-        shared.traffic_block().expect("block again");
+        shared
+            .traffic_block(TrafficScope::Machine, TrafficPreference::All, 0)
+            .expect("block all");
         shared.set_enforcement("none");
-        shared.traffic_unblock().expect("unblock without bind");
+        shared
+            .traffic_unblock(TrafficScope::Machine, 0)
+            .expect("unblock without bind");
         let _ = fs::remove_file(&audit_path);
         let _ = fs::remove_file(mode_path);
-        let _ = fs::remove_file(traffic_path);
+        let _ = fs::remove_file(traffic_mode::user_path(&traffic_path, 1000));
+        let _ = fs::remove_file(&traffic_path);
     }
 }

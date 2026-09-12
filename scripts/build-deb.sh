@@ -46,6 +46,10 @@ install -m 0644 packaging/nft/interfire.nft \
   "${stage}/usr/share/interfire/interfire.nft"
 install -m 0644 packaging/nft/interfire-block.nft \
   "${stage}/usr/share/interfire/interfire-block.nft"
+install -m 0644 packaging/nft/interfire-block-in.nft \
+  "${stage}/usr/share/interfire/interfire-block-in.nft"
+install -m 0644 packaging/nft/interfire-block-all.nft \
+  "${stage}/usr/share/interfire/interfire-block-all.nft"
 install -m 0755 packaging/scripts/interfire-nft-stop.sh \
   "${stage}/usr/lib/interfire/interfire-nft-stop.sh"
 install -m 0644 packaging/defaults/rules.toml \

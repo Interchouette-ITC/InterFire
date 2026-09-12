@@ -9,9 +9,9 @@ v0.1 clients share the same Unix IPC:
 
 | Surface | Status | Role |
 | --- | --- | --- |
-| `interfirectl` | Shipped | One-shot commands only (`ping`, `status`, `pause`, `resume`, `traffic block|unblock`, rules / prompts / dns / audit / network) |
+| `interfirectl` | Shipped | One-shot commands only (`ping`, `status`, `pause`, `resume`, `traffic status|block|unblock`, rules / prompts / dns / audit / network) |
 | `interfire-tui` | Shipped | Interactive control plane (Status \| Rules \| Prompts \| Log \| Help) |
-| GPUI app under `ui/` | Shipped (`interfire-ui`: tray, alert, Status, Applications, Rules, Log, Network, Profiling, Settings, RSS gates) | - |
+| GPUI app under `ui/` | Shipped (`interfire-ui`: tray, alert, Status, Applications, Rules, Log, Network, Profiling, Settings, Traffic, RSS gates) | - |
 
 The interactive ops client is a **ratatui** terminal UI (`crates/interfire-tui`).
 The desktop client is a **GPUI** native Rust app under `ui/` (`interfire-ui`).
@@ -103,13 +103,27 @@ diagnostics. Desktop prompts are alert-first; the TUI retains a Prompts tab.
 
 ### Operator controls (header and tray)
 
-Three orthogonal controls:
+Three orthogonal controls in the header (summary chips only):
 
-| Control | States | Action |
+| Control | Summary states | Action |
 | --- | --- | --- |
 | Daemon | Running / Stopped | Stop/Start via `pkexec systemctl` (polkit) |
 | Rules | Active / Paused | `v1 pause` / `v1 resume` (group `interfire`) |
-| Traffic | Open / Blocked | `v1 traffic-block` / `v1 traffic-unblock` (fail-closed drop except loopback) |
+| Traffic | Open / User… / Machine… | Opens the Traffic panel (detail below) |
+
+**Traffic panel** (GPUI **Traffic** tab; tray **Traffic…**): choose scope (**This user** or **Entire machine**) and direction (**Outbound** / **Inbound** / **All**), then Block or Unblock. Machine actions confirm and run `pkexec interfirectl …`. Stored machine and user preferences persist independently; machine block outranks user without clearing the user preference. Effective filter when both open follows Rules (queue or absent). User inbound only affects sockets owned by that UID. Loopback is never queued or dropped; established/related are accepted; new TCP only.
+
+**CLI:**
+
+```text
+interfirectl traffic status
+interfirectl traffic block  --scope=user|machine --direction=out|in|all
+interfirectl traffic unblock --scope=user|machine
+```
+
+Default CLI scope is `user`. Machine scope requires root (`pkexec interfirectl traffic block --scope=machine …`).
+
+**TUI:** Status shows `traffic_machine` / `traffic_user` / `traffic_effective`. Key `t` opens a Traffic overlay (scope, direction, block/unblock). Shortcuts `b` / `B` / `u` block or unblock **user** scope. Machine changes need the CLI under `pkexec` (TUI does not elevate). Daemon Stop/Start stays on GPUI / `systemctl`.
 
 Pause rules is not the same as Block traffic. Stopping the daemon does not clear
 a Traffic Block. Loopback is never queued and never dropped.

@@ -25,6 +25,7 @@ use crate::rss_probe::{RssProbeMode, prompt_load_fixture};
 use crate::rules::{RuleVerdict, next_rule_id, validate_new_rule};
 use crate::rules_view::{add_rule_overlay, rules_body};
 use crate::section::Section;
+use crate::service;
 use crate::theme::{self, ChromeMode, ChromePreference};
 use crate::tray::{DaemonLink, TrayState};
 #[cfg(target_os = "linux")]
@@ -61,6 +62,8 @@ struct ShellContent<'a> {
     profiling: &'a ProfilingSnapshot,
     chrome_pref: ChromePreference,
     chrome_mode: ChromeMode,
+    traffic_scope_machine: bool,
+    traffic_direction: &'static str,
 }
 
 /// Active add-rule form backed by GPUI input states.
@@ -96,6 +99,10 @@ pub struct App {
     ui_cpu: CpuTracker,
     daemon_cpu: CpuTracker,
     chrome_pref: ChromePreference,
+    /// Traffic panel: `true` = machine scope (needs pkexec).
+    traffic_scope_machine: bool,
+    /// Traffic panel direction: `out` | `in` | `all`.
+    traffic_direction: &'static str,
     /// Pending operator confirmation (header or tray).
     fw_confirm: Option<ConfirmKind>,
     #[cfg(target_os = "linux")]
@@ -134,6 +141,8 @@ impl App {
             ui_cpu: CpuTracker::default(),
             daemon_cpu: CpuTracker::default(),
             chrome_pref: ChromePreference::System,
+            traffic_scope_machine: false,
+            traffic_direction: "out",
             fw_confirm: None,
             #[cfg(target_os = "linux")]
             tray,
@@ -184,7 +193,11 @@ impl App {
 
     fn refresh_from_daemon(&mut self) {
         if let Some(kind) = crate::confirm_queue::take() {
-            self.fw_confirm = Some(kind);
+            if kind == ConfirmKind::OpenTraffic {
+                self.section = Section::Traffic;
+            } else {
+                self.fw_confirm = Some(kind);
+            }
         }
         self.drain_audit_events();
         let snapshot = ipc_poll::poll_snapshot(&self.socket);
@@ -506,7 +519,53 @@ impl App {
         self.request_resume_confirm(cx);
     }
 
-    pub(crate) fn request_traffic_block_click(
+    pub(crate) fn open_traffic_tab(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        self.section = Section::Traffic;
+        cx.notify();
+    }
+
+    pub(crate) fn set_traffic_scope_user(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        self.traffic_scope_machine = false;
+        cx.notify();
+    }
+
+    pub(crate) fn set_traffic_scope_machine(
+        &mut self,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.traffic_scope_machine = true;
+        cx.notify();
+    }
+
+    pub(crate) fn set_traffic_direction_out(
+        &mut self,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.traffic_direction = "out";
+        cx.notify();
+    }
+
+    pub(crate) fn set_traffic_direction_in(
+        &mut self,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.traffic_direction = "in";
+        cx.notify();
+    }
+
+    pub(crate) fn set_traffic_direction_all(
+        &mut self,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.traffic_direction = "all";
+        cx.notify();
+    }
+
+    pub(crate) fn request_panel_traffic_block(
         &mut self,
         _window: &mut Window,
         cx: &mut Context<Self>,
@@ -515,7 +574,7 @@ impl App {
         cx.notify();
     }
 
-    pub(crate) fn request_traffic_unblock_click(
+    pub(crate) fn request_panel_traffic_unblock(
         &mut self,
         _window: &mut Window,
         cx: &mut Context<Self>,
@@ -556,7 +615,7 @@ impl App {
             Some(ConfirmKind::TrafficUnblock) => self.unblock_traffic(window, cx),
             Some(ConfirmKind::DaemonStop) => self.stop_daemon(window, cx),
             Some(ConfirmKind::DaemonStart) => self.start_daemon(window, cx),
-            None => cx.notify(),
+            Some(ConfirmKind::OpenTraffic) | None => cx.notify(),
         }
     }
 
@@ -588,9 +647,22 @@ impl App {
     }
 
     pub(crate) fn block_traffic(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
-        match ipc_poll::traffic_block(&self.socket) {
+        let direction = self.traffic_direction;
+        let result = if self.traffic_scope_machine {
+            service::traffic_block_machine(&self.socket, direction)
+        } else {
+            ipc_poll::traffic_block(&self.socket, "user", direction)
+        };
+        match result {
             Ok(()) => {
-                self.network_message = Some("traffic blocked (loopback still allowed)".into());
+                self.network_message = Some(format!(
+                    "traffic blocked ({})",
+                    if self.traffic_scope_machine {
+                        "machine"
+                    } else {
+                        "user"
+                    }
+                ));
                 self.refresh_from_daemon();
             }
             Err(message) => {
@@ -601,7 +673,12 @@ impl App {
     }
 
     pub(crate) fn unblock_traffic(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
-        match ipc_poll::traffic_unblock(&self.socket) {
+        let result = if self.traffic_scope_machine {
+            service::traffic_unblock_machine(&self.socket)
+        } else {
+            ipc_poll::traffic_unblock(&self.socket, "user")
+        };
+        match result {
             Ok(()) => {
                 self.network_message = Some("traffic unblocked".into());
                 self.refresh_from_daemon();
@@ -689,6 +766,8 @@ impl Render for App {
                     profiling: &profiling,
                     chrome_pref,
                     chrome_mode,
+                    traffic_scope_machine: self.traffic_scope_machine,
+                    traffic_direction: self.traffic_direction,
                 },
                 cx,
             ));
@@ -720,12 +799,12 @@ fn fw_confirm_overlay(kind: ConfirmKind, cx: &Context<App>) -> impl IntoElement 
         ),
         ConfirmKind::TrafficBlock => (
             "Block traffic?",
-            "Blocks new outbound TCP except localhost. Existing connections may continue. Loopback stays allowed.",
+            "Blocks new TCP for the selected scope and direction except localhost. Existing connections may continue. Machine scope asks for polkit.",
             "Block",
         ),
         ConfirmKind::TrafficUnblock => (
             "Unblock traffic?",
-            "Removes the fail-closed drop table and restores the Rules mode (paused or queue).",
+            "Clears the selected scope kill-switch. Machine overrides user without clearing stored user state.",
             "Unblock",
         ),
         ConfirmKind::DaemonStop => (
@@ -738,6 +817,7 @@ fn fw_confirm_overlay(kind: ConfirmKind, cx: &Context<App>) -> impl IntoElement 
             "Starts interfired via polkit so the UI can reconnect to the socket.",
             "Start",
         ),
+        ConfirmKind::OpenTraffic => ("", "", ""),
     };
     div()
         .id("fw-confirm-overlay")
@@ -915,11 +995,9 @@ fn content_column(content: &ShellContent<'_>, cx: &Context<App>) -> impl IntoEle
 
 fn content_header(content: &ShellContent<'_>, cx: &Context<App>) -> impl IntoElement {
     let daemon_up = !matches!(content.tray_state, TrayState::Unavailable);
-    let (rules_paused, traffic_blocked) = match content.link {
-        DaemonLink::Up { status, .. } => {
-            (status.enforcement == "paused", status.traffic == "blocked")
-        }
-        DaemonLink::Down { .. } => (true, false),
+    let rules_paused = match content.link {
+        DaemonLink::Up { status, .. } => status.enforcement == "paused",
+        DaemonLink::Down { .. } => true,
     };
     let daemon_label = if daemon_up {
         "Daemon: Running"
@@ -933,13 +1011,26 @@ fn content_header(content: &ShellContent<'_>, cx: &Context<App>) -> impl IntoEle
     } else {
         "Rules: Active"
     };
-    let traffic_label = if !daemon_up {
-        "Traffic: —"
-    } else if traffic_blocked {
-        "Traffic: Blocked"
+    let traffic_label = if daemon_up {
+        match content.link {
+            DaemonLink::Up { status, .. } => {
+                if status.traffic_machine != "open" {
+                    "Traffic: Machine"
+                } else if status.traffic_user != "open" {
+                    "Traffic: User"
+                } else {
+                    "Traffic: Open"
+                }
+            }
+            DaemonLink::Down { .. } => "Traffic: —",
+        }
     } else {
-        "Traffic: Open"
+        "Traffic: —"
     };
+    let traffic_accent = matches!(
+        content.link,
+        DaemonLink::Up { status, .. } if status.traffic == "blocked"
+    );
     div()
         .id("content-header")
         .flex()
@@ -987,15 +1078,11 @@ fn content_header(content: &ShellContent<'_>, cx: &Context<App>) -> impl IntoEle
                 .child(control_chip(
                     "traffic-btn",
                     traffic_label,
-                    if traffic_blocked { "Unblock" } else { "Block" },
+                    "Open",
                     daemon_up,
-                    traffic_blocked,
+                    traffic_accent,
                     cx,
-                    if traffic_blocked {
-                        App::request_traffic_unblock_click
-                    } else {
-                        App::request_traffic_block_click
-                    },
+                    App::open_traffic_tab,
                 ))
                 .child(tray_chip(content.tray_state, cx)),
         )
@@ -1092,6 +1179,7 @@ fn section_body(content: &ShellContent<'_>, cx: &Context<App>) -> Div {
         Section::Network => {
             network_body(content.link, content.network, content.network_message, cx)
         }
+        Section::Traffic => traffic_body(content, cx),
         Section::Profiling => profiling_body(content.profiling, muted),
         Section::Settings => settings_body(
             content.socket,
@@ -1102,6 +1190,118 @@ fn section_body(content: &ShellContent<'_>, cx: &Context<App>) -> Div {
             cx,
         ),
     }
+}
+
+fn traffic_body(content: &ShellContent<'_>, cx: &Context<App>) -> Div {
+    let muted = cx.theme().muted_foreground;
+    let (machine, user, effective) = match content.link {
+        DaemonLink::Up { status, .. } => (
+            status.traffic_machine.as_str(),
+            status.traffic_user.as_str(),
+            status.traffic_effective.as_str(),
+        ),
+        DaemonLink::Down { .. } => ("—", "—", "—"),
+    };
+    let scope_machine = content.traffic_scope_machine;
+    let direction = content.traffic_direction;
+    div()
+        .v_flex()
+        .gap_3()
+        .child(
+            div()
+                .text_sm()
+                .text_color(muted)
+                .child(format!(
+                    "machine={machine}  user={user}  effective={effective}"
+                )),
+        )
+        .child(
+            div()
+                .text_sm()
+                .text_color(muted)
+                .child(
+                    "Machine overrides user without clearing it. Loopback is never blocked. User inbound is uid-scoped.",
+                ),
+        )
+        .child(
+            div()
+                .flex()
+                .gap_2()
+                .child(traffic_toggle(
+                    "scope-user",
+                    "This user",
+                    !scope_machine,
+                    cx,
+                    App::set_traffic_scope_user,
+                ))
+                .child(traffic_toggle(
+                    "scope-machine",
+                    "Entire machine",
+                    scope_machine,
+                    cx,
+                    App::set_traffic_scope_machine,
+                )),
+        )
+        .child(
+            div()
+                .flex()
+                .gap_2()
+                .child(traffic_toggle(
+                    "dir-out",
+                    "Outbound",
+                    direction == "out",
+                    cx,
+                    App::set_traffic_direction_out,
+                ))
+                .child(traffic_toggle(
+                    "dir-in",
+                    "Inbound",
+                    direction == "in",
+                    cx,
+                    App::set_traffic_direction_in,
+                ))
+                .child(traffic_toggle(
+                    "dir-all",
+                    "All",
+                    direction == "all",
+                    cx,
+                    App::set_traffic_direction_all,
+                )),
+        )
+        .child(
+            div()
+                .flex()
+                .gap_2()
+                .child(crate::rules_view::action_chip(
+                    "traffic-block",
+                    "Block",
+                    true,
+                    true,
+                    cx,
+                    App::request_panel_traffic_block,
+                ))
+                .child(crate::rules_view::action_chip(
+                    "traffic-unblock",
+                    "Unblock",
+                    true,
+                    false,
+                    cx,
+                    App::request_panel_traffic_unblock,
+                )),
+        )
+        .when_some(content.network_message, |this, message| {
+            this.child(div().text_sm().text_color(muted).child(message.to_owned()))
+        })
+}
+
+fn traffic_toggle(
+    id: &'static str,
+    label: &'static str,
+    selected: bool,
+    cx: &Context<App>,
+    handler: fn(&mut App, &mut Window, &mut Context<App>),
+) -> impl IntoElement {
+    crate::rules_view::action_chip(id, label, true, selected, cx, handler)
 }
 
 fn settings_body(

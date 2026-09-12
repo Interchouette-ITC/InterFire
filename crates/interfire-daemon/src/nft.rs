@@ -402,17 +402,91 @@ fn owned_table_script() -> String {
     )
 }
 
-fn blocked_table_script() -> String {
-    format!(
-        "table inet {NFT_TABLE} {{\n\
-  chain {NFT_CHAIN} {{\n\
+/// Inputs for composing the InterFire-owned nftables table.
+pub struct TrafficCompose<'a> {
+    pub machine: crate::traffic_mode::TrafficPreference,
+    pub users: &'a [(u32, crate::traffic_mode::TrafficPreference)],
+    pub rules_active: bool,
+    pub queue_bound: bool,
+}
+
+/// Build the owned table script for the current Traffic + Rules combination.
+#[must_use]
+pub fn compose_traffic_script(compose: &TrafficCompose<'_>) -> String {
+    use std::fmt::Write as _;
+
+    let machine = compose.machine;
+    let mut output_rules = String::from(
+        "    oifname \"lo\" accept\n\
+    ct state established,related accept\n",
+    );
+    let mut input_rules = String::from(
+        "    iifname \"lo\" accept\n\
+    ct state established,related accept\n",
+    );
+    let mut need_output = false;
+    let mut need_input = false;
+
+    if machine.wants_out() {
+        need_output = true;
+        output_rules.push_str("    meta l4proto tcp ct state new drop\n");
+    } else {
+        for (uid, preference) in compose.users {
+            if preference.wants_out() {
+                need_output = true;
+                let _ = writeln!(
+                    output_rules,
+                    "    meta skuid {uid} meta l4proto tcp ct state new drop"
+                );
+            }
+        }
+        if compose.rules_active && compose.queue_bound {
+            need_output = true;
+            let _ = writeln!(
+                output_rules,
+                "    meta l4proto tcp ct state new queue num {NFQUEUE_NUM}"
+            );
+        }
+    }
+
+    if machine.wants_in() {
+        need_input = true;
+        input_rules.push_str("    meta l4proto tcp ct state new drop\n");
+    } else {
+        for (uid, preference) in compose.users {
+            if preference.wants_in() {
+                need_input = true;
+                let _ = writeln!(
+                    input_rules,
+                    "    meta skuid {uid} meta l4proto tcp ct state new drop"
+                );
+            }
+        }
+    }
+
+    if !need_output && !need_input {
+        return String::new();
+    }
+
+    let mut body = format!("table inet {NFT_TABLE} {{\n");
+    if need_output {
+        let _ = write!(
+            body,
+            "  chain {NFT_CHAIN} {{\n\
     type filter hook output priority filter; policy accept;\n\
-    oifname \"lo\" accept\n\
-    ct state established,related accept\n\
-    meta l4proto tcp ct state new drop\n\
-  }}\n\
-}}\n"
-    )
+{output_rules}  }}\n"
+        );
+    }
+    if need_input {
+        let _ = write!(
+            body,
+            "  chain input {{\n\
+    type filter hook input priority filter; policy accept;\n\
+{input_rules}  }}\n"
+        );
+    }
+    body.push_str("}\n");
+    body
 }
 
 /// Install or replace the fail-closed Traffic Block table (no NFQUEUE).
@@ -421,9 +495,27 @@ fn blocked_table_script() -> String {
 ///
 /// Returns I/O errors when `nft` is missing or rejects the fixed table script.
 pub fn install_block() -> io::Result<()> {
+    install_composed(&TrafficCompose {
+        machine: crate::traffic_mode::TrafficPreference::Out,
+        users: &[],
+        rules_active: false,
+        queue_bound: false,
+    })
+}
+
+/// Install a composed Traffic + Rules table from stdin to `nft -f -`.
+///
+/// # Errors
+///
+/// Returns I/O errors when `nft` is missing or rejects the script.
+pub fn install_composed(compose: &TrafficCompose<'_>) -> io::Result<()> {
+    let script = compose_traffic_script(compose);
+    if script.is_empty() {
+        return remove();
+    }
     #[cfg(test)]
     if FORCE_NFT_OK.load(Ordering::Relaxed) || FORCE_NFT_INSTALL_SUCCESS.load(Ordering::Relaxed) {
-        info!(table = NFT_TABLE, "InterFire traffic-block table installed");
+        info!(table = NFT_TABLE, "InterFire traffic table installed");
         return Ok(());
     }
     #[cfg(test)]
@@ -440,6 +532,7 @@ pub fn install_block() -> io::Result<()> {
     }
     #[cfg(test)]
     {
+        let _ = script;
         Err(io::Error::other(
             "live nft install is unavailable under unit tests",
         ))
@@ -447,7 +540,6 @@ pub fn install_block() -> io::Result<()> {
     #[cfg(not(test))]
     {
         let _ = remove();
-        let script = blocked_table_script();
         let mut child = Command::new("nft")
             .arg("-f")
             .arg("-")
@@ -468,45 +560,66 @@ pub fn install_block() -> io::Result<()> {
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             return Err(io::Error::other(format!(
-                "nft block install failed: {}",
+                "nft traffic install failed: {}",
                 stderr.trim()
             )));
         }
-        info!(table = NFT_TABLE, "InterFire traffic-block table installed");
+        info!(table = NFT_TABLE, "InterFire traffic table installed");
         Ok(())
     }
 }
 
 /// Apply Traffic + Rules modes to the owned table.
 pub fn apply_modes(
-    traffic: crate::traffic_mode::TrafficMode,
+    machine: crate::traffic_mode::TrafficPreference,
+    users: &[(u32, crate::traffic_mode::TrafficPreference)],
     rules: crate::enforcement_mode::EnforcementMode,
+    queue_bound: bool,
 ) {
     use crate::enforcement_mode::EnforcementMode;
-    use crate::traffic_mode::TrafficMode;
     use tracing::warn;
 
-    match traffic {
-        TrafficMode::Blocked => {
-            if let Err(error) = install_block() {
-                warn!(%error, "traffic blocked: drop table install failed");
-            } else {
-                info!("traffic blocked; fail-closed drop table installed");
-            }
+    let rules_active = rules == EnforcementMode::Active;
+    let machine_blocks = machine.is_blocked();
+    let users_block = users.iter().any(|(_, preference)| preference.is_blocked());
+
+    if !machine_blocks && !users_block && !rules_active {
+        if let Err(error) = remove() {
+            warn!(%error, "open traffic: owned table remove skipped");
+        } else {
+            info!("traffic open and rules paused; owned nft table absent");
         }
-        TrafficMode::Open => match rules {
-            EnforcementMode::Paused => {
-                if let Err(error) = remove() {
-                    warn!(%error, "paused: owned table remove skipped");
-                } else {
-                    info!("rules paused; owned nft table absent");
-                }
-            }
-            EnforcementMode::Active => match install() {
+        return;
+    }
+
+    if !machine_blocks && !users_block && rules_active {
+        if queue_bound {
+            match install() {
                 Ok(()) => info!("rules active; owned queue table installed"),
                 Err(error) => warn!(%error, "active: owned table install failed"),
-            },
-        },
+            }
+        } else if let Err(error) = remove() {
+            warn!(%error, "active without bind: owned table remove skipped");
+        }
+        return;
+    }
+
+    let compose = TrafficCompose {
+        machine,
+        users,
+        rules_active: rules_active && !machine.wants_out(),
+        queue_bound,
+    };
+    if machine == crate::traffic_mode::TrafficPreference::Out && users.is_empty() {
+        match install_block() {
+            Ok(()) => info!("traffic policy table installed"),
+            Err(error) => warn!(%error, "traffic policy install failed"),
+        }
+        return;
+    }
+    match install_composed(&compose) {
+        Ok(()) => info!("traffic policy table installed"),
+        Err(error) => warn!(%error, "traffic policy install failed"),
     }
 }
 
@@ -678,7 +791,12 @@ table inet interfire {
         assert!(script.contains("meta l4proto tcp ct state new"));
         assert!(!script.contains("firewalld"));
         assert!(!script.contains("ufw"));
-        let block = blocked_table_script();
+        let block = compose_traffic_script(&TrafficCompose {
+            machine: crate::traffic_mode::TrafficPreference::Out,
+            users: &[],
+            rules_active: false,
+            queue_bound: false,
+        });
         assert!(block.contains("oifname \"lo\" accept"));
         assert!(block.contains("drop"));
         assert!(!block.contains("queue"));
@@ -698,10 +816,36 @@ table inet interfire {
     fn blocked_script_matches_packaged_nft_file() {
         let packaged = include_str!("../../../packaging/nft/interfire-block.nft");
         assert_eq!(
-            normalize_nft_tokens(&blocked_table_script()),
+            normalize_nft_tokens(&compose_traffic_script(&TrafficCompose {
+                machine: crate::traffic_mode::TrafficPreference::Out,
+                users: &[],
+                rules_active: false,
+                queue_bound: false,
+            })),
             normalize_nft_tokens(packaged),
-            "daemon blocked_table_script() must stay in sync with packaging/nft/interfire-block.nft"
+            "machine-out compose must stay in sync with packaging/nft/interfire-block.nft"
         );
+    }
+
+    #[test]
+    fn compose_user_and_machine_all_scripts() {
+        let user = compose_traffic_script(&TrafficCompose {
+            machine: crate::traffic_mode::TrafficPreference::Open,
+            users: &[(1000, crate::traffic_mode::TrafficPreference::All)],
+            rules_active: false,
+            queue_bound: false,
+        });
+        assert!(user.contains("meta skuid 1000"));
+        assert!(user.contains("chain input"));
+        let machine_all = compose_traffic_script(&TrafficCompose {
+            machine: crate::traffic_mode::TrafficPreference::All,
+            users: &[(1000, crate::traffic_mode::TrafficPreference::Out)],
+            rules_active: true,
+            queue_bound: true,
+        });
+        assert!(machine_all.contains("drop"));
+        assert!(!machine_all.contains("queue"));
+        assert!(!machine_all.contains("skuid"));
     }
 
     #[test]
@@ -860,8 +1004,10 @@ table inet interfire {
     fn apply_modes_blocked_logs_install_failure() {
         let _reject = ForceNftInstallReject::arm();
         apply_modes(
-            crate::traffic_mode::TrafficMode::Blocked,
+            crate::traffic_mode::TrafficPreference::Out,
+            &[],
             crate::enforcement_mode::EnforcementMode::Paused,
+            false,
         );
     }
 

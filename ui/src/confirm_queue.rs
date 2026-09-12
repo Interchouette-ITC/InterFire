@@ -10,6 +10,8 @@ pub enum ConfirmKind {
     RulesResume,
     TrafficBlock,
     TrafficUnblock,
+    /// Focus the Traffic panel (no confirm dialog).
+    OpenTraffic,
     DaemonStop,
     DaemonStart,
 }

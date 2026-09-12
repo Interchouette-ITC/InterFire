@@ -150,12 +150,8 @@ fn spawn_tray_action_loop(
                             confirm_queue::push(confirm_queue::ConfirmKind::RulesResume);
                             need_show = true;
                         }
-                        TrayAction::TrafficBlock => {
-                            confirm_queue::push(confirm_queue::ConfirmKind::TrafficBlock);
-                            need_show = true;
-                        }
-                        TrayAction::TrafficUnblock => {
-                            confirm_queue::push(confirm_queue::ConfirmKind::TrafficUnblock);
+                        TrayAction::OpenTraffic => {
+                            confirm_queue::push(confirm_queue::ConfirmKind::OpenTraffic);
                             need_show = true;
                         }
                         TrayAction::DaemonStop => {

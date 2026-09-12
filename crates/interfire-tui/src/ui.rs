@@ -7,7 +7,9 @@ use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap};
 
-use crate::app::{AddField, AddRuleForm, AnswerPromptForm, AnswerVerdict, App, Overlay, Pane, Tab};
+use crate::app::{
+    AddField, AddRuleForm, AnswerPromptForm, AnswerVerdict, App, Overlay, Pane, Tab, TrafficForm,
+};
 use crate::palette;
 
 pub fn draw(frame: &mut Frame<'_>, app: &App) {
@@ -28,6 +30,7 @@ pub fn draw(frame: &mut Frame<'_>, app: &App) {
         Overlay::Notice(message) => draw_notice(frame, message),
         Overlay::AddRule(form) => draw_add_rule(frame, form),
         Overlay::AnswerPrompt(form) => draw_answer_prompt(frame, form),
+        Overlay::Traffic(form) => draw_traffic(frame, *form),
     }
 }
 
@@ -251,6 +254,49 @@ fn draw_answer_prompt(frame: &mut Frame<'_>, form: &AnswerPromptForm) {
     );
 }
 
+fn draw_traffic(frame: &mut Frame<'_>, form: TrafficForm) {
+    let area = centered_rect(70, 50, frame.area());
+    frame.render_widget(Clear, area);
+    let lines = vec![
+        Line::from(Span::styled(
+            format!(
+                "scope:     {}  (Tab toggles user|machine)",
+                form.scope.as_str()
+            ),
+            palette::body(),
+        )),
+        Line::from(Span::styled(
+            format!(
+                "direction: {}  (Left/Right cycles out|in|all)",
+                form.direction.as_str()
+            ),
+            palette::body(),
+        )),
+        Line::from(Span::styled(
+            format!(
+                "action:    {}  (b block · u unblock · a toggle)",
+                form.action.as_str()
+            ),
+            palette::body(),
+        )),
+        Line::from(""),
+        Line::from(Span::styled(
+            "Machine scope: use pkexec CLI (TUI does not elevate)",
+            palette::muted(),
+        )),
+        Line::from(Span::styled("Enter submit · Esc cancel", palette::muted())),
+    ];
+    frame.render_widget(
+        Paragraph::new(lines).style(palette::overlay_panel()).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(palette::border())
+                .title(Span::styled("traffic", palette::accent_label())),
+        ),
+        area,
+    );
+}
+
 fn field_line(form: &AddRuleForm, field: AddField, value: &str) -> Line<'static> {
     let marker = if form.focus == field { ">" } else { " " };
     let style = if form.focus == field {
@@ -288,7 +334,7 @@ mod tests {
     use super::draw;
     use crate::app::{
         AddField, AddRuleForm, AnswerPromptForm, AnswerScope, AnswerVerdict, App, Overlay, Pane,
-        Tab,
+        Tab, TrafficActionChoice, TrafficDirectionChoice, TrafficForm, TrafficScopeChoice,
     };
     use crate::palette::{self, Mode};
 
@@ -305,6 +351,9 @@ mod tests {
             enforcement: "nfqueue".into(),
             observation: "attached".into(),
             traffic: "open".into(),
+            traffic_machine: "open".into(),
+            traffic_user: "open".into(),
+            traffic_effective: "open".into(),
             ipc_version: 1,
             pid: Some(42),
             rss_kib: Some(6400),
@@ -386,6 +435,13 @@ mod tests {
         });
         draw_app(&app);
 
+        app.overlay = Overlay::Traffic(TrafficForm {
+            scope: TrafficScopeChoice::User,
+            direction: TrafficDirectionChoice::In,
+            action: TrafficActionChoice::Unblock,
+        });
+        draw_app(&app);
+
         for (remaining, verdict) in [
             (3_u64, AnswerVerdict::Allow),
             (10, AnswerVerdict::Deny),
@@ -418,6 +474,9 @@ mod tests {
             enforcement: "none".into(),
             observation: "degraded".into(),
             traffic: "open".into(),
+            traffic_machine: "open".into(),
+            traffic_user: "open".into(),
+            traffic_effective: "open".into(),
             ipc_version: 1,
             pid: None,
             rss_kib: None,

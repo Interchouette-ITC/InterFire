@@ -1,0 +1,15 @@
+# InterFire traffic Block: machine inbound+outbound (fail-closed, no NFQUEUE).
+table inet interfire {
+  chain output {
+    type filter hook output priority filter; policy accept;
+    oifname "lo" accept
+    ct state established,related accept
+    meta l4proto tcp ct state new drop
+  }
+  chain input {
+    type filter hook input priority filter; policy accept;
+    iifname "lo" accept
+    ct state established,related accept
+    meta l4proto tcp ct state new drop
+  }
+}
