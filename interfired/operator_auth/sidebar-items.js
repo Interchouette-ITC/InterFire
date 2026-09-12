@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["OPERATOR_GROUP"],"enum":["GroupLookup"],"fn":["prepare_operator_socket","prepare_operator_socket_with","resolve_group","uid_in_named_group","uid_may_mutate","user_in_gid"]};

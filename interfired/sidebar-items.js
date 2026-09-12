@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"fn":["init_tracing","main","start_observation"],"mod":["audit","dns","ipc","nfqueue","nfqueue_live","nft","observe","observe_live","packet","pending","policy","proc_metrics","process","prompts","recent","shared"],"struct":["Options"]};
+window.SIDEBAR_ITEMS = {"fn":["init_tracing","main","start_observation"],"mod":["audit","dns","ipc","nfqueue","nfqueue_live","nft","observe","observe_live","operator_auth","packet","pending","policy","proc_metrics","process","prompts","recent","shared"],"struct":["Options"]};
