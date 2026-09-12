@@ -258,12 +258,128 @@ impl AnswerPromptForm {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TrafficScopeChoice {
+    User,
+    Machine,
+}
+
+impl TrafficScopeChoice {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::User => "user",
+            Self::Machine => "machine",
+        }
+    }
+
+    const fn toggle(self) -> Self {
+        match self {
+            Self::User => Self::Machine,
+            Self::Machine => Self::User,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TrafficDirectionChoice {
+    Out,
+    In,
+    All,
+}
+
+impl TrafficDirectionChoice {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Out => "out",
+            Self::In => "in",
+            Self::All => "all",
+        }
+    }
+
+    const fn next(self) -> Self {
+        match self {
+            Self::Out => Self::In,
+            Self::In => Self::All,
+            Self::All => Self::Out,
+        }
+    }
+
+    const fn prev(self) -> Self {
+        match self {
+            Self::Out => Self::All,
+            Self::In => Self::Out,
+            Self::All => Self::In,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TrafficActionChoice {
+    Block,
+    Unblock,
+}
+
+impl TrafficActionChoice {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Block => "block",
+            Self::Unblock => "unblock",
+        }
+    }
+
+    const fn toggle(self) -> Self {
+        match self {
+            Self::Block => Self::Unblock,
+            Self::Unblock => Self::Block,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct TrafficForm {
+    pub scope: TrafficScopeChoice,
+    pub direction: TrafficDirectionChoice,
+    pub action: TrafficActionChoice,
+}
+
+impl TrafficForm {
+    const fn new() -> Self {
+        Self {
+            scope: TrafficScopeChoice::User,
+            direction: TrafficDirectionChoice::Out,
+            action: TrafficActionChoice::Block,
+        }
+    }
+
+    fn to_command(self) -> Result<IpcCommand, String> {
+        if self.scope == TrafficScopeChoice::Machine {
+            return Err(
+                "machine traffic needs: pkexec interfirectl traffic block|unblock --scope=machine …"
+                    .into(),
+            );
+        }
+        match self.action {
+            TrafficActionChoice::Block => Ok(IpcCommand::TrafficBlock {
+                scope: self.scope.as_str().into(),
+                direction: self.direction.as_str().into(),
+            }),
+            TrafficActionChoice::Unblock => Ok(IpcCommand::TrafficUnblock {
+                scope: self.scope.as_str().into(),
+            }),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Overlay {
     None,
     Notice(String),
     AddRule(AddRuleForm),
     AnswerPrompt(AnswerPromptForm),
+    Traffic(TrafficForm),
 }
 
 #[derive(Clone, Debug)]
@@ -381,6 +497,54 @@ impl App {
             }
             Overlay::AddRule(_) => self.handle_add_overlay_key(code),
             Overlay::AnswerPrompt(_) => self.handle_answer_overlay_key(code),
+            Overlay::Traffic(_) => self.handle_traffic_overlay_key(code),
+        }
+    }
+
+    fn handle_traffic_overlay_key(&mut self, code: KeyCode) -> KeyAction {
+        let Overlay::Traffic(form) = &mut self.overlay else {
+            return KeyAction::None;
+        };
+        match code {
+            KeyCode::Esc => {
+                self.overlay = Overlay::None;
+                KeyAction::None
+            }
+            KeyCode::Enter => match form.to_command() {
+                Ok(command) => {
+                    self.overlay = Overlay::None;
+                    KeyAction::Command(command)
+                }
+                Err(message) => {
+                    self.overlay = Overlay::Notice(message);
+                    KeyAction::None
+                }
+            },
+            KeyCode::Tab => {
+                form.scope = form.scope.toggle();
+                KeyAction::None
+            }
+            KeyCode::Left => {
+                form.direction = form.direction.prev();
+                KeyAction::None
+            }
+            KeyCode::Right | KeyCode::Char('d' | 'D') => {
+                form.direction = form.direction.next();
+                KeyAction::None
+            }
+            KeyCode::Char('b' | 'B') => {
+                form.action = TrafficActionChoice::Block;
+                KeyAction::None
+            }
+            KeyCode::Char('u' | 'U') => {
+                form.action = TrafficActionChoice::Unblock;
+                KeyAction::None
+            }
+            KeyCode::Char('a' | 'A') => {
+                form.action = form.action.toggle();
+                KeyAction::None
+            }
+            _ => KeyAction::None,
         }
     }
 
@@ -534,6 +698,27 @@ impl App {
             }
             KeyCode::Char('r') if self.tab == Tab::Prompts => {
                 KeyAction::Command(IpcCommand::RefreshPrompts)
+            }
+            KeyCode::Char('t') if self.tab == Tab::Status => {
+                self.overlay = Overlay::Traffic(TrafficForm::new());
+                KeyAction::None
+            }
+            KeyCode::Char('b') if self.tab == Tab::Status => {
+                KeyAction::Command(IpcCommand::TrafficBlock {
+                    scope: "user".into(),
+                    direction: "out".into(),
+                })
+            }
+            KeyCode::Char('B') if self.tab == Tab::Status => {
+                KeyAction::Command(IpcCommand::TrafficBlock {
+                    scope: "user".into(),
+                    direction: "all".into(),
+                })
+            }
+            KeyCode::Char('u') if self.tab == Tab::Status => {
+                KeyAction::Command(IpcCommand::TrafficUnblock {
+                    scope: "user".into(),
+                })
             }
             _ => KeyAction::None,
         }
@@ -794,12 +979,20 @@ impl App {
                     "enforcement={}  observation={}  ipc_version={}",
                     status.enforcement, status.observation, status.ipc_version
                 ),
+                format!(
+                    "traffic={}  machine={}  user={}  effective={}",
+                    status.traffic,
+                    status.traffic_machine,
+                    status.traffic_user,
+                    status.traffic_effective
+                ),
                 format!("socket={}", self.socket),
                 if self.subscribed {
                     "audit subscribe: ready (id=interfire-tui)".into()
                 } else {
                     "audit subscribe: connecting…".into()
                 },
+                "Traffic: t overlay · b/B/u shortcuts · machine via pkexec CLI".into(),
             ],
         }
     }
@@ -815,6 +1008,9 @@ pub fn help_lines() -> Vec<String> {
         "Apps: observed firewall identities (path, pid+start ticks, ports)".into(),
         "Rules: a add · d delete · r refresh".into(),
         "Prompts: a/Enter answer · r refresh".into(),
+        "Traffic (Status): t overlay · b user out · B user all · u user unblock".into(),
+        "Traffic overlay: Tab scope · Left/Right direction · b/u action · Enter".into(),
+        "Machine traffic: pkexec interfirectl … (TUI does not elevate)".into(),
         "Answer overlay: a/d verdict · Tab scope · Enter submit · Esc cancel".into(),
         "Add overlay: Tab fields · Enter submit · Esc cancel".into(),
         "Overlay: ? opens · Esc dismisses (Esc never quits root)".into(),
@@ -830,6 +1026,9 @@ pub fn footer_hints(app: &App) -> String {
     if let Overlay::AnswerPrompt(_) = &app.overlay {
         return "a/d verdict  Tab scope  Enter submit  Esc cancel".into();
     }
+    if let Overlay::Traffic(_) = &app.overlay {
+        return "Tab scope  Left/Right direction  b/u action  Enter  Esc".into();
+    }
     if let Overlay::Notice(_) = &app.overlay {
         return "Esc dismiss overlay".into();
     }
@@ -841,6 +1040,9 @@ pub fn footer_hints(app: &App) -> String {
     if app.tab.has_split() {
         parts.insert(1, "h/l panes".into());
         parts.insert(2, "j/k list".into());
+    }
+    if app.tab == Tab::Status {
+        parts.insert(1, "t traffic".into());
     }
     if app.tab == Tab::Rules {
         parts.insert(1, "a/d/r rules".into());
@@ -885,6 +1087,100 @@ mod tests {
         assert_eq!(app.pane, Pane::List);
         app.handle_key(KeyCode::Right);
         assert_eq!(app.tab, Tab::Rules);
+    }
+
+    #[test]
+    fn status_t_opens_traffic_overlay_and_enter_blocks_user() {
+        let mut app = App::new("/tmp/x.sock".into());
+        assert_eq!(app.tab, Tab::Status);
+        assert_eq!(app.handle_key(KeyCode::Char('t')), KeyAction::None);
+        assert!(matches!(app.overlay, Overlay::Traffic(_)));
+        assert_eq!(
+            app.handle_key(KeyCode::Enter),
+            KeyAction::Command(IpcCommand::TrafficBlock {
+                scope: "user".into(),
+                direction: "out".into(),
+            })
+        );
+        assert_eq!(app.overlay, Overlay::None);
+    }
+
+    #[test]
+    fn traffic_overlay_machine_scope_shows_notice() {
+        let mut app = App::new("/tmp/x.sock".into());
+        app.handle_key(KeyCode::Char('t'));
+        assert_eq!(app.handle_key(KeyCode::Tab), KeyAction::None);
+        assert_eq!(app.handle_key(KeyCode::Enter), KeyAction::None);
+        assert!(matches!(app.overlay, Overlay::Notice(_)));
+    }
+
+    #[test]
+    fn traffic_overlay_covers_direction_action_and_shortcuts() {
+        let mut app = App::new("/tmp/x.sock".into());
+        assert_eq!(app.handle_key(KeyCode::Char('t')), KeyAction::None);
+        assert_eq!(app.handle_key(KeyCode::Right), KeyAction::None);
+        assert_eq!(app.handle_key(KeyCode::Char('d')), KeyAction::None);
+        assert_eq!(app.handle_key(KeyCode::Left), KeyAction::None);
+        assert_eq!(app.handle_key(KeyCode::Char('u')), KeyAction::None);
+        assert_eq!(app.handle_key(KeyCode::Char('a')), KeyAction::None);
+        assert_eq!(app.handle_key(KeyCode::Char('b')), KeyAction::None);
+        assert_eq!(
+            app.handle_key(KeyCode::Enter),
+            KeyAction::Command(IpcCommand::TrafficBlock {
+                scope: "user".into(),
+                direction: "in".into(),
+            })
+        );
+        assert_eq!(
+            app.handle_key(KeyCode::Char('B')),
+            KeyAction::Command(IpcCommand::TrafficBlock {
+                scope: "user".into(),
+                direction: "all".into(),
+            })
+        );
+        assert_eq!(
+            app.handle_key(KeyCode::Char('b')),
+            KeyAction::Command(IpcCommand::TrafficBlock {
+                scope: "user".into(),
+                direction: "out".into(),
+            })
+        );
+        assert_eq!(
+            app.handle_key(KeyCode::Char('u')),
+            KeyAction::Command(IpcCommand::TrafficUnblock {
+                scope: "user".into(),
+            })
+        );
+        app.handle_key(KeyCode::Char('t'));
+        assert_eq!(app.handle_key(KeyCode::Esc), KeyAction::None);
+        assert_eq!(app.overlay, Overlay::None);
+        let help = super::help_lines().join("\n");
+        assert!(help.contains("Traffic"));
+        assert!(help.contains("pkexec"));
+        let footer = super::footer_hints(&app);
+        assert!(footer.contains("t traffic"));
+        app.handle_key(KeyCode::Char('t'));
+        assert!(super::footer_hints(&app).contains("Tab scope"));
+        assert_eq!(app.handle_key(KeyCode::Tab), KeyAction::None);
+        assert_eq!(app.handle_key(KeyCode::Tab), KeyAction::None);
+        assert_eq!(app.handle_key(KeyCode::Char('u')), KeyAction::None);
+        assert_eq!(
+            app.handle_key(KeyCode::Enter),
+            KeyAction::Command(IpcCommand::TrafficUnblock {
+                scope: "user".into(),
+            })
+        );
+        app.handle_key(KeyCode::Char('t'));
+        assert_eq!(app.handle_key(KeyCode::Right), KeyAction::None);
+        assert_eq!(app.handle_key(KeyCode::Right), KeyAction::None);
+        assert_eq!(app.handle_key(KeyCode::Right), KeyAction::None);
+        assert_eq!(
+            app.handle_key(KeyCode::Enter),
+            KeyAction::Command(IpcCommand::TrafficBlock {
+                scope: "user".into(),
+                direction: "out".into(),
+            })
+        );
     }
 
     #[test]
@@ -988,6 +1284,9 @@ mod tests {
             enforcement: "nfqueue".into(),
             observation: "attached".into(),
             traffic: "open".into(),
+            traffic_machine: "open".into(),
+            traffic_user: "open".into(),
+            traffic_effective: "open".into(),
             ipc_version: 1,
             pid: None,
             rss_kib: None,
@@ -999,6 +1298,9 @@ mod tests {
             enforcement: "none".into(),
             observation: "degraded".into(),
             traffic: "open".into(),
+            traffic_machine: "open".into(),
+            traffic_user: "open".into(),
+            traffic_effective: "open".into(),
             ipc_version: 1,
             pid: None,
             rss_kib: None,
@@ -1100,6 +1402,9 @@ mod tests {
             enforcement: "none".into(),
             observation: "degraded".into(),
             traffic: "open".into(),
+            traffic_machine: "open".into(),
+            traffic_user: "open".into(),
+            traffic_effective: "open".into(),
             ipc_version: 1,
             pid: None,
             rss_kib: None,
@@ -1283,6 +1588,9 @@ mod tests {
             enforcement: "nfqueue".into(),
             observation: "attached".into(),
             traffic: "open".into(),
+            traffic_machine: "open".into(),
+            traffic_user: "open".into(),
+            traffic_effective: "open".into(),
             ipc_version: 1,
             pid: Some(9),
             rss_kib: Some(100),
@@ -1473,6 +1781,24 @@ mod tests {
                 .iter()
                 .any(|line| line.contains("waiting"))
         );
+        app.apply(IpcEvent::Status(DaemonStatus {
+            enforcement: "paused".into(),
+            observation: "attached".into(),
+            traffic: "blocked".into(),
+            traffic_machine: "open".into(),
+            traffic_user: "out".into(),
+            traffic_effective: "user:1000:out".into(),
+            ipc_version: 1,
+            pid: Some(1),
+            rss_kib: Some(1),
+            cpu_jiffies: Some(1),
+        }));
+        let detail = app.detail_lines().join("\n");
+        assert!(detail.contains("machine=open"));
+        assert!(detail.contains("user=out"));
+        assert!(detail.contains("effective=user:1000:out"));
+        app.handle_key(KeyCode::Char('t'));
+        assert_eq!(app.handle_key(KeyCode::Char('z')), KeyAction::None);
         app.tab = Tab::Help;
         assert!(app.visible_list(5).items.is_empty());
     }

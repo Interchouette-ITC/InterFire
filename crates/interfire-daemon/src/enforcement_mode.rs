@@ -159,16 +159,22 @@ mod tests {
     fn apply_table_covers_active_and_paused_outcomes() {
         let _ok = crate::nft::ForceNftOk::arm();
         crate::nft::apply_modes(
-            crate::traffic_mode::TrafficMode::Open,
+            crate::traffic_mode::TrafficPreference::Open,
+            &[],
             EnforcementMode::Paused,
+            false,
         );
         crate::nft::apply_modes(
-            crate::traffic_mode::TrafficMode::Open,
+            crate::traffic_mode::TrafficPreference::Open,
+            &[],
             EnforcementMode::Active,
+            true,
         );
         crate::nft::apply_modes(
-            crate::traffic_mode::TrafficMode::Blocked,
+            crate::traffic_mode::TrafficPreference::Out,
+            &[],
             EnforcementMode::Paused,
+            false,
         );
     }
 
@@ -177,14 +183,18 @@ mod tests {
         {
             let _reject = crate::nft::ForceNftRemoveReject::arm();
             crate::nft::apply_modes(
-                crate::traffic_mode::TrafficMode::Open,
+                crate::traffic_mode::TrafficPreference::Open,
+                &[],
                 EnforcementMode::Paused,
+                false,
             );
         }
         let _reject = crate::nft::ForceNftInstallReject::arm();
         crate::nft::apply_modes(
-            crate::traffic_mode::TrafficMode::Open,
+            crate::traffic_mode::TrafficPreference::Open,
+            &[],
             EnforcementMode::Active,
+            true,
         );
     }
 

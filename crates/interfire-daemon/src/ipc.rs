@@ -53,10 +53,14 @@ fn dispatch(request: Request, shared: &Shared, stream: &UnixStream) -> Response 
                     cpu_jiffies: 0,
                 }
             });
+            let uid = peer_uid(stream).unwrap_or(0);
             Response::Status(StatusBody {
                 enforcement: shared.enforcement(),
                 observation: shared.observation(),
                 traffic: shared.traffic(),
+                traffic_machine: shared.machine_preference().as_str().to_owned(),
+                traffic_user: shared.user_preference(uid).as_str().to_owned(),
+                traffic_effective: shared.traffic_effective(uid),
                 ipc_version: IPC_VERSION,
                 pid: metrics.pid,
                 rss_kib: metrics.rss_kib,
@@ -98,8 +102,10 @@ fn dispatch(request: Request, shared: &Shared, stream: &UnixStream) -> Response 
         Request::NetworkRemove => network_mutate(shared, stream, NetworkMutate::Remove),
         Request::Pause => enforcement_mutate(shared, stream, EnforcementMutate::Pause),
         Request::Resume => enforcement_mutate(shared, stream, EnforcementMutate::Resume),
-        Request::TrafficBlock => traffic_mutate(shared, stream, TrafficMutate::Block),
-        Request::TrafficUnblock => traffic_mutate(shared, stream, TrafficMutate::Unblock),
+        Request::TrafficBlock { scope, direction } => {
+            traffic_mutate(shared, stream, &scope, Some(&direction), false)
+        }
+        Request::TrafficUnblock { scope } => traffic_mutate(shared, stream, &scope, None, true),
     }
 }
 
@@ -109,28 +115,60 @@ enum NetworkMutate {
     Remove,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum TrafficMutate {
-    Block,
-    Unblock,
+fn peer_uid(stream: &UnixStream) -> Option<u32> {
+    let Ok(cred) = getsockopt(&stream.as_fd(), PeerCredentials) else {
+        return None;
+    };
+    Some(cred.uid())
 }
 
-fn traffic_mutate(shared: &Shared, stream: &UnixStream, action: TrafficMutate) -> Response {
+fn traffic_mutate(
+    shared: &Shared,
+    stream: &UnixStream,
+    scope_raw: &str,
+    direction_raw: Option<&str>,
+    unblock: bool,
+) -> Response {
     if !peer_may_mutate(stream) {
         warn!("traffic mutate rejected: unauthorized peer");
         return Response::Error("unauthorized");
     }
-    let result = match action {
-        TrafficMutate::Block => shared.traffic_block(),
-        TrafficMutate::Unblock => shared.traffic_unblock(),
+    let Some(uid) = peer_uid(stream) else {
+        return Response::Error("unauthorized");
+    };
+    let scope = match scope_raw {
+        "machine" => {
+            if uid != 0 {
+                warn!("machine traffic mutate rejected: peer not root");
+                return Response::Error("unauthorized");
+            }
+            crate::shared::TrafficScope::Machine
+        }
+        "user" => crate::shared::TrafficScope::User,
+        _ => return Response::Error("malformed_request"),
+    };
+    let result = if unblock {
+        shared.traffic_unblock(scope, uid)
+    } else {
+        let Some(direction_raw) = direction_raw else {
+            return Response::Error("malformed_request");
+        };
+        let Some(preference) = crate::traffic_mode::TrafficPreference::parse(direction_raw) else {
+            return Response::Error("malformed_request");
+        };
+        if matches!(preference, crate::traffic_mode::TrafficPreference::Open) {
+            return Response::Error("malformed_request");
+        }
+        shared.traffic_block(scope, preference, uid)
     };
     match result {
         Ok(()) => Response::Pong,
         Err(error) => {
             warn!(%error, "traffic mutate failed");
-            match action {
-                TrafficMutate::Block => Response::Error("traffic_block_failed"),
-                TrafficMutate::Unblock => Response::Error("traffic_unblock_failed"),
+            if unblock {
+                Response::Error("traffic_unblock_failed")
+            } else {
+                Response::Error("traffic_block_failed")
             }
         }
     }
@@ -402,9 +440,9 @@ fn prompt_answer(
     drop(prompts);
     if !answered.duplicate
         && matches!(answered.scope, RuleScope::Session | RuleScope::Permanent)
-        && let Err(response) = persist_answered_rule(shared, &answered)
+        && let Err(code) = persist_answered_rule(shared, &answered)
     {
-        return response;
+        return Response::Error(code);
     }
     debug!(
         id = answered.id,
@@ -419,9 +457,9 @@ fn prompt_answer(
 fn persist_answered_rule(
     shared: &Shared,
     answered: &crate::prompts::Answered,
-) -> Result<(), Response> {
+) -> Result<(), &'static str> {
     let Ok(mut rules) = shared.rules.lock() else {
-        return Err(Response::Error("lock_poisoned"));
+        return Err("lock_poisoned");
     };
     let next_id = rules
         .rules()
@@ -446,10 +484,10 @@ fn persist_answered_rule(
         },
     };
     if rules.insert(rule).is_err() {
-        return Err(Response::Error("invalid_rule"));
+        return Err("invalid_rule");
     }
     if answered.scope == RuleScope::Permanent && shared.store.save(&rules).is_err() {
-        return Err(Response::Error("persistence_failed"));
+        return Err("persistence_failed");
     }
     Ok(())
 }
@@ -1339,16 +1377,50 @@ mod tests {
         let _ok = crate::nft::ForceNftOk::arm();
         shared.set_enforcement("nfqueue");
         let (a, _b) = StdUnixStream::pair().unwrap();
-        assert_eq!(dispatch(Request::TrafficBlock, &shared, &a), Response::Pong);
+        assert_eq!(
+            dispatch(
+                Request::TrafficBlock {
+                    scope: "user".into(),
+                    direction: "out".into(),
+                },
+                &shared,
+                &a
+            ),
+            Response::Pong
+        );
         assert_eq!(shared.traffic(), "blocked");
         assert_eq!(
-            dispatch(Request::TrafficUnblock, &shared, &a),
+            dispatch(
+                Request::TrafficUnblock {
+                    scope: "user".into(),
+                },
+                &shared,
+                &a
+            ),
             Response::Pong
         );
         assert_eq!(shared.traffic(), "open");
+        assert_eq!(
+            dispatch(
+                Request::TrafficBlock {
+                    scope: "machine".into(),
+                    direction: "out".into(),
+                },
+                &shared,
+                &a
+            ),
+            Response::Error("unauthorized")
+        );
         let stream = stream_without_peer_creds();
         assert_eq!(
-            dispatch(Request::TrafficBlock, &shared, &stream),
+            dispatch(
+                Request::TrafficBlock {
+                    scope: "user".into(),
+                    direction: "out".into(),
+                },
+                &shared,
+                &stream
+            ),
             Response::Error("unauthorized")
         );
         cleanup_paths(&audit_path, &rules_path);
@@ -1360,21 +1432,89 @@ mod tests {
         let (shared, audit_path, rules_path) = test_shared("traffic-fail");
         let _ok = crate::nft::ForceNftOk::arm();
         let (a, _b) = StdUnixStream::pair().unwrap();
-        assert_eq!(dispatch(Request::TrafficBlock, &shared, &a), Response::Pong);
-        let traffic_path = shared.traffic_path().to_path_buf();
+        assert_eq!(
+            dispatch(
+                Request::TrafficBlock {
+                    scope: "user".into(),
+                    direction: "out".into(),
+                },
+                &shared,
+                &a
+            ),
+            Response::Pong
+        );
+        let traffic_path = crate::traffic_mode::user_path(
+            shared.traffic_path(),
+            nix::unistd::Uid::current().as_raw(),
+        );
         let _ = fs::remove_file(&traffic_path);
         fs::create_dir_all(&traffic_path).expect("dir");
         assert_eq!(
-            dispatch(Request::TrafficUnblock, &shared, &a),
+            dispatch(
+                Request::TrafficUnblock {
+                    scope: "user".into(),
+                },
+                &shared,
+                &a
+            ),
             Response::Error("traffic_unblock_failed")
         );
         let _ = fs::remove_dir_all(&traffic_path);
         fs::create_dir_all(&traffic_path).expect("dir again");
         assert_eq!(
-            dispatch(Request::TrafficBlock, &shared, &a),
+            dispatch(
+                Request::TrafficBlock {
+                    scope: "user".into(),
+                    direction: "all".into(),
+                },
+                &shared,
+                &a
+            ),
             Response::Error("traffic_block_failed")
         );
         let _ = fs::remove_dir_all(&traffic_path);
+        cleanup_paths(&audit_path, &rules_path);
+    }
+
+    #[test]
+    fn traffic_mutate_rejects_malformed_scope_and_direction() {
+        let _suite = suite_lock();
+        let (shared, audit_path, rules_path) = test_shared("traffic-malformed");
+        let _ok = crate::nft::ForceNftOk::arm();
+        let (a, _b) = StdUnixStream::pair().unwrap();
+        assert_eq!(
+            dispatch(
+                Request::TrafficBlock {
+                    scope: "bogus".into(),
+                    direction: "out".into(),
+                },
+                &shared,
+                &a
+            ),
+            Response::Error("malformed_request")
+        );
+        assert_eq!(
+            dispatch(
+                Request::TrafficBlock {
+                    scope: "user".into(),
+                    direction: "open".into(),
+                },
+                &shared,
+                &a
+            ),
+            Response::Error("malformed_request")
+        );
+        assert_eq!(
+            dispatch(
+                Request::TrafficBlock {
+                    scope: "user".into(),
+                    direction: "nope".into(),
+                },
+                &shared,
+                &a
+            ),
+            Response::Error("malformed_request")
+        );
         cleanup_paths(&audit_path, &rules_path);
     }
 

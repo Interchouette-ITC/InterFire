@@ -81,8 +81,13 @@ pub enum Request {
     NetworkRemove,
     Pause,
     Resume,
-    TrafficBlock,
-    TrafficUnblock,
+    TrafficBlock {
+        scope: String,
+        direction: String,
+    },
+    TrafficUnblock {
+        scope: String,
+    },
 }
 
 impl Request {
@@ -116,10 +121,49 @@ impl Request {
             Some("network-remove") if fields.next().is_none() => Ok(Self::NetworkRemove),
             Some("pause") if fields.next().is_none() => Ok(Self::Pause),
             Some("resume") if fields.next().is_none() => Ok(Self::Resume),
-            Some("traffic-block") if fields.next().is_none() => Ok(Self::TrafficBlock),
-            Some("traffic-unblock") if fields.next().is_none() => Ok(Self::TrafficUnblock),
+            Some("traffic-block") => parse_traffic_block(&mut fields),
+            Some("traffic-unblock") => parse_traffic_unblock(&mut fields),
             _ => Err(ProtocolError::Malformed),
         }
+    }
+}
+
+fn parse_traffic_block<'a>(
+    fields: &mut impl Iterator<Item = &'a str>,
+) -> Result<Request, ProtocolError> {
+    let mut scope = "machine".to_owned();
+    let mut direction = "out".to_owned();
+    for field in fields.by_ref() {
+        if let Some(value) = field.strip_prefix("scope=") {
+            value.clone_into(&mut scope);
+        } else if let Some(value) = field.strip_prefix("direction=") {
+            value.clone_into(&mut direction);
+        } else {
+            return Err(ProtocolError::Malformed);
+        }
+    }
+    match (scope.as_str(), direction.as_str()) {
+        ("user" | "machine", "out" | "in" | "all") => {
+            Ok(Request::TrafficBlock { scope, direction })
+        }
+        _ => Err(ProtocolError::Malformed),
+    }
+}
+
+fn parse_traffic_unblock<'a>(
+    fields: &mut impl Iterator<Item = &'a str>,
+) -> Result<Request, ProtocolError> {
+    let mut scope = "machine".to_owned();
+    for field in fields.by_ref() {
+        if let Some(value) = field.strip_prefix("scope=") {
+            value.clone_into(&mut scope);
+        } else {
+            return Err(ProtocolError::Malformed);
+        }
+    }
+    match scope.as_str() {
+        "user" | "machine" => Ok(Request::TrafficUnblock { scope }),
+        _ => Err(ProtocolError::Malformed),
     }
 }
 
@@ -286,14 +330,20 @@ pub struct NetworkStatusBody {
 }
 
 /// Daemon `status` response body (encode side).
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StatusBody {
     /// Verdict path state (`none`, `nfqueue`, `degraded`, or `paused`).
     pub enforcement: &'static str,
     /// eBPF observation state (`attached` or `degraded`).
     pub observation: &'static str,
-    /// Traffic kill-switch (`open` or `blocked`).
+    /// Compact kill-switch token (`open` or `blocked`).
     pub traffic: &'static str,
+    /// Machine preference (`open` | `out` | `in` | `all`).
+    pub traffic_machine: String,
+    /// Peer user preference (`open` | `out` | `in` | `all`).
+    pub traffic_user: String,
+    /// Effective filter label (`open` | `machine:…` | `user:…`).
+    pub traffic_effective: String,
     pub ipc_version: u16,
     /// Daemon process id.
     pub pid: u32,
@@ -310,10 +360,13 @@ impl Response {
         match self {
             Self::Pong => "v1 pong\n".into(),
             Self::Status(body) => format!(
-                "v1 status enforcement={} observation={} traffic={} ipc_version={} pid={} rss_kib={} cpu_jiffies={}\n",
+                "v1 status enforcement={} observation={} traffic={} traffic_machine={} traffic_user={} traffic_effective={} ipc_version={} pid={} rss_kib={} cpu_jiffies={}\n",
                 body.enforcement,
                 body.observation,
                 body.traffic,
+                body.traffic_machine,
+                body.traffic_user,
+                body.traffic_effective,
                 body.ipc_version,
                 body.pid,
                 body.rss_kib,
@@ -419,8 +472,11 @@ pub const fn network_rule_token(queue: u16) -> &'static str {
 pub struct DaemonStatus {
     pub enforcement: String,
     pub observation: String,
-    /// Traffic kill-switch; defaults to `open` when absent (older daemons).
+    /// Compact kill-switch; defaults to `open` when absent (older daemons).
     pub traffic: String,
+    pub traffic_machine: String,
+    pub traffic_user: String,
+    pub traffic_effective: String,
     pub ipc_version: u16,
     /// Present when the daemon includes process metrics on `status`.
     pub pid: Option<u32>,
@@ -453,6 +509,9 @@ impl DaemonStatus {
         let mut enforcement = None;
         let mut observation = None;
         let mut traffic = None;
+        let mut traffic_machine = None;
+        let mut traffic_user = None;
+        let mut traffic_effective = None;
         let mut ipc_version = None;
         let mut pid = None;
         let mut rss_kib = None;
@@ -462,6 +521,12 @@ impl DaemonStatus {
                 enforcement = Some(value.to_owned());
             } else if let Some(value) = field.strip_prefix("observation=") {
                 observation = Some(value.to_owned());
+            } else if let Some(value) = field.strip_prefix("traffic_machine=") {
+                traffic_machine = Some(value.to_owned());
+            } else if let Some(value) = field.strip_prefix("traffic_user=") {
+                traffic_user = Some(value.to_owned());
+            } else if let Some(value) = field.strip_prefix("traffic_effective=") {
+                traffic_effective = Some(value.to_owned());
             } else if let Some(value) = field.strip_prefix("traffic=") {
                 traffic = Some(value.to_owned());
             } else if let Some(value) = field.strip_prefix("ipc_version=") {
@@ -478,10 +543,20 @@ impl DaemonStatus {
                 return Err(ProtocolError::Malformed);
             }
         }
+        let traffic = traffic.unwrap_or_else(|| "open".to_owned());
         Ok(Self {
             enforcement: enforcement.ok_or(ProtocolError::Malformed)?,
             observation: observation.ok_or(ProtocolError::Malformed)?,
-            traffic: traffic.unwrap_or_else(|| "open".to_owned()),
+            traffic_machine: traffic_machine.unwrap_or_else(|| {
+                if traffic == "blocked" {
+                    "out".to_owned()
+                } else {
+                    "open".to_owned()
+                }
+            }),
+            traffic_user: traffic_user.unwrap_or_else(|| "open".to_owned()),
+            traffic_effective: traffic_effective.unwrap_or_else(|| traffic.clone()),
+            traffic,
             ipc_version: ipc_version.ok_or(ProtocolError::Malformed)?,
             pid,
             rss_kib,
@@ -817,6 +892,9 @@ mod tests {
             enforcement: "none",
             observation: "degraded",
             traffic: "open",
+            traffic_machine: "open".into(),
+            traffic_user: "open".into(),
+            traffic_effective: "open".into(),
             ipc_version: IPC_VERSION,
             pid: 42,
             rss_kib: 6400,
@@ -825,7 +903,7 @@ mod tests {
         .encode();
         assert_eq!(
             frame,
-            "v1 status enforcement=none observation=degraded traffic=open ipc_version=1 pid=42 rss_kib=6400 cpu_jiffies=1234\n"
+            "v1 status enforcement=none observation=degraded traffic=open traffic_machine=open traffic_user=open traffic_effective=open ipc_version=1 pid=42 rss_kib=6400 cpu_jiffies=1234\n"
         );
         assert_eq!(
             DaemonStatus::parse(&frame),
@@ -833,6 +911,9 @@ mod tests {
                 enforcement: "none".into(),
                 observation: "degraded".into(),
                 traffic: "open".into(),
+                traffic_machine: "open".into(),
+                traffic_user: "open".into(),
+                traffic_effective: "open".into(),
                 ipc_version: 1,
                 pid: Some(42),
                 rss_kib: Some(6400),
@@ -851,6 +932,9 @@ mod tests {
                 enforcement: "nfqueue".into(),
                 observation: "attached".into(),
                 traffic: "open".into(),
+                traffic_machine: "open".into(),
+                traffic_user: "open".into(),
+                traffic_effective: "open".into(),
                 ipc_version: 1,
                 pid: None,
                 rss_kib: None,
@@ -865,6 +949,9 @@ mod tests {
                 enforcement: "nfqueue".into(),
                 observation: "attached".into(),
                 traffic: "open".into(),
+                traffic_machine: "open".into(),
+                traffic_user: "open".into(),
+                traffic_effective: "open".into(),
                 ipc_version: 1,
                 pid: Some(9),
                 rss_kib: None,
@@ -948,12 +1035,65 @@ mod tests {
         assert_eq!(Request::parse("v1 resume\n"), Ok(Request::Resume));
         assert_eq!(
             Request::parse("v1 traffic-block\n"),
-            Ok(Request::TrafficBlock)
+            Ok(Request::TrafficBlock {
+                scope: "machine".into(),
+                direction: "out".into(),
+            })
+        );
+        assert_eq!(
+            Request::parse("v1 traffic-block scope=user direction=all\n"),
+            Ok(Request::TrafficBlock {
+                scope: "user".into(),
+                direction: "all".into(),
+            })
+        );
+        assert_eq!(
+            Request::parse("v1 traffic-block scope=user direction=in\n"),
+            Ok(Request::TrafficBlock {
+                scope: "user".into(),
+                direction: "in".into(),
+            })
+        );
+        assert!(Request::parse("v1 traffic-block scope=bogus direction=out\n").is_err());
+        assert!(Request::parse("v1 traffic-block scope=user direction=bogus\n").is_err());
+        assert!(Request::parse("v1 traffic-unblock scope=bogus\n").is_err());
+        assert_eq!(
+            Request::parse("v1 traffic-unblock scope=user\n"),
+            Ok(Request::TrafficUnblock {
+                scope: "user".into(),
+            })
         );
         assert_eq!(
             Request::parse("v1 traffic-unblock\n"),
-            Ok(Request::TrafficUnblock)
+            Ok(Request::TrafficUnblock {
+                scope: "machine".into(),
+            })
         );
+        let blocked = Response::Status(StatusBody {
+            enforcement: "paused",
+            observation: "attached",
+            traffic: "blocked",
+            traffic_machine: "all".into(),
+            traffic_user: "out".into(),
+            traffic_effective: "machine:all".into(),
+            ipc_version: 1,
+            pid: 1,
+            rss_kib: 1,
+            cpu_jiffies: 1,
+        })
+        .encode();
+        assert!(blocked.contains("traffic_machine=all"));
+        assert!(blocked.contains("traffic_effective=machine:all"));
+        let parsed = DaemonStatus::parse(&blocked).expect("status");
+        assert_eq!(parsed.traffic_machine, "all");
+        assert_eq!(parsed.traffic_effective, "machine:all");
+        let legacy = DaemonStatus::parse(
+            "v1 status enforcement=paused observation=attached traffic=blocked ipc_version=1 pid=1 rss_kib=1 cpu_jiffies=1\n",
+        )
+        .expect("legacy status");
+        assert_eq!(legacy.traffic_machine, "out");
+        assert_eq!(legacy.traffic_user, "open");
+        assert_eq!(legacy.traffic_effective, "blocked");
         let frame = Response::Network(NetworkStatusBody {
             table: NFT_TABLE,
             queue: NFQUEUE_NUM,

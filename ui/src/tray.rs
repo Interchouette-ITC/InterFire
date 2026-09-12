@@ -75,7 +75,7 @@ impl TrayState {
                 "Rules paused: owned queue table removed; new TCP is not filtered. Use Rules Start to enforce."
             }
             Self::Blocked => {
-                "Traffic blocked: new outbound TCP is dropped except localhost. Use Unblock to restore."
+                "Traffic blocked (machine or user kill-switch). Open the Traffic tab to adjust scope and direction."
             }
             Self::Unavailable => {
                 "Cannot reach the daemon socket. Start interfired (Daemon Start), check the socket path, then reconnect."
@@ -124,6 +124,17 @@ mod tests {
             enforcement: enforcement.into(),
             observation: observation.into(),
             traffic: traffic.into(),
+            traffic_machine: if traffic == "blocked" {
+                "out".into()
+            } else {
+                "open".into()
+            },
+            traffic_user: "open".into(),
+            traffic_effective: if traffic == "blocked" {
+                "machine:out".into()
+            } else {
+                "open".into()
+            },
             ipc_version: 1,
             pid: None,
             rss_kib: None,

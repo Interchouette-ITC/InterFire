@@ -31,10 +31,8 @@ pub enum TrayAction {
     Pause,
     /// Request resume after operator confirmation in the main UI.
     Resume,
-    /// Request traffic block after confirmation.
-    TrafficBlock,
-    /// Request traffic unblock after confirmation.
-    TrafficUnblock,
+    /// Open the Traffic panel in the main window.
+    OpenTraffic,
     /// Request daemon stop after confirmation (pkexec).
     DaemonStop,
     /// Request daemon start after confirmation (pkexec).
@@ -153,11 +151,9 @@ impl Tray for InterfireTray {
         let quit_tx = self.actions.clone();
         let daemon_up = !matches!(self.state, TrayState::Unavailable);
         let rules_paused = matches!(self.state, TrayState::Paused);
-        let traffic_blocked = matches!(self.state, TrayState::Blocked);
         let pause_tx = self.actions.clone();
         let resume_tx = self.actions.clone();
-        let block_tx = self.actions.clone();
-        let unblock_tx = self.actions.clone();
+        let traffic_tx = self.actions.clone();
         let stop_tx = self.actions.clone();
         let start_tx = self.actions.clone();
         vec![
@@ -210,18 +206,10 @@ impl Tray for InterfireTray {
             }
             .into(),
             StandardItem {
-                label: if traffic_blocked {
-                    "Unblock traffic…".into()
-                } else {
-                    "Block traffic…".into()
-                },
+                label: "Traffic…".into(),
                 enabled: daemon_up,
                 activate: Box::new(move |_| {
-                    if traffic_blocked {
-                        let _ = unblock_tx.send(TrayAction::TrafficUnblock);
-                    } else {
-                        let _ = block_tx.send(TrayAction::TrafficBlock);
-                    }
+                    let _ = traffic_tx.send(TrayAction::OpenTraffic);
                 }),
                 ..Default::default()
             }

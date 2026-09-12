@@ -16,14 +16,16 @@ without a pending decision are **deny** while Active.
 
 The InterFire-owned nftables table is **`inet interfire`**. Rules Pause/Start
 (`interfirectl pause|resume`) and Traffic Block/Unblock
-(`interfirectl traffic block|unblock`) install or remove only that table.
-Queue mode skips loopback (`oifname "lo" accept`) then queues other new outbound
-TCP to **4242**. Block mode accepts loopback and established/related, then drops
-other new TCP (no NFQUEUE; fail-closed). Unrelated tables are never listed or
-edited. Open gaps: production latency/coexistence measurements. A root
-network-namespace gate (`make integration` /
-`scripts/enforcement-allow-deny.sh`) proves controlled allow and deny. Idle
-daemon RSS is checked with `make memcheck` against the < 40 MiB budget.
+(`interfirectl traffic block|unblock` with scope and direction) install or remove
+only that table. Queue mode skips loopback (`oifname "lo" accept`) then queues
+other new outbound TCP to **4242**. Block mode (machine host-wide, or user with
+`meta skuid`) accepts loopback and established/related, then drops other new TCP
+for the chosen direction (no NFQUEUE while machine is blocked; fail-closed).
+Unrelated tables are never listed or edited. Open gaps: production
+latency/coexistence measurements. A root network-namespace gate
+(`make integration` / `scripts/enforcement-allow-deny.sh`) proves controlled
+allow and deny. Idle daemon RSS is checked with `make memcheck` against the
+< 40 MiB budget.
 
 ## Event and identity flow
 

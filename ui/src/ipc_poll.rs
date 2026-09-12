@@ -130,22 +130,25 @@ pub fn resume_firewall(socket: &str) -> Result<(), String> {
     send_expect_pong(socket, "v1 resume\n")
 }
 
-/// Block outbound traffic (`v1 traffic-block`): fail-closed drop except loopback.
+/// Block traffic for a scope (`v1 traffic-block scope=… direction=…`).
 ///
 /// # Errors
 ///
 /// Returns a daemon error message or transport failure text.
-pub fn traffic_block(socket: &str) -> Result<(), String> {
-    send_expect_pong(socket, "v1 traffic-block\n")
+pub fn traffic_block(socket: &str, scope: &str, direction: &str) -> Result<(), String> {
+    send_expect_pong(
+        socket,
+        &format!("v1 traffic-block scope={scope} direction={direction}\n"),
+    )
 }
 
-/// Unblock traffic (`v1 traffic-unblock`): restore Rules-owned table.
+/// Unblock traffic for a scope (`v1 traffic-unblock scope=…`).
 ///
 /// # Errors
 ///
 /// Returns a daemon error message or transport failure text.
-pub fn traffic_unblock(socket: &str) -> Result<(), String> {
-    send_expect_pong(socket, "v1 traffic-unblock\n")
+pub fn traffic_unblock(socket: &str, scope: &str) -> Result<(), String> {
+    send_expect_pong(socket, &format!("v1 traffic-unblock scope={scope}\n"))
 }
 
 /// Fetch owned nftables status (`v1 network-status`).

@@ -80,17 +80,27 @@ On each primary image after install:
 4. Start again, then `sudo kill -9 $(pidof interfired)`: host stays usable.
 5. `sudo systemctl start interfired` and confirm status again.
 
-## Operator controls dogfood (Phase C)
+## Operator controls dogfood
 
 1. Header shows Daemon / Rules / Traffic as separate chips; tray menu matches.
-2. **Block traffic** while Rules paused: `curl` to an external host fails;
-   `curl 127.0.0.1` (or local service on loopback) still works;
-   `interfirectl status` shows `traffic=blocked`.
-3. `sudo systemctl stop interfired` while Blocked: IPC down; Block table remains
+   Traffic chip is a summary only (Open / User… / Machine…).
+2. Open the **Traffic** tab (or tray **Traffic…**). Block **This user** /
+   outbound while Rules paused: `curl` to an external host fails for that user;
+   `curl 127.0.0.1` still works; `interfirectl traffic status` shows user blocked
+   and effective=user.
+3. Block **Entire machine** (polkit / `pkexec`): host-wide drop; stored user
+   preference remains; summary shows Machine.
+4. `sudo systemctl stop interfired` while blocked: IPC down; drop table remains
    (`nft list table inet interfire` still shows drop, not queue).
-4. Daemon **Start** from UI (polkit): IPC returns; `traffic=blocked` until Unblock.
-5. **Unblock**: restores Rules mode (paused → no table; active → queue).
-6. Pause ≠ Block: Pause with traffic open removes the table; Block installs drop.
+5. Daemon **Start** from UI (polkit): IPC returns; traffic prefs unchanged until
+   Unblock.
+6. Unblock machine, then user: restores Rules mode (paused → no table; active →
+   queue). Pause ≠ Block: Pause with traffic open removes the table; Block
+   installs drop.
+7. CLI dogfood: `interfirectl traffic block --scope=user --direction=in` then
+   `all`; machine via `pkexec interfirectl traffic block --scope=machine
+   --direction=out`. TUI Status shows machine/user/effective; `t` opens overlay
+   (user apply only).
 
 ## Migration from other host app firewalls
 
