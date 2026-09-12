@@ -247,9 +247,11 @@ mod tests {
         let audit_path = temp_audit("audit.log");
         let rules_path = audit_path.with_extension("rules.toml");
         let mode_path = audit_path.with_extension("mode");
+        let traffic_path = audit_path.with_extension("traffic");
         let _ = fs::remove_file(&audit_path);
         let _ = fs::remove_file(&rules_path);
         let _ = fs::remove_file(&mode_path);
+        let _ = fs::remove_file(&traffic_path);
         crate::enforcement_mode::store(
             &mode_path,
             crate::enforcement_mode::EnforcementMode::Active,
@@ -265,6 +267,7 @@ mod tests {
                 process_capacity: 8,
                 audit_path: audit_path.clone(),
                 mode_path,
+                traffic_path,
             })
             .expect("shared state"),
         );

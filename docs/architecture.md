@@ -14,10 +14,13 @@ packets while enforcement is **active**. Default mode after install is
 over IPC (`interfire-tui` or `interfirectl`). Unattributed events and packets
 without a pending decision are **deny** while Active.
 
-The InterFire-owned nftables table is **`inet interfire`**. Pause/Start
-(`interfirectl pause|resume`, UI header) and Network install/remove install or
-remove only that table: an `output` chain that queues new outbound TCP
-(`ct state new`) to queue 4242. Unrelated tables are never listed or edited. Open gaps: production latency/coexistence measurements. A root
+The InterFire-owned nftables table is **`inet interfire`**. Rules Pause/Start
+(`interfirectl pause|resume`) and Traffic Block/Unblock
+(`interfirectl traffic block|unblock`) install or remove only that table.
+Queue mode skips loopback (`oifname "lo" accept`) then queues other new outbound
+TCP to **4242**. Block mode accepts loopback and established/related, then drops
+other new TCP (no NFQUEUE; fail-closed). Unrelated tables are never listed or
+edited. Open gaps: production latency/coexistence measurements. A root
 network-namespace gate (`make integration` /
 `scripts/enforcement-allow-deny.sh`) proves controlled allow and deny. Idle
 daemon RSS is checked with `make memcheck` against the < 40 MiB budget.

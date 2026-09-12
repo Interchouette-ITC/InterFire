@@ -9,7 +9,7 @@ v0.1 clients share the same Unix IPC:
 
 | Surface | Status | Role |
 | --- | --- | --- |
-| `interfirectl` | Shipped | One-shot commands only (`ping`, `status`, `pause`, `resume`, rules / prompts / dns / audit / network) |
+| `interfirectl` | Shipped | One-shot commands only (`ping`, `status`, `pause`, `resume`, `traffic block|unblock`, rules / prompts / dns / audit / network) |
 | `interfire-tui` | Shipped | Interactive control plane (Status \| Rules \| Prompts \| Log \| Help) |
 | GPUI app under `ui/` | Shipped (`interfire-ui`: tray, alert, Status, Applications, Rules, Log, Network, Profiling, Settings, RSS gates) | - |
 
@@ -100,6 +100,19 @@ audit stream. Network only shows InterFire-owned
 nftables state. Profiling shows live daemon and `interfire-ui` RSS/CPU
 (`/proc` + status IPC). Settings exposes daemon health, socket path, retention, and
 diagnostics. Desktop prompts are alert-first; the TUI retains a Prompts tab.
+
+### Operator controls (header and tray)
+
+Three orthogonal controls:
+
+| Control | States | Action |
+| --- | --- | --- |
+| Daemon | Running / Stopped | Stop/Start via `pkexec systemctl` (polkit) |
+| Rules | Active / Paused | `v1 pause` / `v1 resume` (group `interfire`) |
+| Traffic | Open / Blocked | `v1 traffic-block` / `v1 traffic-unblock` (fail-closed drop except loopback) |
+
+Pause rules is not the same as Block traffic. Stopping the daemon does not clear
+a Traffic Block. Loopback is never queued and never dropped.
 
 ### Bounded rendering
 

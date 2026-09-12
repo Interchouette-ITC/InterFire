@@ -924,6 +924,7 @@ mod tests {
             line if line.starts_with("v1 status") => Response::Status(StatusBody {
                 enforcement: "nfqueue",
                 observation: "attached",
+                traffic: "open",
                 ipc_version: 1,
                 pid: 42,
                 rss_kib: 6400,

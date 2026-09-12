@@ -10,7 +10,9 @@ install layout and how protection returns after reboot.
 | --- | --- |
 | `packaging/systemd/interfired.service` | Daemon unit (`interfired`) |
 | `packaging/systemd/interfire-nft.service` | Manual recovery oneshot for `inet interfire` (not enabled by default) |
-| `packaging/nft/interfire.nft` | Owned table script (queue **4242**) |
+| `packaging/nft/interfire.nft` | Owned queue table (loopback skipped) |
+| `packaging/nft/interfire-block.nft` | Traffic Block fail-closed drop table |
+| `packaging/scripts/interfire-nft-stop.sh` | ExecStop: preserve Block or delete table |
 | `packaging/tmpfiles.d/interfire.conf` | `/run`, `/var/lib`, `/etc` dirs |
 | `packaging/defaults/rules.toml` | Empty durable rules (`schema_version = 1`) |
 | `packaging/debian/interfire.desktop` | Desktop entry for `interfire-ui` |
@@ -39,7 +41,9 @@ migration notes: [`install-matrix.md`](install-matrix.md).
 | `/usr/bin/interfired` | Daemon |
 | `/usr/lib/systemd/system/interfired.service` | Daemon unit |
 | `/usr/lib/systemd/system/interfire-nft.service` | nft oneshot (manual recovery) |
-| `/usr/share/interfire/interfire.nft` | Owned table |
+| `/usr/share/interfire/interfire.nft` | Owned queue table |
+| `/usr/share/interfire/interfire-block.nft` | Traffic Block table |
+| `/usr/lib/interfire/interfire-nft-stop.sh` | Daemon ExecStop helper |
 | `/usr/lib/tmpfiles.d/interfire.conf` | Directory mode |
 | `/etc/interfire/rules.toml` | Durable rules |
 | `/usr/share/applications/interfire.desktop` | Applications menu entry |
@@ -47,6 +51,7 @@ migration notes: [`install-matrix.md`](install-matrix.md).
 | `/run/interfire/interfired.sock` | IPC socket |
 | `/var/lib/interfire/audit.log` | Capped audit log |
 | `/var/lib/interfire/enforcement.mode` | `paused` or `active` (default missing = paused) |
+| `/var/lib/interfire/traffic.mode` | `open` or `blocked` (default missing = open) |
 
 ## Capabilities
 
@@ -86,15 +91,18 @@ Rules, or the desktop UI.
 1. Enable the daemon only: `systemctl enable --now interfired.service`.
    Leave `interfire-nft` **disabled** unless recovering manually.
 2. After reboot, `interfired` binds NFQUEUE **4242** with **fail-open**, then
-   reads `/var/lib/interfire/enforcement.mode`. If `active`, it installs the
-   owned table; if `paused` or missing, the table stays absent (network works).
-3. Stopping `interfired` runs `nft delete table inet interfire` so a dead queue
-   cannot freeze the host.
+   reads `/var/lib/interfire/traffic.mode` and `enforcement.mode`. Traffic
+   **blocked** installs the fail-closed drop table (loopback allowed). Otherwise
+   Rules **active** installs the queue table; **paused** leaves the table absent.
+3. Stopping `interfired` runs `/usr/lib/interfire/interfire-nft-stop.sh`: if
+   traffic is blocked the drop table is kept; otherwise the owned table is deleted.
 4. Durable rules under `/etc/interfire/rules.toml` and audit under
    `/var/lib/interfire/` survive reboot.
 
-Pause / Start: `interfirectl pause` / `resume`, or the UI header / tray control.
-Do not enable `interfire-nft` at boot for day-to-day use. Do not Start while
+Rules Pause/Start: `interfirectl pause` / `resume`, or the UI header / tray.
+Traffic Block/Unblock: `interfirectl traffic block` / `unblock`, or UI/tray.
+Daemon Stop/Start: UI/tray via `pkexec systemctl` (or `systemctl` as root).
+Do not enable `interfire-nft` at boot for day-to-day use. Do not Start rules while
 another application-firewall queue is already active on the host.
 
 Manual smoke without the package:
@@ -104,6 +112,8 @@ sudo install -d -m 0750 /run/interfire /var/lib/interfire /etc/interfire
 sudo install -d -m 0755 /usr/share/interfire
 sudo cp packaging/defaults/rules.toml /etc/interfire/rules.toml
 sudo cp packaging/nft/interfire.nft /usr/share/interfire/interfire.nft
+sudo cp packaging/nft/interfire-block.nft /usr/share/interfire/interfire-block.nft
+sudo install -m 0755 packaging/scripts/interfire-nft-stop.sh /usr/lib/interfire/interfire-nft-stop.sh
 sudo cp packaging/systemd/*.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now interfired.service

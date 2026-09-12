@@ -31,6 +31,14 @@ pub enum TrayAction {
     Pause,
     /// Request resume after operator confirmation in the main UI.
     Resume,
+    /// Request traffic block after confirmation.
+    TrafficBlock,
+    /// Request traffic unblock after confirmation.
+    TrafficUnblock,
+    /// Request daemon stop after confirmation (pkexec).
+    DaemonStop,
+    /// Request daemon start after confirmation (pkexec).
+    DaemonStart,
 }
 
 /// Best-effort Linux tray handle (None when SNI/D-Bus is unavailable).
@@ -126,6 +134,7 @@ impl Tray for InterfireTray {
             TrayState::Protected
             | TrayState::Degraded
             | TrayState::Paused
+            | TrayState::Blocked
             | TrayState::Unavailable => ksni::Status::Active,
         }
     }
@@ -141,10 +150,16 @@ impl Tray for InterfireTray {
 
     fn menu(&self) -> Vec<MenuItem<Self>> {
         let show_tx = self.actions.clone();
+        let quit_tx = self.actions.clone();
+        let daemon_up = !matches!(self.state, TrayState::Unavailable);
+        let rules_paused = matches!(self.state, TrayState::Paused);
+        let traffic_blocked = matches!(self.state, TrayState::Blocked);
         let pause_tx = self.actions.clone();
         let resume_tx = self.actions.clone();
-        let quit_tx = self.actions.clone();
-        let paused = matches!(self.state, TrayState::Paused);
+        let block_tx = self.actions.clone();
+        let unblock_tx = self.actions.clone();
+        let stop_tx = self.actions.clone();
+        let start_tx = self.actions.clone();
         vec![
             StandardItem {
                 label: format!("State: {}", self.state.label()),
@@ -162,16 +177,50 @@ impl Tray for InterfireTray {
             }
             .into(),
             StandardItem {
-                label: if paused {
-                    "Start firewall…".into()
+                label: if daemon_up {
+                    "Stop daemon…".into()
                 } else {
-                    "Pause firewall…".into()
+                    "Start daemon…".into()
                 },
                 activate: Box::new(move |_| {
-                    if paused {
+                    if daemon_up {
+                        let _ = stop_tx.send(TrayAction::DaemonStop);
+                    } else {
+                        let _ = start_tx.send(TrayAction::DaemonStart);
+                    }
+                }),
+                ..Default::default()
+            }
+            .into(),
+            StandardItem {
+                label: if rules_paused {
+                    "Start rules…".into()
+                } else {
+                    "Pause rules…".into()
+                },
+                enabled: daemon_up,
+                activate: Box::new(move |_| {
+                    if rules_paused {
                         let _ = resume_tx.send(TrayAction::Resume);
                     } else {
                         let _ = pause_tx.send(TrayAction::Pause);
+                    }
+                }),
+                ..Default::default()
+            }
+            .into(),
+            StandardItem {
+                label: if traffic_blocked {
+                    "Unblock traffic…".into()
+                } else {
+                    "Block traffic…".into()
+                },
+                enabled: daemon_up,
+                activate: Box::new(move |_| {
+                    if traffic_blocked {
+                        let _ = unblock_tx.send(TrayAction::TrafficUnblock);
+                    } else {
+                        let _ = block_tx.send(TrayAction::TrafficBlock);
                     }
                 }),
                 ..Default::default()

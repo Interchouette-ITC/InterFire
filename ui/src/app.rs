@@ -15,6 +15,7 @@ use crate::alert_view::alert_overlay;
 use crate::applications_view::{ProcessViewer, applications_body, try_open_viewer};
 use crate::audit_host::{AuditEvent, AuditHost};
 use crate::brand;
+use crate::confirm_queue::ConfirmKind;
 use crate::ipc_poll;
 use crate::log_buf::LogBuffer;
 use crate::log_view::log_body;
@@ -95,8 +96,8 @@ pub struct App {
     ui_cpu: CpuTracker,
     daemon_cpu: CpuTracker,
     chrome_pref: ChromePreference,
-    /// Pending Pause/Start confirmation from tray (`true` = pause).
-    fw_confirm_pause: Option<bool>,
+    /// Pending operator confirmation (header or tray).
+    fw_confirm: Option<ConfirmKind>,
     #[cfg(target_os = "linux")]
     tray: Option<TrayHost>,
 }
@@ -133,7 +134,7 @@ impl App {
             ui_cpu: CpuTracker::default(),
             daemon_cpu: CpuTracker::default(),
             chrome_pref: ChromePreference::System,
-            fw_confirm_pause: None,
+            fw_confirm: None,
             #[cfg(target_os = "linux")]
             tray,
         };
@@ -182,6 +183,9 @@ impl App {
     }
 
     fn refresh_from_daemon(&mut self) {
+        if let Some(kind) = crate::confirm_queue::take() {
+            self.fw_confirm = Some(kind);
+        }
         self.drain_audit_events();
         let snapshot = ipc_poll::poll_snapshot(&self.socket);
         self.link = snapshot.link.clone();
@@ -477,12 +481,12 @@ impl App {
     }
 
     pub(crate) fn request_pause_confirm(&mut self, cx: &mut Context<Self>) {
-        self.fw_confirm_pause = Some(true);
+        self.fw_confirm = Some(ConfirmKind::RulesPause);
         cx.notify();
     }
 
     pub(crate) fn request_resume_confirm(&mut self, cx: &mut Context<Self>) {
-        self.fw_confirm_pause = Some(false);
+        self.fw_confirm = Some(ConfirmKind::RulesResume);
         cx.notify();
     }
 
@@ -502,16 +506,56 @@ impl App {
         self.request_resume_confirm(cx);
     }
 
+    pub(crate) fn request_traffic_block_click(
+        &mut self,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.fw_confirm = Some(ConfirmKind::TrafficBlock);
+        cx.notify();
+    }
+
+    pub(crate) fn request_traffic_unblock_click(
+        &mut self,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.fw_confirm = Some(ConfirmKind::TrafficUnblock);
+        cx.notify();
+    }
+
+    pub(crate) fn request_daemon_stop_click(
+        &mut self,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.fw_confirm = Some(ConfirmKind::DaemonStop);
+        cx.notify();
+    }
+
+    pub(crate) fn request_daemon_start_click(
+        &mut self,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.fw_confirm = Some(ConfirmKind::DaemonStart);
+        cx.notify();
+    }
+
     pub(crate) fn cancel_fw_confirm(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
-        self.fw_confirm_pause = None;
+        self.fw_confirm = None;
         cx.notify();
     }
 
     pub(crate) fn confirm_fw_action(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let pause = self.fw_confirm_pause.take();
-        match pause {
-            Some(true) => self.pause_firewall(window, cx),
-            Some(false) => self.resume_firewall(window, cx),
+        let kind = self.fw_confirm.take();
+        match kind {
+            Some(ConfirmKind::RulesPause) => self.pause_firewall(window, cx),
+            Some(ConfirmKind::RulesResume) => self.resume_firewall(window, cx),
+            Some(ConfirmKind::TrafficBlock) => self.block_traffic(window, cx),
+            Some(ConfirmKind::TrafficUnblock) => self.unblock_traffic(window, cx),
+            Some(ConfirmKind::DaemonStop) => self.stop_daemon(window, cx),
+            Some(ConfirmKind::DaemonStart) => self.start_daemon(window, cx),
             None => cx.notify(),
         }
     }
@@ -519,7 +563,7 @@ impl App {
     pub(crate) fn pause_firewall(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         match ipc_poll::pause_firewall(&self.socket) {
             Ok(()) => {
-                self.network_message = Some("firewall paused".into());
+                self.network_message = Some("rules paused".into());
                 self.refresh_from_daemon();
             }
             Err(message) => {
@@ -533,7 +577,60 @@ impl App {
         match ipc_poll::resume_firewall(&self.socket) {
             Ok(()) => {
                 self.network_message =
-                    Some("firewall started (stop other queue firewalls first if present)".into());
+                    Some("rules started (stop other queue firewalls first if present)".into());
+                self.refresh_from_daemon();
+            }
+            Err(message) => {
+                self.network_message = Some(message);
+            }
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn block_traffic(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        match ipc_poll::traffic_block(&self.socket) {
+            Ok(()) => {
+                self.network_message = Some("traffic blocked (loopback still allowed)".into());
+                self.refresh_from_daemon();
+            }
+            Err(message) => {
+                self.network_message = Some(message);
+            }
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn unblock_traffic(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        match ipc_poll::traffic_unblock(&self.socket) {
+            Ok(()) => {
+                self.network_message = Some("traffic unblocked".into());
+                self.refresh_from_daemon();
+            }
+            Err(message) => {
+                self.network_message = Some(message);
+            }
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn stop_daemon(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        match crate::service::stop_daemon() {
+            Ok(()) => {
+                self.network_message =
+                    Some("daemon stop requested (Traffic Block may remain in kernel)".into());
+                self.refresh_from_daemon();
+            }
+            Err(message) => {
+                self.network_message = Some(message);
+            }
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn start_daemon(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        match crate::service::start_daemon() {
+            Ok(()) => {
+                self.network_message = Some("daemon start requested".into());
                 self.refresh_from_daemon();
             }
             Err(message) => {
@@ -602,23 +699,45 @@ impl Render for App {
         if let Some(alert) = alert {
             shell = shell.child(alert_overlay(&alert, cx));
         }
-        if let Some(pause) = self.fw_confirm_pause {
-            shell = shell.child(fw_confirm_overlay(pause, cx));
+        if let Some(kind) = self.fw_confirm {
+            shell = shell.child(fw_confirm_overlay(kind, cx));
         }
         shell
     }
 }
 
-fn fw_confirm_overlay(pause: bool, cx: &Context<App>) -> impl IntoElement {
-    let title = if pause {
-        "Pause firewall?"
-    } else {
-        "Start firewall?"
-    };
-    let body = if pause {
-        "Temporary pause removes the InterFire nftables table. New outbound TCP is no longer filtered until you Start again."
-    } else {
-        "Start installs the InterFire queue table. Do not Start while another application-firewall queue is already active."
+fn fw_confirm_overlay(kind: ConfirmKind, cx: &Context<App>) -> impl IntoElement {
+    let (title, body, ok) = match kind {
+        ConfirmKind::RulesPause => (
+            "Pause rules?",
+            "Temporary pause removes the InterFire queue table. New outbound TCP is no longer filtered until you Start rules again.",
+            "Pause",
+        ),
+        ConfirmKind::RulesResume => (
+            "Start rules?",
+            "Start installs the InterFire queue table. Do not Start while another application-firewall queue is already active.",
+            "Start",
+        ),
+        ConfirmKind::TrafficBlock => (
+            "Block traffic?",
+            "Blocks new outbound TCP except localhost. Existing connections may continue. Loopback stays allowed.",
+            "Block",
+        ),
+        ConfirmKind::TrafficUnblock => (
+            "Unblock traffic?",
+            "Removes the fail-closed drop table and restores the Rules mode (paused or queue).",
+            "Unblock",
+        ),
+        ConfirmKind::DaemonStop => (
+            "Stop daemon?",
+            "Stops interfired (polkit). IPC and prompts end. A Traffic Block may remain in the kernel until Unblock.",
+            "Stop",
+        ),
+        ConfirmKind::DaemonStart => (
+            "Start daemon?",
+            "Starts interfired via polkit so the UI can reconnect to the socket.",
+            "Start",
+        ),
     };
     div()
         .id("fw-confirm-overlay")
@@ -630,7 +749,7 @@ fn fw_confirm_overlay(pause: bool, cx: &Context<App>) -> impl IntoElement {
         .bg(cx.theme().background.opacity(0.72))
         .child(
             div()
-                .w(px(420.))
+                .w(px(440.))
                 .p_4()
                 .rounded_lg()
                 .border_1()
@@ -660,7 +779,7 @@ fn fw_confirm_overlay(pause: bool, cx: &Context<App>) -> impl IntoElement {
                         ))
                         .child(crate::rules_view::action_chip(
                             "fw-confirm-ok",
-                            if pause { "Pause" } else { "Start" },
+                            ok,
                             true,
                             true,
                             cx,
@@ -795,20 +914,38 @@ fn content_column(content: &ShellContent<'_>, cx: &Context<App>) -> impl IntoEle
 }
 
 fn content_header(content: &ShellContent<'_>, cx: &Context<App>) -> impl IntoElement {
-    let paused = matches!(content.tray_state, TrayState::Paused);
     let daemon_up = !matches!(content.tray_state, TrayState::Unavailable);
-    let fw_label = if paused {
-        "Firewall: Paused"
-    } else if daemon_up {
-        "Firewall: Active"
+    let (rules_paused, traffic_blocked) = match content.link {
+        DaemonLink::Up { status, .. } => {
+            (status.enforcement == "paused", status.traffic == "blocked")
+        }
+        DaemonLink::Down { .. } => (true, false),
+    };
+    let daemon_label = if daemon_up {
+        "Daemon: Running"
     } else {
-        "Firewall: —"
+        "Daemon: Stopped"
+    };
+    let rules_label = if !daemon_up {
+        "Rules: —"
+    } else if rules_paused {
+        "Rules: Paused"
+    } else {
+        "Rules: Active"
+    };
+    let traffic_label = if !daemon_up {
+        "Traffic: —"
+    } else if traffic_blocked {
+        "Traffic: Blocked"
+    } else {
+        "Traffic: Open"
     };
     div()
         .id("content-header")
         .flex()
         .items_center()
         .justify_between()
+        .gap_2()
         .child(
             div()
                 .text_lg()
@@ -821,33 +958,79 @@ fn content_header(content: &ShellContent<'_>, cx: &Context<App>) -> impl IntoEle
                 .flex()
                 .items_center()
                 .gap_2()
-                .child(
-                    div()
-                        .text_xs()
-                        .font_semibold()
-                        .text_color(if paused {
-                            cx.theme().warning
-                        } else if daemon_up {
-                            cx.theme().success
-                        } else {
-                            cx.theme().muted_foreground
-                        })
-                        .child(fw_label),
-                )
-                .child(crate::rules_view::action_chip(
-                    "fw-toggle",
-                    if paused { "Start" } else { "Pause" },
-                    daemon_up,
-                    paused,
+                .child(control_chip(
+                    "daemon-btn",
+                    daemon_label,
+                    if daemon_up { "Stop" } else { "Start" },
+                    true,
+                    !daemon_up,
                     cx,
-                    if paused {
+                    if daemon_up {
+                        App::request_daemon_stop_click
+                    } else {
+                        App::request_daemon_start_click
+                    },
+                ))
+                .child(control_chip(
+                    "rules-btn",
+                    rules_label,
+                    if rules_paused { "Start" } else { "Pause" },
+                    daemon_up,
+                    rules_paused,
+                    cx,
+                    if rules_paused {
                         App::request_resume_confirm_click
                     } else {
                         App::request_pause_confirm_click
                     },
                 ))
+                .child(control_chip(
+                    "traffic-btn",
+                    traffic_label,
+                    if traffic_blocked { "Unblock" } else { "Block" },
+                    daemon_up,
+                    traffic_blocked,
+                    cx,
+                    if traffic_blocked {
+                        App::request_traffic_unblock_click
+                    } else {
+                        App::request_traffic_block_click
+                    },
+                ))
                 .child(tray_chip(content.tray_state, cx)),
         )
+}
+
+fn control_chip(
+    id: &'static str,
+    label: &'static str,
+    action: &'static str,
+    enabled: bool,
+    warning: bool,
+    cx: &Context<App>,
+    on_click: fn(&mut App, &mut Window, &mut Context<App>),
+) -> impl IntoElement {
+    div()
+        .id(id)
+        .flex()
+        .items_center()
+        .gap_1()
+        .child(
+            div()
+                .text_xs()
+                .font_semibold()
+                .text_color(if warning {
+                    cx.theme().warning
+                } else if enabled {
+                    cx.theme().success
+                } else {
+                    cx.theme().muted_foreground
+                })
+                .child(label),
+        )
+        .child(crate::rules_view::action_chip(
+            id, action, enabled, warning, cx, on_click,
+        ))
 }
 
 fn tray_chip(state: TrayState, cx: &Context<App>) -> impl IntoElement {
@@ -856,6 +1039,7 @@ fn tray_chip(state: TrayState, cx: &Context<App>) -> impl IntoElement {
         TrayState::Prompting => (cx.theme().accent.opacity(0.25), cx.theme().accent),
         TrayState::Degraded => (cx.theme().warning.opacity(0.22), cx.theme().warning),
         TrayState::Paused => (cx.theme().warning.opacity(0.18), cx.theme().warning),
+        TrayState::Blocked => (cx.theme().danger.opacity(0.18), cx.theme().danger),
         TrayState::Unavailable => (cx.theme().danger.opacity(0.22), cx.theme().danger),
     };
     div()
@@ -1098,8 +1282,8 @@ fn status_body(
             pending_prompts,
         } => body
             .child(div().text_color(muted).child(format!(
-                "enforcement={}  observation={}  ipc={}",
-                status.enforcement, status.observation, status.ipc_version
+                "enforcement={}  traffic={}  observation={}  ipc={}",
+                status.enforcement, status.traffic, status.observation, status.ipc_version
             )))
             .child(
                 div()

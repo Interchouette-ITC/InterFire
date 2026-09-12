@@ -81,6 +81,8 @@ pub enum Request {
     NetworkRemove,
     Pause,
     Resume,
+    TrafficBlock,
+    TrafficUnblock,
 }
 
 impl Request {
@@ -114,6 +116,8 @@ impl Request {
             Some("network-remove") if fields.next().is_none() => Ok(Self::NetworkRemove),
             Some("pause") if fields.next().is_none() => Ok(Self::Pause),
             Some("resume") if fields.next().is_none() => Ok(Self::Resume),
+            Some("traffic-block") if fields.next().is_none() => Ok(Self::TrafficBlock),
+            Some("traffic-unblock") if fields.next().is_none() => Ok(Self::TrafficUnblock),
             _ => Err(ProtocolError::Malformed),
         }
     }
@@ -284,10 +288,12 @@ pub struct NetworkStatusBody {
 /// Daemon `status` response body (encode side).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct StatusBody {
-    /// Verdict path state (`none`, `nfqueue`, or `degraded`).
+    /// Verdict path state (`none`, `nfqueue`, `degraded`, or `paused`).
     pub enforcement: &'static str,
     /// eBPF observation state (`attached` or `degraded`).
     pub observation: &'static str,
+    /// Traffic kill-switch (`open` or `blocked`).
+    pub traffic: &'static str,
     pub ipc_version: u16,
     /// Daemon process id.
     pub pid: u32,
@@ -304,9 +310,10 @@ impl Response {
         match self {
             Self::Pong => "v1 pong\n".into(),
             Self::Status(body) => format!(
-                "v1 status enforcement={} observation={} ipc_version={} pid={} rss_kib={} cpu_jiffies={}\n",
+                "v1 status enforcement={} observation={} traffic={} ipc_version={} pid={} rss_kib={} cpu_jiffies={}\n",
                 body.enforcement,
                 body.observation,
+                body.traffic,
                 body.ipc_version,
                 body.pid,
                 body.rss_kib,
@@ -412,6 +419,8 @@ pub const fn network_rule_token(queue: u16) -> &'static str {
 pub struct DaemonStatus {
     pub enforcement: String,
     pub observation: String,
+    /// Traffic kill-switch; defaults to `open` when absent (older daemons).
+    pub traffic: String,
     pub ipc_version: u16,
     /// Present when the daemon includes process metrics on `status`.
     pub pid: Option<u32>,
@@ -443,6 +452,7 @@ impl DaemonStatus {
         }
         let mut enforcement = None;
         let mut observation = None;
+        let mut traffic = None;
         let mut ipc_version = None;
         let mut pid = None;
         let mut rss_kib = None;
@@ -452,6 +462,8 @@ impl DaemonStatus {
                 enforcement = Some(value.to_owned());
             } else if let Some(value) = field.strip_prefix("observation=") {
                 observation = Some(value.to_owned());
+            } else if let Some(value) = field.strip_prefix("traffic=") {
+                traffic = Some(value.to_owned());
             } else if let Some(value) = field.strip_prefix("ipc_version=") {
                 ipc_version = Some(value.parse().map_err(|_| ProtocolError::Malformed)?);
             } else if let Some(value) = field.strip_prefix("pid=") {
@@ -469,6 +481,7 @@ impl DaemonStatus {
         Ok(Self {
             enforcement: enforcement.ok_or(ProtocolError::Malformed)?,
             observation: observation.ok_or(ProtocolError::Malformed)?,
+            traffic: traffic.unwrap_or_else(|| "open".to_owned()),
             ipc_version: ipc_version.ok_or(ProtocolError::Malformed)?,
             pid,
             rss_kib,
@@ -803,6 +816,7 @@ mod tests {
         let frame = Response::Status(StatusBody {
             enforcement: "none",
             observation: "degraded",
+            traffic: "open",
             ipc_version: IPC_VERSION,
             pid: 42,
             rss_kib: 6400,
@@ -811,13 +825,14 @@ mod tests {
         .encode();
         assert_eq!(
             frame,
-            "v1 status enforcement=none observation=degraded ipc_version=1 pid=42 rss_kib=6400 cpu_jiffies=1234\n"
+            "v1 status enforcement=none observation=degraded traffic=open ipc_version=1 pid=42 rss_kib=6400 cpu_jiffies=1234\n"
         );
         assert_eq!(
             DaemonStatus::parse(&frame),
             Ok(DaemonStatus {
                 enforcement: "none".into(),
                 observation: "degraded".into(),
+                traffic: "open".into(),
                 ipc_version: 1,
                 pid: Some(42),
                 rss_kib: Some(6400),
@@ -835,6 +850,7 @@ mod tests {
             Ok(DaemonStatus {
                 enforcement: "nfqueue".into(),
                 observation: "attached".into(),
+                traffic: "open".into(),
                 ipc_version: 1,
                 pid: None,
                 rss_kib: None,
@@ -848,6 +864,7 @@ mod tests {
             Ok(DaemonStatus {
                 enforcement: "nfqueue".into(),
                 observation: "attached".into(),
+                traffic: "open".into(),
                 ipc_version: 1,
                 pid: Some(9),
                 rss_kib: None,
@@ -929,6 +946,14 @@ mod tests {
         );
         assert_eq!(Request::parse("v1 pause\n"), Ok(Request::Pause));
         assert_eq!(Request::parse("v1 resume\n"), Ok(Request::Resume));
+        assert_eq!(
+            Request::parse("v1 traffic-block\n"),
+            Ok(Request::TrafficBlock)
+        );
+        assert_eq!(
+            Request::parse("v1 traffic-unblock\n"),
+            Ok(Request::TrafficUnblock)
+        );
         let frame = Response::Network(NetworkStatusBody {
             table: NFT_TABLE,
             queue: NFQUEUE_NUM,

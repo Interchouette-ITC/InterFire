@@ -14,6 +14,7 @@ use crate::pending::PendingTable;
 use crate::process::ProcessCache;
 use crate::prompts::PromptQueue;
 use crate::recent::RecentConnects;
+use crate::traffic_mode::{self, TrafficMode};
 use interfire_proto::MAX_LOG_RECORDS_PER_SUBSCRIBER;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
@@ -36,7 +37,9 @@ pub struct Shared {
     pub dns: Mutex<DnsCache>,
     pub audit: Mutex<AuditLog>,
     mode_path: PathBuf,
+    traffic_path: PathBuf,
     paused: AtomicBool,
+    traffic_blocked: AtomicBool,
     /// Live NFQUEUE bind state (`none` / `nfqueue` / `degraded`), independent of pause.
     bind_state: AtomicU8,
     observation: AtomicU8,
@@ -52,6 +55,7 @@ pub struct SharedConfig {
     pub process_capacity: usize,
     pub audit_path: PathBuf,
     pub mode_path: PathBuf,
+    pub traffic_path: PathBuf,
 }
 
 impl Shared {
@@ -62,6 +66,7 @@ impl Shared {
     /// Returns I/O failures while opening the audit log.
     pub fn new(config: SharedConfig) -> std::io::Result<Self> {
         let mode = enforcement_mode::load(&config.mode_path);
+        let traffic = traffic_mode::load(&config.traffic_path);
         Ok(Self {
             rules: Mutex::new(config.rules),
             store: config.store,
@@ -79,7 +84,9 @@ impl Shared {
                 MAX_LOG_RECORDS_PER_SUBSCRIBER,
             )?),
             mode_path: config.mode_path,
+            traffic_path: config.traffic_path,
             paused: AtomicBool::new(mode == EnforcementMode::Paused),
+            traffic_blocked: AtomicBool::new(traffic == TrafficMode::Blocked),
             bind_state: AtomicU8::new(ENFORCEMENT_NONE),
             observation: AtomicU8::new(observation_code(config.observation)),
         })
@@ -96,8 +103,18 @@ impl Shared {
     }
 
     #[must_use]
+    pub fn is_traffic_blocked(&self) -> bool {
+        self.traffic_blocked.load(Ordering::Relaxed)
+    }
+
+    #[must_use]
     pub fn mode_path(&self) -> &Path {
         self.mode_path.as_path()
+    }
+
+    #[must_use]
+    pub fn traffic_path(&self) -> &Path {
+        self.traffic_path.as_path()
     }
 
     #[must_use]
@@ -105,18 +122,54 @@ impl Shared {
         enforcement_label(self.bind_state.load(Ordering::Relaxed))
     }
 
-    /// Persist pause and drop the owned table.
+    fn rules_mode(&self) -> EnforcementMode {
+        if self.is_paused() {
+            EnforcementMode::Paused
+        } else {
+            EnforcementMode::Active
+        }
+    }
+
+    fn traffic_mode(&self) -> TrafficMode {
+        if self.is_traffic_blocked() {
+            TrafficMode::Blocked
+        } else {
+            TrafficMode::Open
+        }
+    }
+
+    fn apply_owned_table(&self) -> std::io::Result<()> {
+        match self.traffic_mode() {
+            TrafficMode::Blocked => crate::nft::install_block(),
+            TrafficMode::Open => match self.rules_mode() {
+                EnforcementMode::Paused => crate::nft::remove(),
+                EnforcementMode::Active => {
+                    if self.bind_label() == "nfqueue" {
+                        crate::nft::install()
+                    } else {
+                        crate::nft::remove()
+                    }
+                }
+            },
+        }
+    }
+
+    /// Persist pause; drop queue table unless Traffic is Blocked.
     ///
     /// # Errors
     ///
-    /// Returns mode-file or nft remove failures.
+    /// Returns mode-file or nft failures.
     pub fn pause(&self) -> std::io::Result<()> {
         enforcement_mode::store(&self.mode_path, EnforcementMode::Paused)?;
         self.paused.store(true, Ordering::Relaxed);
-        crate::nft::remove()
+        if self.is_traffic_blocked() {
+            crate::nft::install_block()
+        } else {
+            crate::nft::remove()
+        }
     }
 
-    /// Persist active and install the owned table.
+    /// Persist active and install the owned queue table (or keep Block table).
     ///
     /// # Errors
     ///
@@ -129,7 +182,33 @@ impl Shared {
         }
         enforcement_mode::store(&self.mode_path, EnforcementMode::Active)?;
         self.paused.store(false, Ordering::Relaxed);
-        crate::nft::install()
+        if self.is_traffic_blocked() {
+            crate::nft::install_block()
+        } else {
+            crate::nft::install()
+        }
+    }
+
+    /// Persist Traffic Block and install the fail-closed drop table.
+    ///
+    /// # Errors
+    ///
+    /// Returns mode-file or nft failures.
+    pub fn traffic_block(&self) -> std::io::Result<()> {
+        traffic_mode::store(&self.traffic_path, TrafficMode::Blocked)?;
+        self.traffic_blocked.store(true, Ordering::Relaxed);
+        crate::nft::install_block()
+    }
+
+    /// Persist Traffic Open and restore the Rules-owned table.
+    ///
+    /// # Errors
+    ///
+    /// Returns mode-file or nft failures.
+    pub fn traffic_unblock(&self) -> std::io::Result<()> {
+        traffic_mode::store(&self.traffic_path, TrafficMode::Open)?;
+        self.traffic_blocked.store(false, Ordering::Relaxed);
+        self.apply_owned_table()
     }
 
     #[must_use]
@@ -138,6 +217,11 @@ impl Shared {
             return "paused";
         }
         self.bind_label()
+    }
+
+    #[must_use]
+    pub fn traffic(&self) -> &'static str {
+        self.traffic_mode().as_str()
     }
 
     #[must_use]
@@ -202,24 +286,35 @@ mod tests {
         ))
     }
 
-    #[test]
-    fn new_initializes_state_and_audit_log() {
-        let audit_path = temp_audit("new.log");
-        let _ = fs::remove_file(&audit_path);
+    fn shared_for(audit_path: &Path, mode: EnforcementMode) -> Shared {
+        let mode_path = audit_path.with_extension("mode");
+        let traffic_path = audit_path.with_extension("traffic");
+        let _ = fs::remove_file(audit_path);
+        let _ = fs::remove_file(&mode_path);
+        let _ = fs::remove_file(&traffic_path);
+        enforcement_mode::store(&mode_path, mode).expect("mode");
         let store = RulesStore::new(audit_path.with_extension("rules.toml"));
-        let shared = Shared::new(SharedConfig {
+        Shared::new(SharedConfig {
             rules: RuleSet::default(),
             store,
             observation: "attached",
             pending_capacity: 8,
             pending_ttl: Duration::from_secs(5),
             process_capacity: 8,
-            audit_path: audit_path.clone(),
-            mode_path: audit_path.with_extension("mode"),
+            audit_path: audit_path.to_path_buf(),
+            mode_path,
+            traffic_path,
         })
-        .expect("shared state");
+        .expect("shared")
+    }
+
+    #[test]
+    fn new_initializes_state_and_audit_log() {
+        let audit_path = temp_audit("new.log");
+        let shared = shared_for(&audit_path, EnforcementMode::Paused);
         assert_eq!(shared.observation(), "attached");
         assert_eq!(shared.enforcement(), "paused");
+        assert_eq!(shared.traffic(), "open");
         shared.audit.lock().unwrap().append("boot");
         assert!(audit_path.exists());
         let _ = fs::remove_file(audit_path);
@@ -240,6 +335,7 @@ mod tests {
             process_capacity: 8,
             audit_path: audit_dir.clone(),
             mode_path: audit_dir.join("mode"),
+            traffic_path: audit_dir.join("traffic"),
         });
         assert!(result.is_err());
     }
@@ -247,22 +343,8 @@ mod tests {
     #[test]
     fn enforcement_setters_and_getters() {
         let audit_path = temp_audit("enforce.log");
-        let _ = fs::remove_file(&audit_path);
-        let mode_path = audit_path.with_extension("mode");
-        crate::enforcement_mode::store(&mode_path, EnforcementMode::Active).expect("mode");
-        let store = RulesStore::new(audit_path.with_extension("rules.toml"));
-        let shared = Shared::new(SharedConfig {
-            rules: RuleSet::default(),
-            store,
-            observation: "degraded",
-            pending_capacity: 8,
-            pending_ttl: Duration::from_secs(5),
-            process_capacity: 8,
-            audit_path: audit_path.clone(),
-            mode_path,
-        })
-        .expect("shared state");
-        assert_eq!(shared.observation(), "degraded");
+        let shared = shared_for(&audit_path, EnforcementMode::Active);
+        assert_eq!(shared.observation(), "attached");
         shared.set_enforcement("nfqueue");
         assert_eq!(shared.enforcement(), "nfqueue");
         shared.set_enforcement("degraded");
@@ -273,33 +355,43 @@ mod tests {
     }
 
     #[test]
-    fn pause_resume_and_apply_table_paths() {
+    fn pause_resume_and_traffic_block_paths() {
         let audit_path = temp_audit("pause.log");
         let mode_path = audit_path.with_extension("mode");
-        let _ = fs::remove_file(&audit_path);
-        let _ = fs::remove_file(&mode_path);
-        crate::enforcement_mode::store(&mode_path, EnforcementMode::Active).expect("mode");
-        let store = RulesStore::new(audit_path.with_extension("rules.toml"));
-        let shared = Shared::new(SharedConfig {
-            rules: RuleSet::default(),
-            store,
-            observation: "attached",
-            pending_capacity: 8,
-            pending_ttl: Duration::from_secs(5),
-            process_capacity: 8,
-            audit_path: audit_path.clone(),
-            mode_path: mode_path.clone(),
-        })
-        .expect("shared");
+        let traffic_path = audit_path.with_extension("traffic");
+        let shared = shared_for(&audit_path, EnforcementMode::Active);
         shared.set_enforcement("nfqueue");
         assert_eq!(shared.mode_path(), mode_path.as_path());
+        assert_eq!(shared.traffic_path(), traffic_path.as_path());
         let _ok = crate::nft::ForceNftOk::arm();
-        crate::enforcement_mode::apply_table(EnforcementMode::Paused);
         shared.pause().expect("pause");
         assert_eq!(shared.enforcement(), "paused");
         shared.resume().expect("resume");
         assert_eq!(shared.enforcement(), "nfqueue");
-        let _ = fs::remove_file(audit_path);
+        shared.traffic_block().expect("block");
+        assert_eq!(shared.traffic(), "blocked");
+        assert!(shared.is_traffic_blocked());
+        shared.pause().expect("pause while blocked");
+        assert_eq!(shared.enforcement(), "paused");
+        assert_eq!(shared.traffic(), "blocked");
+        shared.resume().expect("resume while blocked");
+        assert_eq!(shared.enforcement(), "nfqueue");
+        assert_eq!(shared.traffic(), "blocked");
+        shared.traffic_unblock().expect("unblock");
+        assert_eq!(shared.traffic(), "open");
+        shared.pause().expect("pause open");
+        shared.traffic_block().expect("block while paused");
+        shared.traffic_unblock().expect("unblock while paused");
+        assert_eq!(shared.traffic(), "open");
+        shared.set_enforcement("degraded");
+        assert!(shared.resume().is_err());
+        shared.set_enforcement("nfqueue");
+        shared.resume().expect("resume active");
+        shared.traffic_block().expect("block again");
+        shared.set_enforcement("none");
+        shared.traffic_unblock().expect("unblock without bind");
+        let _ = fs::remove_file(&audit_path);
         let _ = fs::remove_file(mode_path);
+        let _ = fs::remove_file(traffic_path);
     }
 }

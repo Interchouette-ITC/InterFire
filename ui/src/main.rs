@@ -10,6 +10,7 @@ mod app;
 mod applications_view;
 mod audit_host;
 mod brand;
+mod confirm_queue;
 mod ipc_poll;
 mod log_buf;
 mod log_view;
@@ -19,6 +20,7 @@ mod rss_probe;
 mod rules;
 mod rules_view;
 mod section;
+mod service;
 mod theme;
 mod tray;
 #[cfg(target_os = "linux")]
@@ -130,41 +132,61 @@ fn spawn_tray_action_loop(
                 continue;
             }
             let quit = cx.update(|cx| {
+                let mut need_show = false;
                 for action in pending {
                     match action {
                         TrayAction::Show => {
-                            if cx.windows().is_empty() {
-                                let socket = socket.clone();
-                                let tray = tray_host.clone();
-                                let _ = cx.open_window(
-                                    WindowOptions {
-                                        titlebar: Some(TitlebarOptions {
-                                            title: Some("InterFire".into()),
-                                            ..TitlebarOptions::default()
-                                        }),
-                                        window_background: WindowBackgroundAppearance::Opaque,
-                                        ..WindowOptions::default()
-                                    },
-                                    move |window, cx| {
-                                        build_root(socket.clone(), probe, tray, window, cx)
-                                    },
-                                );
-                            } else if let Some(handle) = cx.windows().into_iter().next() {
-                                let _ = handle.update(cx, |_, window, _| {
-                                    window.activate_window();
-                                });
-                            }
+                            need_show = true;
                         }
                         TrayAction::Quit => {
                             cx.quit();
                             return true;
                         }
                         TrayAction::Pause => {
-                            let _ = ipc_poll::pause_firewall(&socket);
+                            confirm_queue::push(confirm_queue::ConfirmKind::RulesPause);
+                            need_show = true;
                         }
                         TrayAction::Resume => {
-                            let _ = ipc_poll::resume_firewall(&socket);
+                            confirm_queue::push(confirm_queue::ConfirmKind::RulesResume);
+                            need_show = true;
                         }
+                        TrayAction::TrafficBlock => {
+                            confirm_queue::push(confirm_queue::ConfirmKind::TrafficBlock);
+                            need_show = true;
+                        }
+                        TrayAction::TrafficUnblock => {
+                            confirm_queue::push(confirm_queue::ConfirmKind::TrafficUnblock);
+                            need_show = true;
+                        }
+                        TrayAction::DaemonStop => {
+                            confirm_queue::push(confirm_queue::ConfirmKind::DaemonStop);
+                            need_show = true;
+                        }
+                        TrayAction::DaemonStart => {
+                            confirm_queue::push(confirm_queue::ConfirmKind::DaemonStart);
+                            need_show = true;
+                        }
+                    }
+                }
+                if need_show {
+                    if cx.windows().is_empty() {
+                        let socket = socket.clone();
+                        let tray = tray_host.clone();
+                        let _ = cx.open_window(
+                            WindowOptions {
+                                titlebar: Some(TitlebarOptions {
+                                    title: Some("InterFire".into()),
+                                    ..TitlebarOptions::default()
+                                }),
+                                window_background: WindowBackgroundAppearance::Opaque,
+                                ..WindowOptions::default()
+                            },
+                            move |window, cx| build_root(socket.clone(), probe, tray, window, cx),
+                        );
+                    } else if let Some(handle) = cx.windows().into_iter().next() {
+                        let _ = handle.update(cx, |_, window, _| {
+                            window.activate_window();
+                        });
                     }
                 }
                 false

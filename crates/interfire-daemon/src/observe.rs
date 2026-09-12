@@ -306,6 +306,7 @@ mod tests {
                 process_capacity: 8,
                 audit_path: audit_path.clone(),
                 mode_path: audit_path.with_extension("mode"),
+                traffic_path: audit_path.with_extension("traffic"),
             })
             .expect("shared state"),
         );

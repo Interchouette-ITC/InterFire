@@ -22,6 +22,10 @@ fn main() -> io::Result<()> {
         [command] if matches!(command.as_str(), "ping" | "status" | "pause" | "resume") => {
             command.clone()
         }
+        [traffic, block] if traffic == "traffic" && block == "block" => "traffic-block".to_owned(),
+        [traffic, unblock] if traffic == "traffic" && unblock == "unblock" => {
+            "traffic-unblock".to_owned()
+        }
         [rules, list] if rules == "rules" && list == "list" => "rule-list".to_owned(),
         [rules, add, id, executable, verdict, port]
             if rules == "rules"
@@ -99,7 +103,7 @@ fn main() -> io::Result<()> {
 
 fn usage() -> io::Result<()> {
     eprintln!(
-        "usage: interfirectl [--socket=PATH] <ping|status|pause|resume|rules …|prompts …|dns …|audit tail [N]|audit subscribe ID [since=N]|network status|network install|network remove>"
+        "usage: interfirectl [--socket=PATH] <ping|status|pause|resume|traffic block|traffic unblock|rules …|prompts …|dns …|audit tail [N]|audit subscribe ID [since=N]|network status|network install|network remove>"
     );
     eprintln!("one-shot CLI only; use interfire-tui for interactive browse/answer");
     Err(io::Error::new(

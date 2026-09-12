@@ -1,8 +1,10 @@
 # InterFire-owned outbound TCP queue (table inet interfire only).
-# Loaded by interfire-nft.service; do not edit unrelated tables here.
+# Loaded by interfire-nft.service / daemon install; do not edit unrelated tables.
+# Loopback is never queued.
 table inet interfire {
   chain output {
     type filter hook output priority filter; policy accept;
+    oifname "lo" accept
     meta l4proto tcp ct state new queue num 4242
   }
 }
