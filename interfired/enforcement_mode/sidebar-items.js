@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"constant":["DEFAULT_MODE_PATH"],"enum":["EnforcementMode"],"fn":["apply_table","ensure_parent","load","path_from_env","resolve_mode_path","store"],"static":["STORE_TMP_SEQ"]};
+window.SIDEBAR_ITEMS = {"constant":["DEFAULT_MODE_PATH"],"enum":["EnforcementMode"],"fn":["ensure_parent","load","path_from_env","resolve_mode_path","store"],"static":["STORE_TMP_SEQ"]};

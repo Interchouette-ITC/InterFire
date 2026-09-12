@@ -304,124 +304,126 @@
 <a href=#304 id=304 data-nosnippet>304</a>        app.apply(<span class="kw">crate</span>::ipc::IpcEvent::Status(DaemonStatus {
 <a href=#305 id=305 data-nosnippet>305</a>            enforcement: <span class="string">"nfqueue"</span>.into(),
 <a href=#306 id=306 data-nosnippet>306</a>            observation: <span class="string">"attached"</span>.into(),
-<a href=#307 id=307 data-nosnippet>307</a>            ipc_version: <span class="number">1</span>,
-<a href=#308 id=308 data-nosnippet>308</a>            pid: <span class="prelude-val">Some</span>(<span class="number">42</span>),
-<a href=#309 id=309 data-nosnippet>309</a>            rss_kib: <span class="prelude-val">Some</span>(<span class="number">6400</span>),
-<a href=#310 id=310 data-nosnippet>310</a>            cpu_jiffies: <span class="prelude-val">Some</span>(<span class="number">10</span>),
-<a href=#311 id=311 data-nosnippet>311</a>        }));
-<a href=#312 id=312 data-nosnippet>312</a>        app.subscribed = <span class="bool-val">true</span>;
-<a href=#313 id=313 data-nosnippet>313</a>        app.rules = <span class="macro">vec!</span>[RuleRow {
-<a href=#314 id=314 data-nosnippet>314</a>            id: <span class="number">1</span>,
-<a href=#315 id=315 data-nosnippet>315</a>            executable: <span class="string">"/bin/curl"</span>.into(),
-<a href=#316 id=316 data-nosnippet>316</a>            verdict: <span class="string">"allow"</span>.into(),
-<a href=#317 id=317 data-nosnippet>317</a>            port: <span class="number">443</span>,
-<a href=#318 id=318 data-nosnippet>318</a>        }];
-<a href=#319 id=319 data-nosnippet>319</a>        app.prompts = <span class="macro">vec!</span>[PromptRow {
-<a href=#320 id=320 data-nosnippet>320</a>            id: <span class="number">2</span>,
-<a href=#321 id=321 data-nosnippet>321</a>            executable: <span class="string">"/bin/curl"</span>.into(),
-<a href=#322 id=322 data-nosnippet>322</a>            destination: <span class="string">"203.0.113.1"</span>.into(),
-<a href=#323 id=323 data-nosnippet>323</a>            port: <span class="number">443</span>,
-<a href=#324 id=324 data-nosnippet>324</a>            protocol: <span class="string">"tcp"</span>.into(),
-<a href=#325 id=325 data-nosnippet>325</a>            remaining_secs: <span class="number">30</span>,
-<a href=#326 id=326 data-nosnippet>326</a>        }];
-<a href=#327 id=327 data-nosnippet>327</a>        app.processes = <span class="macro">vec!</span>[ProcessRow {
-<a href=#328 id=328 data-nosnippet>328</a>            pid: <span class="number">100</span>,
-<a href=#329 id=329 data-nosnippet>329</a>            start_ticks: <span class="number">50</span>,
-<a href=#330 id=330 data-nosnippet>330</a>            uid: <span class="number">1000</span>,
-<a href=#331 id=331 data-nosnippet>331</a>            executable: <span class="string">"/bin/curl"</span>.into(),
-<a href=#332 id=332 data-nosnippet>332</a>            cmdline: <span class="string">"curl -s"</span>.into(),
-<a href=#333 id=333 data-nosnippet>333</a>            verdict: <span class="string">"allow"</span>.into(),
-<a href=#334 id=334 data-nosnippet>334</a>            ports: <span class="string">"203.0.113.1:443/allow"</span>.into(),
-<a href=#335 id=335 data-nosnippet>335</a>        }];
-<a href=#336 id=336 data-nosnippet>336</a>        <span class="kw">for </span>sequence <span class="kw">in </span><span class="number">1</span>..=<span class="number">25 </span>{
-<a href=#337 id=337 data-nosnippet>337</a>            app.apply(<span class="kw">crate</span>::ipc::IpcEvent::Audit(AuditStreamRecord {
-<a href=#338 id=338 data-nosnippet>338</a>                sequence,
-<a href=#339 id=339 data-nosnippet>339</a>                message: <span class="macro">format!</span>(<span class="string">"audit-{sequence}"</span>),
-<a href=#340 id=340 data-nosnippet>340</a>            }));
-<a href=#341 id=341 data-nosnippet>341</a>        }
-<a href=#342 id=342 data-nosnippet>342</a>        app.status_message = <span class="prelude-val">Some</span>(<span class="string">"ready"</span>.into());
-<a href=#343 id=343 data-nosnippet>343</a>        app
-<a href=#344 id=344 data-nosnippet>344</a>    }
-<a href=#345 id=345 data-nosnippet>345</a>
-<a href=#346 id=346 data-nosnippet>346</a>    <span class="attr">#[test]
-<a href=#347 id=347 data-nosnippet>347</a>    </span><span class="kw">fn </span>draws_every_tab_in_dark_and_light_modes() {
-<a href=#348 id=348 data-nosnippet>348</a>        <span class="kw">for </span>mode <span class="kw">in </span>[Mode::Dark, Mode::Light] {
-<a href=#349 id=349 data-nosnippet>349</a>            <span class="kw">let </span><span class="kw-2">mut </span>app = sample_app(mode);
-<a href=#350 id=350 data-nosnippet>350</a>            <span class="kw">for </span>tab <span class="kw">in </span>Tab::ALL {
-<a href=#351 id=351 data-nosnippet>351</a>                app.tab = tab;
-<a href=#352 id=352 data-nosnippet>352</a>                app.pane = <span class="kw">if </span>tab.has_split() {
-<a href=#353 id=353 data-nosnippet>353</a>                    Pane::Detail
-<a href=#354 id=354 data-nosnippet>354</a>                } <span class="kw">else </span>{
-<a href=#355 id=355 data-nosnippet>355</a>                    Pane::List
-<a href=#356 id=356 data-nosnippet>356</a>                };
-<a href=#357 id=357 data-nosnippet>357</a>                draw_app(<span class="kw-2">&amp;</span>app);
-<a href=#358 id=358 data-nosnippet>358</a>            }
-<a href=#359 id=359 data-nosnippet>359</a>        }
-<a href=#360 id=360 data-nosnippet>360</a>    }
-<a href=#361 id=361 data-nosnippet>361</a>
-<a href=#362 id=362 data-nosnippet>362</a>    <span class="attr">#[test]
-<a href=#363 id=363 data-nosnippet>363</a>    </span><span class="kw">fn </span>draws_list_focus_and_log_window_titles() {
-<a href=#364 id=364 data-nosnippet>364</a>        <span class="kw">let </span><span class="kw-2">mut </span>app = sample_app(Mode::Dark);
-<a href=#365 id=365 data-nosnippet>365</a>        app.tab = Tab::Log;
-<a href=#366 id=366 data-nosnippet>366</a>        app.pane = Pane::List;
-<a href=#367 id=367 data-nosnippet>367</a>        app.list_selected = <span class="number">20</span>;
-<a href=#368 id=368 data-nosnippet>368</a>        draw_app(<span class="kw-2">&amp;</span>app);
-<a href=#369 id=369 data-nosnippet>369</a>        app.pane = Pane::Detail;
-<a href=#370 id=370 data-nosnippet>370</a>        draw_app(<span class="kw-2">&amp;</span>app);
-<a href=#371 id=371 data-nosnippet>371</a>    }
-<a href=#372 id=372 data-nosnippet>372</a>
-<a href=#373 id=373 data-nosnippet>373</a>    <span class="attr">#[test]
-<a href=#374 id=374 data-nosnippet>374</a>    </span><span class="kw">fn </span>draws_notice_add_rule_and_answer_overlays() {
-<a href=#375 id=375 data-nosnippet>375</a>        <span class="kw">let </span><span class="kw-2">mut </span>app = sample_app(Mode::Dark);
-<a href=#376 id=376 data-nosnippet>376</a>        app.overlay = Overlay::Notice(<span class="string">"test notice"</span>.into());
-<a href=#377 id=377 data-nosnippet>377</a>        draw_app(<span class="kw-2">&amp;</span>app);
-<a href=#378 id=378 data-nosnippet>378</a>
-<a href=#379 id=379 data-nosnippet>379</a>        app.overlay = Overlay::AddRule(AddRuleForm {
-<a href=#380 id=380 data-nosnippet>380</a>            id: <span class="string">"9"</span>.into(),
-<a href=#381 id=381 data-nosnippet>381</a>            executable: <span class="string">"/bin/curl"</span>.into(),
-<a href=#382 id=382 data-nosnippet>382</a>            verdict: <span class="string">"deny"</span>.into(),
-<a href=#383 id=383 data-nosnippet>383</a>            port: <span class="string">"443"</span>.into(),
-<a href=#384 id=384 data-nosnippet>384</a>            focus: AddField::Executable,
-<a href=#385 id=385 data-nosnippet>385</a>        });
-<a href=#386 id=386 data-nosnippet>386</a>        draw_app(<span class="kw-2">&amp;</span>app);
-<a href=#387 id=387 data-nosnippet>387</a>
-<a href=#388 id=388 data-nosnippet>388</a>        <span class="kw">for </span>(remaining, verdict) <span class="kw">in </span>[
-<a href=#389 id=389 data-nosnippet>389</a>            (<span class="number">3_u64</span>, AnswerVerdict::Allow),
-<a href=#390 id=390 data-nosnippet>390</a>            (<span class="number">10</span>, AnswerVerdict::Deny),
-<a href=#391 id=391 data-nosnippet>391</a>            (<span class="number">30</span>, AnswerVerdict::Deny),
-<a href=#392 id=392 data-nosnippet>392</a>        ] {
-<a href=#393 id=393 data-nosnippet>393</a>            app.overlay = Overlay::AnswerPrompt(AnswerPromptForm {
-<a href=#394 id=394 data-nosnippet>394</a>                prompt: PromptRow {
-<a href=#395 id=395 data-nosnippet>395</a>                    id: <span class="number">2</span>,
-<a href=#396 id=396 data-nosnippet>396</a>                    executable: <span class="string">"/bin/curl"</span>.into(),
-<a href=#397 id=397 data-nosnippet>397</a>                    destination: <span class="string">"203.0.113.1"</span>.into(),
-<a href=#398 id=398 data-nosnippet>398</a>                    port: <span class="number">443</span>,
-<a href=#399 id=399 data-nosnippet>399</a>                    protocol: <span class="string">"tcp"</span>.into(),
-<a href=#400 id=400 data-nosnippet>400</a>                    remaining_secs: remaining,
-<a href=#401 id=401 data-nosnippet>401</a>                },
-<a href=#402 id=402 data-nosnippet>402</a>                verdict,
-<a href=#403 id=403 data-nosnippet>403</a>                scope: AnswerScope::Session,
-<a href=#404 id=404 data-nosnippet>404</a>            });
-<a href=#405 id=405 data-nosnippet>405</a>            draw_app(<span class="kw-2">&amp;</span>app);
-<a href=#406 id=406 data-nosnippet>406</a>        }
-<a href=#407 id=407 data-nosnippet>407</a>    }
-<a href=#408 id=408 data-nosnippet>408</a>
-<a href=#409 id=409 data-nosnippet>409</a>    <span class="attr">#[test]
-<a href=#410 id=410 data-nosnippet>410</a>    </span><span class="kw">fn </span>draws_connecting_and_down_link_states() {
-<a href=#411 id=411 data-nosnippet>411</a>        palette::set_mode(Mode::Light);
-<a href=#412 id=412 data-nosnippet>412</a>        <span class="kw">let </span><span class="kw-2">mut </span>app = App::new(<span class="string">"/tmp/interfire-tui-down.sock"</span>.into());
-<a href=#413 id=413 data-nosnippet>413</a>        draw_app(<span class="kw-2">&amp;</span>app);
-<a href=#414 id=414 data-nosnippet>414</a>        app.apply(<span class="kw">crate</span>::ipc::IpcEvent::Down(<span class="string">"connect refused"</span>.into()));
-<a href=#415 id=415 data-nosnippet>415</a>        draw_app(<span class="kw-2">&amp;</span>app);
-<a href=#416 id=416 data-nosnippet>416</a>        app.apply(<span class="kw">crate</span>::ipc::IpcEvent::Status(DaemonStatus {
-<a href=#417 id=417 data-nosnippet>417</a>            enforcement: <span class="string">"none"</span>.into(),
-<a href=#418 id=418 data-nosnippet>418</a>            observation: <span class="string">"degraded"</span>.into(),
-<a href=#419 id=419 data-nosnippet>419</a>            ipc_version: <span class="number">1</span>,
-<a href=#420 id=420 data-nosnippet>420</a>            pid: <span class="prelude-val">None</span>,
-<a href=#421 id=421 data-nosnippet>421</a>            rss_kib: <span class="prelude-val">None</span>,
-<a href=#422 id=422 data-nosnippet>422</a>            cpu_jiffies: <span class="prelude-val">None</span>,
-<a href=#423 id=423 data-nosnippet>423</a>        }));
-<a href=#424 id=424 data-nosnippet>424</a>        draw_app(<span class="kw-2">&amp;</span>app);
-<a href=#425 id=425 data-nosnippet>425</a>    }
-<a href=#426 id=426 data-nosnippet>426</a>}
+<a href=#307 id=307 data-nosnippet>307</a>            traffic: <span class="string">"open"</span>.into(),
+<a href=#308 id=308 data-nosnippet>308</a>            ipc_version: <span class="number">1</span>,
+<a href=#309 id=309 data-nosnippet>309</a>            pid: <span class="prelude-val">Some</span>(<span class="number">42</span>),
+<a href=#310 id=310 data-nosnippet>310</a>            rss_kib: <span class="prelude-val">Some</span>(<span class="number">6400</span>),
+<a href=#311 id=311 data-nosnippet>311</a>            cpu_jiffies: <span class="prelude-val">Some</span>(<span class="number">10</span>),
+<a href=#312 id=312 data-nosnippet>312</a>        }));
+<a href=#313 id=313 data-nosnippet>313</a>        app.subscribed = <span class="bool-val">true</span>;
+<a href=#314 id=314 data-nosnippet>314</a>        app.rules = <span class="macro">vec!</span>[RuleRow {
+<a href=#315 id=315 data-nosnippet>315</a>            id: <span class="number">1</span>,
+<a href=#316 id=316 data-nosnippet>316</a>            executable: <span class="string">"/bin/curl"</span>.into(),
+<a href=#317 id=317 data-nosnippet>317</a>            verdict: <span class="string">"allow"</span>.into(),
+<a href=#318 id=318 data-nosnippet>318</a>            port: <span class="number">443</span>,
+<a href=#319 id=319 data-nosnippet>319</a>        }];
+<a href=#320 id=320 data-nosnippet>320</a>        app.prompts = <span class="macro">vec!</span>[PromptRow {
+<a href=#321 id=321 data-nosnippet>321</a>            id: <span class="number">2</span>,
+<a href=#322 id=322 data-nosnippet>322</a>            executable: <span class="string">"/bin/curl"</span>.into(),
+<a href=#323 id=323 data-nosnippet>323</a>            destination: <span class="string">"203.0.113.1"</span>.into(),
+<a href=#324 id=324 data-nosnippet>324</a>            port: <span class="number">443</span>,
+<a href=#325 id=325 data-nosnippet>325</a>            protocol: <span class="string">"tcp"</span>.into(),
+<a href=#326 id=326 data-nosnippet>326</a>            remaining_secs: <span class="number">30</span>,
+<a href=#327 id=327 data-nosnippet>327</a>        }];
+<a href=#328 id=328 data-nosnippet>328</a>        app.processes = <span class="macro">vec!</span>[ProcessRow {
+<a href=#329 id=329 data-nosnippet>329</a>            pid: <span class="number">100</span>,
+<a href=#330 id=330 data-nosnippet>330</a>            start_ticks: <span class="number">50</span>,
+<a href=#331 id=331 data-nosnippet>331</a>            uid: <span class="number">1000</span>,
+<a href=#332 id=332 data-nosnippet>332</a>            executable: <span class="string">"/bin/curl"</span>.into(),
+<a href=#333 id=333 data-nosnippet>333</a>            cmdline: <span class="string">"curl -s"</span>.into(),
+<a href=#334 id=334 data-nosnippet>334</a>            verdict: <span class="string">"allow"</span>.into(),
+<a href=#335 id=335 data-nosnippet>335</a>            ports: <span class="string">"203.0.113.1:443/allow"</span>.into(),
+<a href=#336 id=336 data-nosnippet>336</a>        }];
+<a href=#337 id=337 data-nosnippet>337</a>        <span class="kw">for </span>sequence <span class="kw">in </span><span class="number">1</span>..=<span class="number">25 </span>{
+<a href=#338 id=338 data-nosnippet>338</a>            app.apply(<span class="kw">crate</span>::ipc::IpcEvent::Audit(AuditStreamRecord {
+<a href=#339 id=339 data-nosnippet>339</a>                sequence,
+<a href=#340 id=340 data-nosnippet>340</a>                message: <span class="macro">format!</span>(<span class="string">"audit-{sequence}"</span>),
+<a href=#341 id=341 data-nosnippet>341</a>            }));
+<a href=#342 id=342 data-nosnippet>342</a>        }
+<a href=#343 id=343 data-nosnippet>343</a>        app.status_message = <span class="prelude-val">Some</span>(<span class="string">"ready"</span>.into());
+<a href=#344 id=344 data-nosnippet>344</a>        app
+<a href=#345 id=345 data-nosnippet>345</a>    }
+<a href=#346 id=346 data-nosnippet>346</a>
+<a href=#347 id=347 data-nosnippet>347</a>    <span class="attr">#[test]
+<a href=#348 id=348 data-nosnippet>348</a>    </span><span class="kw">fn </span>draws_every_tab_in_dark_and_light_modes() {
+<a href=#349 id=349 data-nosnippet>349</a>        <span class="kw">for </span>mode <span class="kw">in </span>[Mode::Dark, Mode::Light] {
+<a href=#350 id=350 data-nosnippet>350</a>            <span class="kw">let </span><span class="kw-2">mut </span>app = sample_app(mode);
+<a href=#351 id=351 data-nosnippet>351</a>            <span class="kw">for </span>tab <span class="kw">in </span>Tab::ALL {
+<a href=#352 id=352 data-nosnippet>352</a>                app.tab = tab;
+<a href=#353 id=353 data-nosnippet>353</a>                app.pane = <span class="kw">if </span>tab.has_split() {
+<a href=#354 id=354 data-nosnippet>354</a>                    Pane::Detail
+<a href=#355 id=355 data-nosnippet>355</a>                } <span class="kw">else </span>{
+<a href=#356 id=356 data-nosnippet>356</a>                    Pane::List
+<a href=#357 id=357 data-nosnippet>357</a>                };
+<a href=#358 id=358 data-nosnippet>358</a>                draw_app(<span class="kw-2">&amp;</span>app);
+<a href=#359 id=359 data-nosnippet>359</a>            }
+<a href=#360 id=360 data-nosnippet>360</a>        }
+<a href=#361 id=361 data-nosnippet>361</a>    }
+<a href=#362 id=362 data-nosnippet>362</a>
+<a href=#363 id=363 data-nosnippet>363</a>    <span class="attr">#[test]
+<a href=#364 id=364 data-nosnippet>364</a>    </span><span class="kw">fn </span>draws_list_focus_and_log_window_titles() {
+<a href=#365 id=365 data-nosnippet>365</a>        <span class="kw">let </span><span class="kw-2">mut </span>app = sample_app(Mode::Dark);
+<a href=#366 id=366 data-nosnippet>366</a>        app.tab = Tab::Log;
+<a href=#367 id=367 data-nosnippet>367</a>        app.pane = Pane::List;
+<a href=#368 id=368 data-nosnippet>368</a>        app.list_selected = <span class="number">20</span>;
+<a href=#369 id=369 data-nosnippet>369</a>        draw_app(<span class="kw-2">&amp;</span>app);
+<a href=#370 id=370 data-nosnippet>370</a>        app.pane = Pane::Detail;
+<a href=#371 id=371 data-nosnippet>371</a>        draw_app(<span class="kw-2">&amp;</span>app);
+<a href=#372 id=372 data-nosnippet>372</a>    }
+<a href=#373 id=373 data-nosnippet>373</a>
+<a href=#374 id=374 data-nosnippet>374</a>    <span class="attr">#[test]
+<a href=#375 id=375 data-nosnippet>375</a>    </span><span class="kw">fn </span>draws_notice_add_rule_and_answer_overlays() {
+<a href=#376 id=376 data-nosnippet>376</a>        <span class="kw">let </span><span class="kw-2">mut </span>app = sample_app(Mode::Dark);
+<a href=#377 id=377 data-nosnippet>377</a>        app.overlay = Overlay::Notice(<span class="string">"test notice"</span>.into());
+<a href=#378 id=378 data-nosnippet>378</a>        draw_app(<span class="kw-2">&amp;</span>app);
+<a href=#379 id=379 data-nosnippet>379</a>
+<a href=#380 id=380 data-nosnippet>380</a>        app.overlay = Overlay::AddRule(AddRuleForm {
+<a href=#381 id=381 data-nosnippet>381</a>            id: <span class="string">"9"</span>.into(),
+<a href=#382 id=382 data-nosnippet>382</a>            executable: <span class="string">"/bin/curl"</span>.into(),
+<a href=#383 id=383 data-nosnippet>383</a>            verdict: <span class="string">"deny"</span>.into(),
+<a href=#384 id=384 data-nosnippet>384</a>            port: <span class="string">"443"</span>.into(),
+<a href=#385 id=385 data-nosnippet>385</a>            focus: AddField::Executable,
+<a href=#386 id=386 data-nosnippet>386</a>        });
+<a href=#387 id=387 data-nosnippet>387</a>        draw_app(<span class="kw-2">&amp;</span>app);
+<a href=#388 id=388 data-nosnippet>388</a>
+<a href=#389 id=389 data-nosnippet>389</a>        <span class="kw">for </span>(remaining, verdict) <span class="kw">in </span>[
+<a href=#390 id=390 data-nosnippet>390</a>            (<span class="number">3_u64</span>, AnswerVerdict::Allow),
+<a href=#391 id=391 data-nosnippet>391</a>            (<span class="number">10</span>, AnswerVerdict::Deny),
+<a href=#392 id=392 data-nosnippet>392</a>            (<span class="number">30</span>, AnswerVerdict::Deny),
+<a href=#393 id=393 data-nosnippet>393</a>        ] {
+<a href=#394 id=394 data-nosnippet>394</a>            app.overlay = Overlay::AnswerPrompt(AnswerPromptForm {
+<a href=#395 id=395 data-nosnippet>395</a>                prompt: PromptRow {
+<a href=#396 id=396 data-nosnippet>396</a>                    id: <span class="number">2</span>,
+<a href=#397 id=397 data-nosnippet>397</a>                    executable: <span class="string">"/bin/curl"</span>.into(),
+<a href=#398 id=398 data-nosnippet>398</a>                    destination: <span class="string">"203.0.113.1"</span>.into(),
+<a href=#399 id=399 data-nosnippet>399</a>                    port: <span class="number">443</span>,
+<a href=#400 id=400 data-nosnippet>400</a>                    protocol: <span class="string">"tcp"</span>.into(),
+<a href=#401 id=401 data-nosnippet>401</a>                    remaining_secs: remaining,
+<a href=#402 id=402 data-nosnippet>402</a>                },
+<a href=#403 id=403 data-nosnippet>403</a>                verdict,
+<a href=#404 id=404 data-nosnippet>404</a>                scope: AnswerScope::Session,
+<a href=#405 id=405 data-nosnippet>405</a>            });
+<a href=#406 id=406 data-nosnippet>406</a>            draw_app(<span class="kw-2">&amp;</span>app);
+<a href=#407 id=407 data-nosnippet>407</a>        }
+<a href=#408 id=408 data-nosnippet>408</a>    }
+<a href=#409 id=409 data-nosnippet>409</a>
+<a href=#410 id=410 data-nosnippet>410</a>    <span class="attr">#[test]
+<a href=#411 id=411 data-nosnippet>411</a>    </span><span class="kw">fn </span>draws_connecting_and_down_link_states() {
+<a href=#412 id=412 data-nosnippet>412</a>        palette::set_mode(Mode::Light);
+<a href=#413 id=413 data-nosnippet>413</a>        <span class="kw">let </span><span class="kw-2">mut </span>app = App::new(<span class="string">"/tmp/interfire-tui-down.sock"</span>.into());
+<a href=#414 id=414 data-nosnippet>414</a>        draw_app(<span class="kw-2">&amp;</span>app);
+<a href=#415 id=415 data-nosnippet>415</a>        app.apply(<span class="kw">crate</span>::ipc::IpcEvent::Down(<span class="string">"connect refused"</span>.into()));
+<a href=#416 id=416 data-nosnippet>416</a>        draw_app(<span class="kw-2">&amp;</span>app);
+<a href=#417 id=417 data-nosnippet>417</a>        app.apply(<span class="kw">crate</span>::ipc::IpcEvent::Status(DaemonStatus {
+<a href=#418 id=418 data-nosnippet>418</a>            enforcement: <span class="string">"none"</span>.into(),
+<a href=#419 id=419 data-nosnippet>419</a>            observation: <span class="string">"degraded"</span>.into(),
+<a href=#420 id=420 data-nosnippet>420</a>            traffic: <span class="string">"open"</span>.into(),
+<a href=#421 id=421 data-nosnippet>421</a>            ipc_version: <span class="number">1</span>,
+<a href=#422 id=422 data-nosnippet>422</a>            pid: <span class="prelude-val">None</span>,
+<a href=#423 id=423 data-nosnippet>423</a>            rss_kib: <span class="prelude-val">None</span>,
+<a href=#424 id=424 data-nosnippet>424</a>            cpu_jiffies: <span class="prelude-val">None</span>,
+<a href=#425 id=425 data-nosnippet>425</a>        }));
+<a href=#426 id=426 data-nosnippet>426</a>        draw_app(<span class="kw-2">&amp;</span>app);
+<a href=#427 id=427 data-nosnippet>427</a>    }
+<a href=#428 id=428 data-nosnippet>428</a>}
 </code></pre></div></section></main></body></html>

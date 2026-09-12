@@ -924,62 +924,63 @@
 <a href=#924 id=924 data-nosnippet>924</a>            line <span class="kw">if </span>line.starts_with(<span class="string">"v1 status"</span>) =&gt; Response::Status(StatusBody {
 <a href=#925 id=925 data-nosnippet>925</a>                enforcement: <span class="string">"nfqueue"</span>,
 <a href=#926 id=926 data-nosnippet>926</a>                observation: <span class="string">"attached"</span>,
-<a href=#927 id=927 data-nosnippet>927</a>                ipc_version: <span class="number">1</span>,
-<a href=#928 id=928 data-nosnippet>928</a>                pid: <span class="number">42</span>,
-<a href=#929 id=929 data-nosnippet>929</a>                rss_kib: <span class="number">6400</span>,
-<a href=#930 id=930 data-nosnippet>930</a>                cpu_jiffies: <span class="number">99</span>,
-<a href=#931 id=931 data-nosnippet>931</a>            })
-<a href=#932 id=932 data-nosnippet>932</a>            .encode(),
-<a href=#933 id=933 data-nosnippet>933</a>            line <span class="kw">if </span>line.starts_with(<span class="string">"v1 rule-list"</span>) =&gt; {
-<a href=#934 id=934 data-nosnippet>934</a>                Response::Rules(<span class="string">"9|/bin/curl|allow|443"</span>.into()).encode()
-<a href=#935 id=935 data-nosnippet>935</a>            }
-<a href=#936 id=936 data-nosnippet>936</a>            line <span class="kw">if </span>line.starts_with(<span class="string">"v1 prompt-list"</span>) =&gt; {
-<a href=#937 id=937 data-nosnippet>937</a>                Response::Prompts(<span class="string">"4|/bin/curl|203.0.113.1|443|tcp|30"</span>.into()).encode()
-<a href=#938 id=938 data-nosnippet>938</a>            }
-<a href=#939 id=939 data-nosnippet>939</a>            line <span class="kw">if </span>line.starts_with(<span class="string">"v1 process-list"</span>) =&gt; {
-<a href=#940 id=940 data-nosnippet>940</a>                <span class="kw">let </span>row = ProcessRow {
-<a href=#941 id=941 data-nosnippet>941</a>                    pid: <span class="number">100</span>,
-<a href=#942 id=942 data-nosnippet>942</a>                    start_ticks: <span class="number">50</span>,
-<a href=#943 id=943 data-nosnippet>943</a>                    uid: <span class="number">1000</span>,
-<a href=#944 id=944 data-nosnippet>944</a>                    executable: <span class="string">"/bin/curl"</span>.into(),
-<a href=#945 id=945 data-nosnippet>945</a>                    cmdline: <span class="string">"curl"</span>.into(),
-<a href=#946 id=946 data-nosnippet>946</a>                    verdict: <span class="string">"allow"</span>.into(),
-<a href=#947 id=947 data-nosnippet>947</a>                    ports: <span class="string">"1.2.3.4:443/allow"</span>.into(),
-<a href=#948 id=948 data-nosnippet>948</a>                };
-<a href=#949 id=949 data-nosnippet>949</a>                Response::Processes(row.encode_row()).encode()
-<a href=#950 id=950 data-nosnippet>950</a>            }
-<a href=#951 id=951 data-nosnippet>951</a>            line <span class="kw">if </span>line.starts_with(<span class="string">"v1 rule-delete"</span>) =&gt; {
-<a href=#952 id=952 data-nosnippet>952</a>                <span class="kw">if </span>config.rule_delete_error {
-<a href=#953 id=953 data-nosnippet>953</a>                    Response::Error(<span class="string">"missing rule"</span>).encode()
-<a href=#954 id=954 data-nosnippet>954</a>                } <span class="kw">else </span>{
-<a href=#955 id=955 data-nosnippet>955</a>                    Response::Pong.encode()
-<a href=#956 id=956 data-nosnippet>956</a>                }
-<a href=#957 id=957 data-nosnippet>957</a>            }
-<a href=#958 id=958 data-nosnippet>958</a>            line <span class="kw">if </span>line.starts_with(<span class="string">"v1 rule-add"</span>) =&gt; {
-<a href=#959 id=959 data-nosnippet>959</a>                <span class="kw">if </span>config.rule_add_error {
-<a href=#960 id=960 data-nosnippet>960</a>                    Response::Error(<span class="string">"invalid rule"</span>).encode()
-<a href=#961 id=961 data-nosnippet>961</a>                } <span class="kw">else </span>{
-<a href=#962 id=962 data-nosnippet>962</a>                    Response::Pong.encode()
-<a href=#963 id=963 data-nosnippet>963</a>                }
-<a href=#964 id=964 data-nosnippet>964</a>            }
-<a href=#965 id=965 data-nosnippet>965</a>            line <span class="kw">if </span>line.starts_with(<span class="string">"v1 prompt-answer"</span>) =&gt; {
-<a href=#966 id=966 data-nosnippet>966</a>                <span class="kw">if </span>config.prompt_answer_error {
-<a href=#967 id=967 data-nosnippet>967</a>                    Response::Error(<span class="string">"prompt_expired"</span>).encode()
-<a href=#968 id=968 data-nosnippet>968</a>                } <span class="kw">else </span>{
-<a href=#969 id=969 data-nosnippet>969</a>                    Response::Pong.encode()
-<a href=#970 id=970 data-nosnippet>970</a>                }
-<a href=#971 id=971 data-nosnippet>971</a>            }
-<a href=#972 id=972 data-nosnippet>972</a>            <span class="kw">_ </span>=&gt; Response::Error(<span class="string">"unknown"</span>).encode(),
-<a href=#973 id=973 data-nosnippet>973</a>        };
-<a href=#974 id=974 data-nosnippet>974</a>        <span class="kw">let _ </span>= writer.write_all(response.as_bytes()).<span class="kw">await</span>;
-<a href=#975 id=975 data-nosnippet>975</a>    }
-<a href=#976 id=976 data-nosnippet>976</a>
-<a href=#977 id=977 data-nosnippet>977</a>    <span class="kw">fn </span>temp_socket(label: <span class="kw-2">&amp;</span>str) -&gt; PathBuf {
-<a href=#978 id=978 data-nosnippet>978</a>        <span class="kw">let </span>nanos = SystemTime::now()
-<a href=#979 id=979 data-nosnippet>979</a>            .duration_since(UNIX_EPOCH)
-<a href=#980 id=980 data-nosnippet>980</a>            .expect(<span class="string">"clock"</span>)
-<a href=#981 id=981 data-nosnippet>981</a>            .as_nanos();
-<a href=#982 id=982 data-nosnippet>982</a>        PathBuf::from(<span class="macro">format!</span>(<span class="string">"/tmp/interfire-tui-{label}-{nanos}.sock"</span>))
-<a href=#983 id=983 data-nosnippet>983</a>    }
-<a href=#984 id=984 data-nosnippet>984</a>}
+<a href=#927 id=927 data-nosnippet>927</a>                traffic: <span class="string">"open"</span>,
+<a href=#928 id=928 data-nosnippet>928</a>                ipc_version: <span class="number">1</span>,
+<a href=#929 id=929 data-nosnippet>929</a>                pid: <span class="number">42</span>,
+<a href=#930 id=930 data-nosnippet>930</a>                rss_kib: <span class="number">6400</span>,
+<a href=#931 id=931 data-nosnippet>931</a>                cpu_jiffies: <span class="number">99</span>,
+<a href=#932 id=932 data-nosnippet>932</a>            })
+<a href=#933 id=933 data-nosnippet>933</a>            .encode(),
+<a href=#934 id=934 data-nosnippet>934</a>            line <span class="kw">if </span>line.starts_with(<span class="string">"v1 rule-list"</span>) =&gt; {
+<a href=#935 id=935 data-nosnippet>935</a>                Response::Rules(<span class="string">"9|/bin/curl|allow|443"</span>.into()).encode()
+<a href=#936 id=936 data-nosnippet>936</a>            }
+<a href=#937 id=937 data-nosnippet>937</a>            line <span class="kw">if </span>line.starts_with(<span class="string">"v1 prompt-list"</span>) =&gt; {
+<a href=#938 id=938 data-nosnippet>938</a>                Response::Prompts(<span class="string">"4|/bin/curl|203.0.113.1|443|tcp|30"</span>.into()).encode()
+<a href=#939 id=939 data-nosnippet>939</a>            }
+<a href=#940 id=940 data-nosnippet>940</a>            line <span class="kw">if </span>line.starts_with(<span class="string">"v1 process-list"</span>) =&gt; {
+<a href=#941 id=941 data-nosnippet>941</a>                <span class="kw">let </span>row = ProcessRow {
+<a href=#942 id=942 data-nosnippet>942</a>                    pid: <span class="number">100</span>,
+<a href=#943 id=943 data-nosnippet>943</a>                    start_ticks: <span class="number">50</span>,
+<a href=#944 id=944 data-nosnippet>944</a>                    uid: <span class="number">1000</span>,
+<a href=#945 id=945 data-nosnippet>945</a>                    executable: <span class="string">"/bin/curl"</span>.into(),
+<a href=#946 id=946 data-nosnippet>946</a>                    cmdline: <span class="string">"curl"</span>.into(),
+<a href=#947 id=947 data-nosnippet>947</a>                    verdict: <span class="string">"allow"</span>.into(),
+<a href=#948 id=948 data-nosnippet>948</a>                    ports: <span class="string">"1.2.3.4:443/allow"</span>.into(),
+<a href=#949 id=949 data-nosnippet>949</a>                };
+<a href=#950 id=950 data-nosnippet>950</a>                Response::Processes(row.encode_row()).encode()
+<a href=#951 id=951 data-nosnippet>951</a>            }
+<a href=#952 id=952 data-nosnippet>952</a>            line <span class="kw">if </span>line.starts_with(<span class="string">"v1 rule-delete"</span>) =&gt; {
+<a href=#953 id=953 data-nosnippet>953</a>                <span class="kw">if </span>config.rule_delete_error {
+<a href=#954 id=954 data-nosnippet>954</a>                    Response::Error(<span class="string">"missing rule"</span>).encode()
+<a href=#955 id=955 data-nosnippet>955</a>                } <span class="kw">else </span>{
+<a href=#956 id=956 data-nosnippet>956</a>                    Response::Pong.encode()
+<a href=#957 id=957 data-nosnippet>957</a>                }
+<a href=#958 id=958 data-nosnippet>958</a>            }
+<a href=#959 id=959 data-nosnippet>959</a>            line <span class="kw">if </span>line.starts_with(<span class="string">"v1 rule-add"</span>) =&gt; {
+<a href=#960 id=960 data-nosnippet>960</a>                <span class="kw">if </span>config.rule_add_error {
+<a href=#961 id=961 data-nosnippet>961</a>                    Response::Error(<span class="string">"invalid rule"</span>).encode()
+<a href=#962 id=962 data-nosnippet>962</a>                } <span class="kw">else </span>{
+<a href=#963 id=963 data-nosnippet>963</a>                    Response::Pong.encode()
+<a href=#964 id=964 data-nosnippet>964</a>                }
+<a href=#965 id=965 data-nosnippet>965</a>            }
+<a href=#966 id=966 data-nosnippet>966</a>            line <span class="kw">if </span>line.starts_with(<span class="string">"v1 prompt-answer"</span>) =&gt; {
+<a href=#967 id=967 data-nosnippet>967</a>                <span class="kw">if </span>config.prompt_answer_error {
+<a href=#968 id=968 data-nosnippet>968</a>                    Response::Error(<span class="string">"prompt_expired"</span>).encode()
+<a href=#969 id=969 data-nosnippet>969</a>                } <span class="kw">else </span>{
+<a href=#970 id=970 data-nosnippet>970</a>                    Response::Pong.encode()
+<a href=#971 id=971 data-nosnippet>971</a>                }
+<a href=#972 id=972 data-nosnippet>972</a>            }
+<a href=#973 id=973 data-nosnippet>973</a>            <span class="kw">_ </span>=&gt; Response::Error(<span class="string">"unknown"</span>).encode(),
+<a href=#974 id=974 data-nosnippet>974</a>        };
+<a href=#975 id=975 data-nosnippet>975</a>        <span class="kw">let _ </span>= writer.write_all(response.as_bytes()).<span class="kw">await</span>;
+<a href=#976 id=976 data-nosnippet>976</a>    }
+<a href=#977 id=977 data-nosnippet>977</a>
+<a href=#978 id=978 data-nosnippet>978</a>    <span class="kw">fn </span>temp_socket(label: <span class="kw-2">&amp;</span>str) -&gt; PathBuf {
+<a href=#979 id=979 data-nosnippet>979</a>        <span class="kw">let </span>nanos = SystemTime::now()
+<a href=#980 id=980 data-nosnippet>980</a>            .duration_since(UNIX_EPOCH)
+<a href=#981 id=981 data-nosnippet>981</a>            .expect(<span class="string">"clock"</span>)
+<a href=#982 id=982 data-nosnippet>982</a>            .as_nanos();
+<a href=#983 id=983 data-nosnippet>983</a>        PathBuf::from(<span class="macro">format!</span>(<span class="string">"/tmp/interfire-tui-{label}-{nanos}.sock"</span>))
+<a href=#984 id=984 data-nosnippet>984</a>    }
+<a href=#985 id=985 data-nosnippet>985</a>}
 </code></pre></div></section></main></body></html>
