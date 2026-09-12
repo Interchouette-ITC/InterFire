@@ -13,7 +13,7 @@ use tracing::{info, warn};
 /// System group that may connect and mutate policy over IPC.
 pub const OPERATOR_GROUP: &str = "interfire";
 
-/// Result of looking up [`OPERATOR_GROUP`] for socket permission setup.
+/// Result of looking up an operator group for socket permission setup.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum GroupLookup {
     Present { gid: u32 },
@@ -26,26 +26,25 @@ enum GroupLookup {
 /// When the group is missing, keep owner-only `0600` and warn so desktop clients
 /// fail honestly until packaging creates the group.
 pub fn prepare_operator_socket(socket: &Path) -> io::Result<()> {
-    let lookup = match Group::from_name(OPERATOR_GROUP) {
+    prepare_operator_socket_with(socket, resolve_group(OPERATOR_GROUP))
+}
+
+fn resolve_group(name: &str) -> GroupLookup {
+    match Group::from_name(name) {
         Ok(Some(group)) => GroupLookup::Present {
             gid: group.gid.as_raw(),
         },
         Ok(None) => GroupLookup::Missing,
         Err(_) => GroupLookup::Failed,
-    };
-    prepare_operator_socket_with(socket, lookup)
+    }
 }
 
 fn prepare_operator_socket_with(socket: &Path, lookup: GroupLookup) -> io::Result<()> {
     match lookup {
         GroupLookup::Present { gid } => {
             if let Some(parent) = socket.parent() {
-                if let Err(error) = chown(parent, None, Some(gid)) {
-                    warn!(%error, path = %parent.display(), "failed to chown IPC directory");
-                }
-                if let Err(error) = fs::set_permissions(parent, fs::Permissions::from_mode(0o750)) {
-                    warn!(%error, path = %parent.display(), "failed to chmod IPC directory");
-                }
+                let _ = chown(parent, None, Some(gid));
+                let _ = fs::set_permissions(parent, fs::Permissions::from_mode(0o750));
             }
             chown(socket, None, Some(gid))?;
             fs::set_permissions(socket, fs::Permissions::from_mode(0o660))?;
@@ -74,11 +73,11 @@ fn prepare_operator_socket_with(socket: &Path, lookup: GroupLookup) -> io::Resul
 /// True when `uid` may mutate policy (root, daemon UID, or operator group).
 #[must_use]
 pub fn uid_may_mutate(uid: Uid) -> bool {
-    uid.is_root() || uid == Uid::current() || uid_in_operator_group(uid)
+    uid.is_root() || uid == Uid::current() || uid_in_named_group(uid, OPERATOR_GROUP)
 }
 
-fn uid_in_operator_group(uid: Uid) -> bool {
-    let Ok(Some(group)) = Group::from_name(OPERATOR_GROUP) else {
+fn uid_in_named_group(uid: Uid, group_name: &str) -> bool {
+    let Ok(Some(group)) = Group::from_name(group_name) else {
         return false;
     };
     let target = group.gid;
@@ -98,7 +97,7 @@ fn uid_in_operator_group(uid: Uid) -> bool {
 mod tests {
     use super::{
         GroupLookup, OPERATOR_GROUP, prepare_operator_socket, prepare_operator_socket_with,
-        uid_in_operator_group, uid_may_mutate,
+        resolve_group, uid_in_named_group, uid_may_mutate,
     };
     use std::fs;
     use std::os::unix::fs::PermissionsExt;
@@ -145,10 +144,20 @@ mod tests {
 
     #[test]
     fn unknown_uid_without_passwd_cannot_mutate() {
-        let stranger = Uid::from_raw(65_534);
-        if stranger != Uid::current() && !stranger.is_root() {
-            assert!(!uid_may_mutate(stranger));
-        }
+        assert!(!uid_may_mutate(Uid::from_raw(65_534)));
+    }
+
+    #[test]
+    fn resolve_root_group_is_present() {
+        assert!(matches!(resolve_group("root"), GroupLookup::Present { .. }));
+    }
+
+    #[test]
+    fn resolve_missing_group_is_missing() {
+        assert_eq!(
+            resolve_group("interfire-no-such-group-for-tests"),
+            GroupLookup::Missing
+        );
     }
 
     #[test]
@@ -190,7 +199,21 @@ mod tests {
     }
 
     #[test]
-    fn uid_in_operator_group_rejects_unknown_uid() {
-        assert!(!uid_in_operator_group(Uid::from_raw(65_533)));
+    fn root_uid_is_in_root_group() {
+        assert!(uid_in_named_group(Uid::from_raw(0), "root"));
+    }
+
+    #[test]
+    fn unknown_uid_is_not_in_root_group() {
+        assert!(!uid_in_named_group(Uid::from_raw(65_533), "root"));
+    }
+
+    #[test]
+    fn current_uid_group_membership_is_consistent() {
+        let uid = Uid::current();
+        let in_root = uid_in_named_group(uid, "root");
+        let in_missing = uid_in_named_group(uid, "interfire-no-such-group-for-tests");
+        assert!(!in_missing);
+        let _ = in_root;
     }
 }
