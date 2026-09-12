@@ -61,15 +61,20 @@ pub fn load(path: &Path) -> EnforcementMode {
 ///
 /// Returns I/O failures while creating the parent or writing the file.
 pub fn store(path: &Path, mode: EnforcementMode) -> io::Result<()> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
+    ensure_parent(path)?;
     // Unique sibling name so parallel tests do not race on the same `.tmp`.
     let seq = STORE_TMP_SEQ.fetch_add(1, Ordering::Relaxed);
     let temporary = path.with_extension(format!("tmp.{seq}"));
     fs::write(&temporary, format!("{}\n", mode.as_str()))?;
     fs::rename(&temporary, path)?;
     Ok(())
+}
+
+fn ensure_parent(path: &Path) -> io::Result<()> {
+    match path.parent() {
+        Some(parent) if !parent.as_os_str().is_empty() => fs::create_dir_all(parent),
+        _ => Ok(()),
+    }
 }
 
 /// Apply persisted mode to the owned nft table after the queue is ready.
@@ -106,9 +111,9 @@ pub fn resolve_mode_path(override_path: Option<PathBuf>) -> PathBuf {
 
 #[cfg(test)]
 mod tests {
-    use super::{EnforcementMode, load, store};
+    use super::{EnforcementMode, ensure_parent, load, store};
     use std::fs;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
     use std::sync::atomic::{AtomicU64, Ordering};
 
     fn temp_mode() -> PathBuf {
@@ -159,6 +164,12 @@ mod tests {
         store(&path, EnforcementMode::Active).expect("store");
         assert_eq!(load(&path), EnforcementMode::Active);
         let _ = fs::remove_dir_all(path.parent().expect("parent").parent().expect("grand"));
+    }
+
+    #[test]
+    fn ensure_parent_skips_empty_and_root() {
+        ensure_parent(Path::new("enforcement.mode")).expect("relative");
+        ensure_parent(Path::new("/")).expect("root");
     }
 
     #[test]
