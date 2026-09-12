@@ -92,8 +92,16 @@ pub fn apply_table(mode: EnforcementMode) {
 /// Resolve mode path from env or the package default.
 #[must_use]
 pub fn path_from_env() -> PathBuf {
-    env::var("INTERFIRE_ENFORCEMENT_MODE")
-        .map_or_else(|_| PathBuf::from(DEFAULT_MODE_PATH), PathBuf::from)
+    resolve_mode_path(
+        env::var("INTERFIRE_ENFORCEMENT_MODE")
+            .ok()
+            .map(PathBuf::from),
+    )
+}
+
+#[must_use]
+pub fn resolve_mode_path(override_path: Option<PathBuf>) -> PathBuf {
+    override_path.unwrap_or_else(|| PathBuf::from(DEFAULT_MODE_PATH))
 }
 
 #[cfg(test)]
@@ -133,5 +141,60 @@ mod tests {
         fs::write(&path, "nope\n").expect("write");
         assert_eq!(load(&path), EnforcementMode::Paused);
         let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn unreadable_path_defaults_paused() {
+        let path = temp_mode();
+        let _ = fs::remove_file(&path);
+        fs::create_dir_all(&path).expect("dir as mode path");
+        assert_eq!(load(&path), EnforcementMode::Paused);
+        let _ = fs::remove_dir_all(&path);
+    }
+
+    #[test]
+    fn store_creates_missing_parent() {
+        let path = temp_mode().join("nested").join("enforcement.mode");
+        let _ = fs::remove_dir_all(path.parent().expect("parent").parent().expect("grand"));
+        store(&path, EnforcementMode::Active).expect("store");
+        assert_eq!(load(&path), EnforcementMode::Active);
+        let _ = fs::remove_dir_all(path.parent().expect("parent").parent().expect("grand"));
+    }
+
+    #[test]
+    fn apply_table_covers_active_and_paused_outcomes() {
+        let _ok = crate::nft::ForceNftOk::arm();
+        crate::enforcement_mode::apply_table(EnforcementMode::Paused);
+        crate::enforcement_mode::apply_table(EnforcementMode::Active);
+    }
+
+    #[test]
+    fn apply_table_logs_when_nft_rejects() {
+        {
+            let _reject = crate::nft::ForceNftRemoveReject::arm();
+            crate::enforcement_mode::apply_table(EnforcementMode::Paused);
+        }
+        let _reject = crate::nft::ForceNftInstallReject::arm();
+        crate::enforcement_mode::apply_table(EnforcementMode::Active);
+    }
+
+    #[test]
+    fn path_from_env_default_and_override() {
+        assert_eq!(
+            crate::enforcement_mode::resolve_mode_path(None),
+            PathBuf::from(super::DEFAULT_MODE_PATH)
+        );
+        let custom = temp_mode();
+        assert_eq!(
+            crate::enforcement_mode::resolve_mode_path(Some(custom.clone())),
+            custom
+        );
+        // Smoke the env wrapper (no mutation): returns a path ending in mode file name.
+        let from_env = crate::enforcement_mode::path_from_env();
+        assert!(
+            from_env.file_name().is_some_and(
+                |name| name == "enforcement.mode" || name == custom.file_name().unwrap()
+            )
+        );
     }
 }

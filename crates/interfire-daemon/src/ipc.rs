@@ -1274,6 +1274,28 @@ mod tests {
     }
 
     #[test]
+    fn pause_and_resume_failure_paths() {
+        let _suite = suite_lock();
+        let (shared, audit_path, rules_path) = test_shared("pause-fail");
+        // Mode path becomes a directory so store() fails inside pause/resume.
+        let mode_path = shared.mode_path().to_path_buf();
+        let _ = fs::remove_file(&mode_path);
+        fs::create_dir_all(&mode_path).expect("dir");
+        let (a, _b) = StdUnixStream::pair().unwrap();
+        assert_eq!(
+            dispatch(Request::Pause, &shared, &a),
+            Response::Error("pause_failed")
+        );
+        shared.set_enforcement("nfqueue");
+        assert_eq!(
+            dispatch(Request::Resume, &shared, &a),
+            Response::Error("resume_failed")
+        );
+        let _ = fs::remove_dir_all(&mode_path);
+        cleanup_paths(&audit_path, &rules_path);
+    }
+
+    #[test]
     fn pause_and_resume_round_trip() {
         let _suite = suite_lock();
         let (shared, audit_path, rules_path) = test_shared("pause-resume");
