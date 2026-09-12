@@ -18,17 +18,23 @@ On each primary image:
 
 1. `sudo dpkg -i target/debian/interfire_0.1.0_amd64.deb` (fix deps with
    `sudo apt-get install -f` if needed).
-2. `systemctl is-active interfire-nft.service interfired.service` → `active`.
-3. `nft list table inet interfire` shows the owned queue rule (queue **4242**).
-4. `interfirectl status` returns `enforcement=` / `observation=` (nfqueue or
-   degraded when caps/BTF are missing; never silent allow).
-5. `interfirectl ping` succeeds against `/run/interfire/interfired.sock`.
-6. `interfire-tui` opens and shows Status (daemon up).
-7. Under a graphical session, launch `interfire-ui` (menu or CLI). Confirm the
-   window opens. Tray: StatusNotifierItem visible, **or** Status chrome reports
-   honest degrade when the shell has no SNI.
-8. With tray present: close the main window; tray remains. Tray **Open
-   InterFire** reopens the window; **Quit InterFire UI** exits the process.
+2. Confirm group `interfire` exists (`getent group interfire`). If you installed
+   with `sudo`, your login user should already be a member; **log out and back
+   in** so the group applies. Otherwise:
+   `sudo usermod -aG interfire "$USER"` then re-login.
+3. As that **non-root** user (no sudo): `id -nG` lists `interfire`.
+4. `systemctl is-active interfire-nft.service interfired.service` → `active`.
+5. `nft list table inet interfire` shows the owned queue rule (queue **4242**).
+6. **Without sudo:** `interfirectl status` returns `enforcement=` / `observation=`
+   (nfqueue or degraded when caps/BTF are missing; never silent allow).
+7. **Without sudo:** `interfirectl ping` succeeds against
+   `/run/interfire/interfired.sock`.
+8. **Without sudo:** `interfire-tui` opens and shows Status (daemon up).
+9. Under a graphical session, launch `interfire-ui` (menu or CLI) **without
+   sudo**. Confirm the window opens. Tray: StatusNotifierItem visible, **or**
+   Status chrome reports honest degrade when the shell has no SNI.
+10. With tray present: close the main window; tray remains. Tray **Open
+    InterFire** reopens the window; **Quit InterFire UI** exits the process.
 
 ## Upgrade
 
@@ -41,8 +47,8 @@ On each primary image:
 ## Reboot
 
 1. `sudo reboot` with units enabled.
-2. After login: both units `active`; owned table restored; socket present;
-   `interfirectl status` works.
+2. After login (non-root, group `interfire`): both units `active`; owned table
+   restored; socket present; `interfirectl status` works **without sudo**.
 3. Desktop smoke again (`interfire-ui` + tray or honest Status degrade).
 
 ## Uninstall

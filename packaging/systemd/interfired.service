@@ -12,7 +12,8 @@ ExecStart=/usr/bin/interfired
 Restart=on-failure
 RestartSec=2s
 
-# Paths (also created via tmpfiles.d / package)
+# Paths (also created via tmpfiles.d / package).
+# IPC dir group is set to interfire by tmpfiles + daemon after bind.
 RuntimeDirectory=interfire
 RuntimeDirectoryMode=0750
 StateDirectory=interfire

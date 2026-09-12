@@ -53,6 +53,32 @@ net raw / sys admin. The process still runs as root so NFQUEUE and eBPF attach
 can work on primary Debian and Pop!\_OS kernels. Missing caps show as
 `observation=degraded` or `enforcement=degraded` on `status`.
 
+## Operator group (unprivileged clients)
+
+Day-to-day clients (`interfirectl`, `interfire-tui`, `interfire-ui`) run as a
+normal session user. They must be members of system group **`interfire`**.
+
+| Path | Mode / ownership |
+| --- | --- |
+| `/run/interfire/` | `0750` `root:interfire` |
+| `/run/interfire/interfired.sock` | `0660` `root:interfire` (set after bind) |
+
+Policy mutation over IPC is allowed for root, the daemon UID, or peers in group
+`interfire`. Durable rules and audit under `/etc/interfire` and
+`/var/lib/interfire` stay root-owned; clients change policy only via IPC.
+
+Package `postinst` creates group `interfire` and, when `dpkg` was invoked via
+`sudo`, adds `SUDO_USER` to that group. **Re-login** (or start a new session)
+so the supplementary group is active. Manual join:
+
+```bash
+sudo usermod -aG interfire "$USER"
+# then log out and back in
+```
+
+Sudo is for package install, enabling units, and recovery only - not for Status,
+Rules, or the desktop UI.
+
 ## Reboot recovery
 
 1. Enable both units: `systemctl enable --now interfire-nft.service interfired.service`.

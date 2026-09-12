@@ -102,6 +102,19 @@ EOF
 cat >"${stage}/DEBIAN/postinst" <<'EOF'
 #!/bin/sh
 set -e
+if ! getent group interfire >/dev/null 2>&1; then
+  if command -v addgroup >/dev/null 2>&1; then
+    addgroup --system interfire >/dev/null 2>&1 || true
+  elif command -v groupadd >/dev/null 2>&1; then
+    groupadd --system interfire >/dev/null 2>&1 || true
+  fi
+fi
+# Desktop operators need group membership; re-login (or newgrp) after install.
+if [ -n "${SUDO_USER:-}" ] && getent passwd "$SUDO_USER" >/dev/null 2>&1; then
+  if command -v usermod >/dev/null 2>&1; then
+    usermod -aG interfire "$SUDO_USER" >/dev/null 2>&1 || true
+  fi
+fi
 if command -v systemd-tmpfiles >/dev/null 2>&1; then
   systemd-tmpfiles --create /usr/lib/tmpfiles.d/interfire.conf || true
 fi

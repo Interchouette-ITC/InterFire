@@ -10,6 +10,7 @@ mod nft;
 mod observe;
 #[cfg(not(test))]
 mod observe_live;
+mod operator_auth;
 mod packet;
 mod pending;
 mod policy;
@@ -25,7 +26,6 @@ mod ipc_test_support;
 use std::env;
 use std::fs;
 use std::io;
-use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::UnixListener;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -79,7 +79,7 @@ fn main() -> io::Result<()> {
     }
 
     let listener = UnixListener::bind(path)?;
-    fs::set_permissions(path, fs::Permissions::from_mode(0o600))?;
+    operator_auth::prepare_operator_socket(path)?;
     info!(socket = %path.display(), rules = rule_count, "interfired listening");
     info!(
         observation = shared.observation(),

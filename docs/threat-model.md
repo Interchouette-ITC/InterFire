@@ -10,7 +10,9 @@
 
 - The unprivileged UI and CLI are separate from the privileged daemon.
 - Unix-socket peer credentials and socket filesystem permissions authorize policy
-  mutation.
+  mutation. Session operators must be in group `interfire`; the IPC directory and
+  socket are `root:interfire` (`0750` / `0660`). Durable state under
+  `/etc/interfire` and `/var/lib/interfire` stays root-owned.
 - Kernel event data identifies a PID, but `/proc` enrichment is raced and must
   include a process start-time identity to defend against PID reuse.
 - DNS supplies display and rule metadata; the actual address and port remain
@@ -20,7 +22,7 @@
 
 | Threat                               | Control                                                                                              |
 | ------------------------------------ | ---------------------------------------------------------------------------------------------------- |
-| Unprivileged local policy changes    | peer-credential authorization; root-owned state and sockets                                          |
+| Unprivileged local policy changes    | peer-credential authorization; group `interfire` on the IPC socket; root-owned durable state |
 | PID reuse / short-lived process race | enrich immediately; compare start time; mark unresolved events unattributed and never silently allow |
 | UI crash or OOM                      | daemon-owned bounded queues; prompt timeout deny; reconnect-safe subscriptions                       |
 | Malformed IPC or rule file           | versioned parsing, input limits, atomic write, validation before replacement                         |
