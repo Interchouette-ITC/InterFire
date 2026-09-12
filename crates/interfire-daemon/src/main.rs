@@ -20,6 +20,7 @@ mod process;
 mod prompts;
 mod recent;
 mod shared;
+mod traffic_mode;
 
 #[cfg(test)]
 mod ipc_test_support;
@@ -58,6 +59,7 @@ fn main() -> io::Result<()> {
         process_capacity: 1_024,
         audit_path: options.audit_path.clone(),
         mode_path: enforcement_mode::path_from_env(),
+        traffic_path: traffic_mode::path_from_env(),
     })?);
 
     if let Some(observer) = observer {

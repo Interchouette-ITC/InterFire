@@ -987,6 +987,7 @@ mod tests {
         app.apply(IpcEvent::Status(DaemonStatus {
             enforcement: "nfqueue".into(),
             observation: "attached".into(),
+            traffic: "open".into(),
             ipc_version: 1,
             pid: None,
             rss_kib: None,
@@ -997,6 +998,7 @@ mod tests {
         app.apply(IpcEvent::Status(DaemonStatus {
             enforcement: "none".into(),
             observation: "degraded".into(),
+            traffic: "open".into(),
             ipc_version: 1,
             pid: None,
             rss_kib: None,
@@ -1097,6 +1099,7 @@ mod tests {
         app.apply(IpcEvent::Status(DaemonStatus {
             enforcement: "none".into(),
             observation: "degraded".into(),
+            traffic: "open".into(),
             ipc_version: 1,
             pid: None,
             rss_kib: None,
@@ -1279,6 +1282,7 @@ mod tests {
         app.apply(IpcEvent::Status(DaemonStatus {
             enforcement: "nfqueue".into(),
             observation: "attached".into(),
+            traffic: "open".into(),
             ipc_version: 1,
             pid: Some(9),
             rss_kib: Some(100),

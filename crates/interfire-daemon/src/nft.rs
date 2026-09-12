@@ -395,10 +395,119 @@ fn owned_table_script() -> String {
         "table inet {NFT_TABLE} {{\n\
   chain {NFT_CHAIN} {{\n\
     type filter hook output priority filter; policy accept;\n\
+    oifname \"lo\" accept\n\
     meta l4proto tcp ct state new queue num {NFQUEUE_NUM}\n\
   }}\n\
 }}\n"
     )
+}
+
+fn blocked_table_script() -> String {
+    format!(
+        "table inet {NFT_TABLE} {{\n\
+  chain {NFT_CHAIN} {{\n\
+    type filter hook output priority filter; policy accept;\n\
+    oifname \"lo\" accept\n\
+    ct state established,related accept\n\
+    meta l4proto tcp ct state new drop\n\
+  }}\n\
+}}\n"
+    )
+}
+
+/// Install or replace the fail-closed Traffic Block table (no NFQUEUE).
+///
+/// # Errors
+///
+/// Returns I/O errors when `nft` is missing or rejects the fixed table script.
+pub fn install_block() -> io::Result<()> {
+    #[cfg(test)]
+    if FORCE_NFT_OK.load(Ordering::Relaxed) || FORCE_NFT_INSTALL_SUCCESS.load(Ordering::Relaxed) {
+        info!(table = NFT_TABLE, "InterFire traffic-block table installed");
+        return Ok(());
+    }
+    #[cfg(test)]
+    if FORCE_NFT_SPAWN_FAIL.load(Ordering::Relaxed) {
+        return Err(io::Error::other("nft spawn failed: forced"));
+    }
+    #[cfg(test)]
+    if FORCE_NFT_INSTALL_REJECT.load(Ordering::Relaxed) {
+        return Err(io::Error::other("nft install failed: forced reject"));
+    }
+    #[cfg(test)]
+    if FORCE_NFT_STDIN_UNAVAILABLE.load(Ordering::Relaxed) {
+        return Err(io::Error::other("nft stdin unavailable"));
+    }
+    #[cfg(test)]
+    {
+        Err(io::Error::other(
+            "live nft install is unavailable under unit tests",
+        ))
+    }
+    #[cfg(not(test))]
+    {
+        let _ = remove();
+        let script = blocked_table_script();
+        let mut child = Command::new("nft")
+            .arg("-f")
+            .arg("-")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|error| io::Error::other(format!("nft spawn failed: {error}")))?;
+        {
+            let Some(stdin) = child.stdin.as_mut() else {
+                return Err(io::Error::other("nft stdin unavailable"));
+            };
+            stdin.write_all(script.as_bytes())?;
+        }
+        let output = child
+            .wait_with_output()
+            .map_err(|error| io::Error::other(format!("nft wait failed: {error}")))?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(io::Error::other(format!(
+                "nft block install failed: {}",
+                stderr.trim()
+            )));
+        }
+        info!(table = NFT_TABLE, "InterFire traffic-block table installed");
+        Ok(())
+    }
+}
+
+/// Apply Traffic + Rules modes to the owned table.
+pub fn apply_modes(
+    traffic: crate::traffic_mode::TrafficMode,
+    rules: crate::enforcement_mode::EnforcementMode,
+) {
+    use crate::enforcement_mode::EnforcementMode;
+    use crate::traffic_mode::TrafficMode;
+    use tracing::warn;
+
+    match traffic {
+        TrafficMode::Blocked => {
+            if let Err(error) = install_block() {
+                warn!(%error, "traffic blocked: drop table install failed");
+            } else {
+                info!("traffic blocked; fail-closed drop table installed");
+            }
+        }
+        TrafficMode::Open => match rules {
+            EnforcementMode::Paused => {
+                if let Err(error) = remove() {
+                    warn!(%error, "paused: owned table remove skipped");
+                } else {
+                    info!("rules paused; owned nft table absent");
+                }
+            }
+            EnforcementMode::Active => match install() {
+                Ok(()) => info!("rules active; owned queue table installed"),
+                Err(error) => warn!(%error, "active: owned table install failed"),
+            },
+        },
+    }
 }
 
 const fn body(state: NetworkTableState, rule: &'static str) -> NetworkStatusBody {
@@ -486,11 +595,15 @@ pub fn classify_list_output(stdout: &str) -> NetworkStatusBody {
     let has_queue = flattened.contains(&queue_needle);
     let has_tcp_new = flattened.contains("meta l4proto tcp")
         && (flattened.contains("ct state new") || flattened.contains("ct state"));
+    let has_drop = flattened.contains(" drop") || flattened.ends_with("drop");
+    let has_lo = flattened.contains("oifname \"lo\"") || flattened.contains("oifname lo");
     if has_queue && has_tcp_new {
         body(
             NetworkTableState::Installed,
             network_rule_token(NFQUEUE_NUM),
         )
+    } else if has_drop && has_tcp_new && has_lo {
+        body(NetworkTableState::Installed, "tcp_new_drop")
     } else {
         body(NetworkTableState::Incomplete, "none")
     }
@@ -509,19 +622,37 @@ mod tests {
 
     #[test]
     fn classifies_installed_owned_rule() {
-        let stdout = r"
+        let stdout = r#"
 table inet interfire {
 	chain output {
 		type filter hook output priority filter; policy accept;
+		oifname "lo" accept
 		meta l4proto tcp ct state new queue num 4242
 	}
 }
-";
+"#;
         let status = classify_list_output(stdout);
         assert_eq!(status.state, NetworkTableState::Installed);
         assert_eq!(status.table, NFT_TABLE);
         assert_eq!(status.queue, NFQUEUE_NUM);
         assert_eq!(status.rule, "tcp_new_queue_4242");
+    }
+
+    #[test]
+    fn classifies_installed_block_rule() {
+        let stdout = r#"
+table inet interfire {
+	chain output {
+		type filter hook output priority filter; policy accept;
+		oifname "lo" accept
+		ct state established,related accept
+		meta l4proto tcp ct state new drop
+	}
+}
+"#;
+        let status = classify_list_output(stdout);
+        assert_eq!(status.state, NetworkTableState::Installed);
+        assert_eq!(status.rule, "tcp_new_drop");
     }
 
     #[test]
@@ -543,9 +674,14 @@ table inet interfire {
         let script = owned_table_script();
         assert!(script.contains("table inet interfire"));
         assert!(script.contains("queue num 4242"));
+        assert!(script.contains("oifname \"lo\" accept"));
         assert!(script.contains("meta l4proto tcp ct state new"));
         assert!(!script.contains("firewalld"));
         assert!(!script.contains("ufw"));
+        let block = blocked_table_script();
+        assert!(block.contains("oifname \"lo\" accept"));
+        assert!(block.contains("drop"));
+        assert!(!block.contains("queue"));
     }
 
     #[test]
@@ -555,6 +691,16 @@ table inet interfire {
             normalize_nft_tokens(&owned_table_script()),
             normalize_nft_tokens(packaged),
             "daemon owned_table_script() must stay in sync with packaging/nft/interfire.nft"
+        );
+    }
+
+    #[test]
+    fn blocked_script_matches_packaged_nft_file() {
+        let packaged = include_str!("../../../packaging/nft/interfire-block.nft");
+        assert_eq!(
+            normalize_nft_tokens(&blocked_table_script()),
+            normalize_nft_tokens(packaged),
+            "daemon blocked_table_script() must stay in sync with packaging/nft/interfire-block.nft"
         );
     }
 

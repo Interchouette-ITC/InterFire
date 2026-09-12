@@ -8,8 +8,8 @@ RequiresMountsFor=/var/lib/interfire /etc/interfire
 [Service]
 Type=simple
 ExecStart=/usr/bin/interfired
-# Always drop the owned table on stop so a dead queue cannot freeze the host.
-ExecStop=-/usr/sbin/nft delete table inet interfire
+# Preserve Traffic Block on stop; otherwise drop the owned table.
+ExecStop=-/usr/lib/interfire/interfire-nft-stop.sh
 Restart=on-failure
 RestartSec=2s
 

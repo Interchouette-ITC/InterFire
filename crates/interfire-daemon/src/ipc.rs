@@ -56,6 +56,7 @@ fn dispatch(request: Request, shared: &Shared, stream: &UnixStream) -> Response 
             Response::Status(StatusBody {
                 enforcement: shared.enforcement(),
                 observation: shared.observation(),
+                traffic: shared.traffic(),
                 ipc_version: IPC_VERSION,
                 pid: metrics.pid,
                 rss_kib: metrics.rss_kib,
@@ -97,6 +98,8 @@ fn dispatch(request: Request, shared: &Shared, stream: &UnixStream) -> Response 
         Request::NetworkRemove => network_mutate(shared, stream, NetworkMutate::Remove),
         Request::Pause => enforcement_mutate(shared, stream, EnforcementMutate::Pause),
         Request::Resume => enforcement_mutate(shared, stream, EnforcementMutate::Resume),
+        Request::TrafficBlock => traffic_mutate(shared, stream, TrafficMutate::Block),
+        Request::TrafficUnblock => traffic_mutate(shared, stream, TrafficMutate::Unblock),
     }
 }
 
@@ -104,6 +107,33 @@ fn dispatch(request: Request, shared: &Shared, stream: &UnixStream) -> Response 
 enum NetworkMutate {
     Install,
     Remove,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum TrafficMutate {
+    Block,
+    Unblock,
+}
+
+fn traffic_mutate(shared: &Shared, stream: &UnixStream, action: TrafficMutate) -> Response {
+    if !peer_may_mutate(stream) {
+        warn!("traffic mutate rejected: unauthorized peer");
+        return Response::Error("unauthorized");
+    }
+    let result = match action {
+        TrafficMutate::Block => shared.traffic_block(),
+        TrafficMutate::Unblock => shared.traffic_unblock(),
+    };
+    match result {
+        Ok(()) => Response::Pong,
+        Err(error) => {
+            warn!(%error, "traffic mutate failed");
+            match action {
+                TrafficMutate::Block => Response::Error("traffic_block_failed"),
+                TrafficMutate::Unblock => Response::Error("traffic_unblock_failed"),
+            }
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -651,9 +681,11 @@ mod tests {
     fn test_shared(observation: &'static str) -> (Arc<Shared>, PathBuf, PathBuf) {
         let (audit_path, rules_path) = temp_paths("shared");
         let mode_path = audit_path.with_extension("mode");
+        let traffic_path = audit_path.with_extension("traffic");
         let _ = fs::remove_file(&audit_path);
         let _ = fs::remove_file(&rules_path);
         let _ = fs::remove_file(&mode_path);
+        let _ = fs::remove_file(&traffic_path);
         crate::enforcement_mode::store(
             &mode_path,
             crate::enforcement_mode::EnforcementMode::Active,
@@ -669,6 +701,7 @@ mod tests {
                 process_capacity: 8,
                 audit_path: audit_path.clone(),
                 mode_path,
+                traffic_path,
             })
             .expect("shared state"),
         );
@@ -911,6 +944,7 @@ mod tests {
                 process_capacity: 8,
                 audit_path: audit_path.clone(),
                 mode_path: audit_path.with_extension("mode"),
+                traffic_path: audit_path.with_extension("traffic"),
             })
             .expect("shared"),
         );
@@ -1022,6 +1056,7 @@ mod tests {
                 process_capacity: 8,
                 audit_path: audit_path.clone(),
                 mode_path: audit_path.with_extension("mode"),
+                traffic_path: audit_path.with_extension("traffic"),
             })
             .expect("short shared"),
         );
@@ -1298,6 +1333,28 @@ mod tests {
     }
 
     #[test]
+    fn traffic_block_and_unblock_round_trip() {
+        let _suite = suite_lock();
+        let (shared, audit_path, rules_path) = test_shared("traffic");
+        let _ok = crate::nft::ForceNftOk::arm();
+        shared.set_enforcement("nfqueue");
+        let (a, _b) = StdUnixStream::pair().unwrap();
+        assert_eq!(dispatch(Request::TrafficBlock, &shared, &a), Response::Pong);
+        assert_eq!(shared.traffic(), "blocked");
+        assert_eq!(
+            dispatch(Request::TrafficUnblock, &shared, &a),
+            Response::Pong
+        );
+        assert_eq!(shared.traffic(), "open");
+        let stream = stream_without_peer_creds();
+        assert_eq!(
+            dispatch(Request::TrafficBlock, &shared, &stream),
+            Response::Error("unauthorized")
+        );
+        cleanup_paths(&audit_path, &rules_path);
+    }
+
+    #[test]
     fn pause_and_resume_round_trip() {
         let _suite = suite_lock();
         let (shared, audit_path, rules_path) = test_shared("pause-resume");
@@ -1446,6 +1503,7 @@ mod tests {
                 process_capacity: 8,
                 audit_path: audit_path.clone(),
                 mode_path: audit_path.with_extension("mode"),
+                traffic_path: audit_path.with_extension("traffic"),
             })
             .expect("shared"),
         );

@@ -33,14 +33,15 @@ On each primary image:
    `/run/interfire/interfired.sock`.
 8. **Without sudo:** `interfire-tui` opens and shows Status (daemon up).
 9. Under a graphical session, launch `interfire-ui` (menu or CLI) **without
-   sudo**. Confirm the window opens. Header shows **Firewall: Paused** with
-   Start. Tray: StatusNotifierItem visible, **or** Status chrome reports honest
-   degrade when the shell has no SNI.
+   sudo**. Confirm the window opens. Header shows **Daemon / Rules / Traffic**
+   chips (Rules: Paused after install). Tray: StatusNotifierItem visible, **or**
+   Status chrome reports honest degrade when the shell has no SNI.
 10. With tray present: close the main window; tray remains. Tray **Open
     InterFire** reopens the window; **Quit InterFire UI** exits the process.
-11. Start firewall (UI confirm or `interfirectl resume`); confirm
-    `nft list table inet interfire` and `enforcement=nfqueue`.
-12. Pause again; table gone; network still usable.
+11. Start rules (UI confirm or `interfirectl resume`); confirm
+    `nft list table inet interfire` shows queue (not drop) and
+    `enforcement=nfqueue` with `traffic=open`.
+12. Pause rules again; table gone; network still usable.
 
 ## Upgrade
 
@@ -74,12 +75,23 @@ On each primary image:
 On each primary image after install:
 
 1. Reboot while **Paused**: desktop network (browser, package tools) works.
-2. Start from UI or `interfirectl resume`: owned table present; new TCP filtered.
+2. Start rules from UI or `interfirectl resume`: owned queue table present; new TCP filtered.
 3. Pause: table removed; connectivity restored.
 4. Start again, then `sudo kill -9 $(pidof interfired)`: host stays usable.
 5. `sudo systemctl start interfired` and confirm status again.
 
-Only when this checklist is green is Phase R unblocked.
+## Operator controls dogfood (Phase C)
+
+1. Header shows Daemon / Rules / Traffic as separate chips; tray menu matches.
+2. **Block traffic** while Rules paused: `curl` to an external host fails;
+   `curl 127.0.0.1` (or local service on loopback) still works;
+   `interfirectl status` shows `traffic=blocked`.
+3. `sudo systemctl stop interfired` while Blocked: IPC down; Block table remains
+   (`nft list table inet interfire` still shows drop, not queue).
+4. Daemon **Start** from UI (polkit): IPC returns; `traffic=blocked` until Unblock.
+5. **Unblock**: restores Rules mode (paused → no table; active → queue).
+6. Pause ≠ Block: Pause with traffic open removes the table; Block installs drop.
+
 ## Migration from other host app firewalls
 
 InterFire does **not** import foreign rule databases, daemons, or eBPF objects.

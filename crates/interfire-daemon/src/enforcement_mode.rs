@@ -7,7 +7,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use tracing::{info, warn};
+use tracing::warn;
 
 /// Default path under the daemon state directory.
 pub const DEFAULT_MODE_PATH: &str = "/var/lib/interfire/enforcement.mode";
@@ -74,23 +74,6 @@ fn ensure_parent(path: &Path) -> io::Result<()> {
     match path.parent() {
         Some(parent) if !parent.as_os_str().is_empty() => fs::create_dir_all(parent),
         _ => Ok(()),
-    }
-}
-
-/// Apply persisted mode to the owned nft table after the queue is ready.
-pub fn apply_table(mode: EnforcementMode) {
-    match mode {
-        EnforcementMode::Paused => {
-            if let Err(error) = crate::nft::remove() {
-                warn!(%error, "paused boot: owned table remove skipped");
-            } else {
-                info!("enforcement mode paused; owned nft table absent");
-            }
-        }
-        EnforcementMode::Active => match crate::nft::install() {
-            Ok(()) => info!("enforcement mode active; owned nft table installed"),
-            Err(error) => warn!(%error, "active boot: owned table install failed"),
-        },
     }
 }
 
@@ -175,18 +158,34 @@ mod tests {
     #[test]
     fn apply_table_covers_active_and_paused_outcomes() {
         let _ok = crate::nft::ForceNftOk::arm();
-        crate::enforcement_mode::apply_table(EnforcementMode::Paused);
-        crate::enforcement_mode::apply_table(EnforcementMode::Active);
+        crate::nft::apply_modes(
+            crate::traffic_mode::TrafficMode::Open,
+            EnforcementMode::Paused,
+        );
+        crate::nft::apply_modes(
+            crate::traffic_mode::TrafficMode::Open,
+            EnforcementMode::Active,
+        );
+        crate::nft::apply_modes(
+            crate::traffic_mode::TrafficMode::Blocked,
+            EnforcementMode::Paused,
+        );
     }
 
     #[test]
     fn apply_table_logs_when_nft_rejects() {
         {
             let _reject = crate::nft::ForceNftRemoveReject::arm();
-            crate::enforcement_mode::apply_table(EnforcementMode::Paused);
+            crate::nft::apply_modes(
+                crate::traffic_mode::TrafficMode::Open,
+                EnforcementMode::Paused,
+            );
         }
         let _reject = crate::nft::ForceNftInstallReject::arm();
-        crate::enforcement_mode::apply_table(EnforcementMode::Active);
+        crate::nft::apply_modes(
+            crate::traffic_mode::TrafficMode::Open,
+            EnforcementMode::Active,
+        );
     }
 
     #[test]

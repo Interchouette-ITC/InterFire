@@ -1,0 +1,10 @@
+# InterFire traffic Block (kill-switch): fail-closed drop of new outbound TCP.
+# Loopback and established/related stay allowed. No NFQUEUE.
+table inet interfire {
+  chain output {
+    type filter hook output priority filter; policy accept;
+    oifname "lo" accept
+    ct state established,related accept
+    meta l4proto tcp ct state new drop
+  }
+}

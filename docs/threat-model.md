@@ -35,6 +35,8 @@
 NFQUEUE is the primary verdict path (see [`architecture.md`](architecture.md)).
 The daemon can bind queue **4242** with **fail-open** and apply allow/deny when
 the operator Starts enforcement (owned nftables table) and capabilities are
-present. Default install leaves enforcement **paused**. Daemon stop removes the
-owned table. Do not represent enforcement as production-reliable until latency,
+present. Default install leaves Rules **paused** and Traffic **open**. Daemon stop
+removes the owned queue table when traffic is open; when Traffic is Blocked, stop
+leaves (or restores) the fail-closed drop table. Do not represent enforcement as
+production-reliable until latency,
 daemon-loss (fail-open), and coexistence measurements pass on supported kernels.

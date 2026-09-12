@@ -22,8 +22,9 @@ pub fn bind_and_serve(shared: &Shared) -> std::io::Result<()> {
     queue.set_fail_open(NFQUEUE_NUM, true)?;
     shared.set_enforcement("nfqueue");
     info!(queue = NFQUEUE_NUM, fail_open = true, "NFQUEUE bound");
-    let mode = crate::enforcement_mode::load(shared.mode_path());
-    crate::enforcement_mode::apply_table(mode);
+    let rules = crate::enforcement_mode::load(shared.mode_path());
+    let traffic = crate::traffic_mode::load(shared.traffic_path());
+    crate::nft::apply_modes(traffic, rules);
     loop {
         let mut message = queue.recv()?;
         let verdict = lookup_verdict(message.get_payload(), shared);

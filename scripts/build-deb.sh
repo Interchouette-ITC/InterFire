@@ -41,8 +41,13 @@ install -m 0644 packaging/systemd/interfire-nft.service \
   "${stage}/usr/lib/systemd/system/interfire-nft.service"
 install -m 0644 packaging/tmpfiles.d/interfire.conf \
   "${stage}/usr/lib/tmpfiles.d/interfire.conf"
+mkdir -p "${stage}/usr/lib/interfire"
 install -m 0644 packaging/nft/interfire.nft \
   "${stage}/usr/share/interfire/interfire.nft"
+install -m 0644 packaging/nft/interfire-block.nft \
+  "${stage}/usr/share/interfire/interfire-block.nft"
+install -m 0755 packaging/scripts/interfire-nft-stop.sh \
+  "${stage}/usr/lib/interfire/interfire-nft-stop.sh"
 install -m 0644 packaging/defaults/rules.toml \
   "${stage}/etc/interfire/rules.toml"
 install -m 0644 packaging/debian/interfire.desktop \

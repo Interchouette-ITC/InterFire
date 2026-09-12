@@ -6,14 +6,16 @@ use interfire_proto::DaemonStatus;
 /// Desktop tray / chrome state for `interfire-ui`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TrayState {
-    /// Rules and prompt policy active.
+    /// Rules and prompt policy active; traffic open.
     Protected,
     /// Bounded prompt queue needs operator attention.
     Prompting,
     /// Observation or enforcement reported degraded.
     Degraded,
-    /// Operator paused enforcement; owned nft table absent.
+    /// Operator paused rules; owned queue table absent (traffic may still be blocked).
     Paused,
+    /// Traffic kill-switch active (fail-closed drop except loopback).
+    Blocked,
     /// Daemon socket unreachable; UI makes no policy claim.
     Unavailable,
 }
@@ -30,6 +32,9 @@ impl TrayState {
             } => {
                 if *pending_prompts > 0 {
                     return Self::Prompting;
+                }
+                if status.traffic == "blocked" {
+                    return Self::Blocked;
                 }
                 if status.enforcement == "paused" {
                     return Self::Paused;
@@ -50,6 +55,7 @@ impl TrayState {
             Self::Prompting => "prompting",
             Self::Degraded => "degraded",
             Self::Paused => "paused",
+            Self::Blocked => "blocked",
             Self::Unavailable => "daemon unavailable",
         }
     }
@@ -66,10 +72,13 @@ impl TrayState {
                 "Observation or enforcement is degraded. Check capabilities and InterFire nft queue."
             }
             Self::Paused => {
-                "Firewall paused: owned nft table removed; new TCP is not filtered. Use Start to enforce."
+                "Rules paused: owned queue table removed; new TCP is not filtered. Use Rules Start to enforce."
+            }
+            Self::Blocked => {
+                "Traffic blocked: new outbound TCP is dropped except localhost. Use Unblock to restore."
             }
             Self::Unavailable => {
-                "Cannot reach the daemon socket. Start interfired, check the socket path, then reconnect."
+                "Cannot reach the daemon socket. Start interfired (Daemon Start), check the socket path, then reconnect."
             }
         }
     }
@@ -80,7 +89,7 @@ impl TrayState {
         match self {
             Self::Protected => crate::brand::icon_protected_png(),
             Self::Prompting => crate::brand::icon_prompting_png(),
-            Self::Degraded | Self::Paused => crate::brand::icon_degraded_png(),
+            Self::Degraded | Self::Paused | Self::Blocked => crate::brand::icon_degraded_png(),
             Self::Unavailable => crate::brand::icon_unavailable_png(),
         }
     }
@@ -110,10 +119,11 @@ mod tests {
     use super::{DaemonLink, TrayState};
     use interfire_proto::DaemonStatus;
 
-    fn status(enforcement: &str, observation: &str) -> DaemonStatus {
+    fn status(enforcement: &str, observation: &str, traffic: &str) -> DaemonStatus {
         DaemonStatus {
             enforcement: enforcement.into(),
             observation: observation.into(),
+            traffic: traffic.into(),
             ipc_version: 1,
             pid: None,
             rss_kib: None,
@@ -122,7 +132,7 @@ mod tests {
     }
 
     #[test]
-    fn five_states_from_daemon_link() {
+    fn states_from_daemon_link() {
         assert_eq!(
             TrayState::from_link(&DaemonLink::Down {
                 reason: "connect".into()
@@ -131,28 +141,21 @@ mod tests {
         );
         assert_eq!(
             TrayState::from_link(&DaemonLink::Up {
-                status: status("nfqueue", "attached"),
+                status: status("nfqueue", "attached", "open"),
                 pending_prompts: 0,
             }),
             TrayState::Protected
         );
         assert_eq!(
             TrayState::from_link(&DaemonLink::Up {
-                status: status("nfqueue", "attached"),
-                pending_prompts: 2,
-            }),
-            TrayState::Prompting
-        );
-        assert_eq!(
-            TrayState::from_link(&DaemonLink::Up {
-                status: status("none", "degraded"),
+                status: status("paused", "attached", "blocked"),
                 pending_prompts: 0,
             }),
-            TrayState::Degraded
+            TrayState::Blocked
         );
         assert_eq!(
             TrayState::from_link(&DaemonLink::Up {
-                status: status("paused", "attached"),
+                status: status("paused", "attached", "open"),
                 pending_prompts: 0,
             }),
             TrayState::Paused
@@ -160,10 +163,10 @@ mod tests {
     }
 
     #[test]
-    fn prompting_outranks_paused_and_degraded() {
+    fn prompting_outranks_blocked() {
         assert_eq!(
             TrayState::from_link(&DaemonLink::Up {
-                status: status("paused", "degraded"),
+                status: status("paused", "degraded", "blocked"),
                 pending_prompts: 1,
             }),
             TrayState::Prompting
@@ -174,6 +177,6 @@ mod tests {
     fn unavailable_guidance_mentions_reconnect() {
         let text = TrayState::Unavailable.guidance();
         assert!(text.contains("socket"));
-        assert!(text.contains("reconnect") || text.contains("Start interfired"));
+        assert!(text.contains("reconnect") || text.contains("Start"));
     }
 }

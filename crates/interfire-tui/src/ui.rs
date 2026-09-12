@@ -304,6 +304,7 @@ mod tests {
         app.apply(crate::ipc::IpcEvent::Status(DaemonStatus {
             enforcement: "nfqueue".into(),
             observation: "attached".into(),
+            traffic: "open".into(),
             ipc_version: 1,
             pid: Some(42),
             rss_kib: Some(6400),
@@ -416,6 +417,7 @@ mod tests {
         app.apply(crate::ipc::IpcEvent::Status(DaemonStatus {
             enforcement: "none".into(),
             observation: "degraded".into(),
+            traffic: "open".into(),
             ipc_version: 1,
             pid: None,
             rss_kib: None,
