@@ -278,7 +278,7 @@ mod tests {
 
     use crate::pending::DestKey;
     use crate::process;
-    use crate::shared::Shared;
+    use crate::shared::{Shared, SharedConfig};
 
     use super::*;
 
@@ -292,15 +292,16 @@ mod tests {
         let _ = fs::remove_file(&audit_path);
         let _ = fs::remove_file(&rules_path);
         let shared = Arc::new(
-            Shared::new(
-                RuleSet::default(),
-                RulesStore::new(&rules_path),
-                "attached",
-                8,
-                Duration::from_secs(60),
-                8,
-                audit_path.clone(),
-            )
+            Shared::new(SharedConfig {
+                rules: RuleSet::default(),
+                store: RulesStore::new(&rules_path),
+                observation: "attached",
+                pending_capacity: 8,
+                pending_ttl: Duration::from_secs(60),
+                process_capacity: 8,
+                audit_path: audit_path.clone(),
+                mode_path: audit_path.with_extension("mode"),
+            })
             .expect("shared state"),
         );
         (shared, audit_path)

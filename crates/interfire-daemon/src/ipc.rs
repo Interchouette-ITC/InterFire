@@ -93,8 +93,10 @@ fn dispatch(request: Request, shared: &Shared, stream: &UnixStream) -> Response 
         Request::AuditSubscribe { .. } => Response::Error("malformed_request"),
         Request::ProcessList => process_list(shared),
         Request::NetworkStatus => Response::Network(nft::status()),
-        Request::NetworkInstall => network_mutate(stream, NetworkMutate::Install),
-        Request::NetworkRemove => network_mutate(stream, NetworkMutate::Remove),
+        Request::NetworkInstall => network_mutate(shared, stream, NetworkMutate::Install),
+        Request::NetworkRemove => network_mutate(shared, stream, NetworkMutate::Remove),
+        Request::Pause => enforcement_mutate(shared, stream, EnforcementMutate::Pause),
+        Request::Resume => enforcement_mutate(shared, stream, EnforcementMutate::Resume),
     }
 }
 
@@ -104,14 +106,41 @@ enum NetworkMutate {
     Remove,
 }
 
-fn network_mutate(stream: &UnixStream, action: NetworkMutate) -> Response {
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum EnforcementMutate {
+    Pause,
+    Resume,
+}
+
+fn enforcement_mutate(shared: &Shared, stream: &UnixStream, action: EnforcementMutate) -> Response {
+    if !peer_may_mutate(stream) {
+        warn!("enforcement mutate rejected: unauthorized peer");
+        return Response::Error("unauthorized");
+    }
+    let result = match action {
+        EnforcementMutate::Pause => shared.pause(),
+        EnforcementMutate::Resume => shared.resume(),
+    };
+    match result {
+        Ok(()) => Response::Pong,
+        Err(error) => {
+            warn!(%error, "enforcement mutate failed");
+            match action {
+                EnforcementMutate::Pause => Response::Error("pause_failed"),
+                EnforcementMutate::Resume => Response::Error("resume_failed"),
+            }
+        }
+    }
+}
+
+fn network_mutate(shared: &Shared, stream: &UnixStream, action: NetworkMutate) -> Response {
     if !peer_may_mutate(stream) {
         warn!("network mutate rejected: unauthorized peer");
         return Response::Error("unauthorized");
     }
     let result = match action {
-        NetworkMutate::Install => nft::install(),
-        NetworkMutate::Remove => nft::remove(),
+        NetworkMutate::Install => shared.resume(),
+        NetworkMutate::Remove => shared.pause(),
     };
     match result {
         Ok(()) => Response::Pong,
@@ -478,7 +507,7 @@ mod tests {
     use crate::process::ProcessIdentity;
     use crate::prompts::{EnqueueOutcome, PromptKey};
     use crate::recent::RecentDest;
-    use crate::shared::Shared;
+    use crate::shared::{Shared, SharedConfig};
 
     use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -621,18 +650,26 @@ mod tests {
 
     fn test_shared(observation: &'static str) -> (Arc<Shared>, PathBuf, PathBuf) {
         let (audit_path, rules_path) = temp_paths("shared");
+        let mode_path = audit_path.with_extension("mode");
         let _ = fs::remove_file(&audit_path);
         let _ = fs::remove_file(&rules_path);
+        let _ = fs::remove_file(&mode_path);
+        crate::enforcement_mode::store(
+            &mode_path,
+            crate::enforcement_mode::EnforcementMode::Active,
+        )
+        .expect("mode");
         let shared = Arc::new(
-            Shared::new(
-                RuleSet::default(),
-                RulesStore::new(&rules_path),
+            Shared::new(SharedConfig {
+                rules: RuleSet::default(),
+                store: RulesStore::new(&rules_path),
                 observation,
-                8,
-                Duration::from_secs(60),
-                8,
-                audit_path.clone(),
-            )
+                pending_capacity: 8,
+                pending_ttl: Duration::from_secs(60),
+                process_capacity: 8,
+                audit_path: audit_path.clone(),
+                mode_path,
+            })
             .expect("shared state"),
         );
         (shared, audit_path, rules_path)
@@ -865,15 +902,16 @@ mod tests {
         fs::write(&blocker, "x").expect("write blocker");
         let store = RulesStore::new(blocker.join("rules.toml"));
         let shared = Arc::new(
-            Shared::new(
-                RuleSet::default(),
+            Shared::new(SharedConfig {
+                rules: RuleSet::default(),
                 store,
-                "attached",
-                8,
-                Duration::from_secs(60),
-                8,
-                audit_path.clone(),
-            )
+                observation: "attached",
+                pending_capacity: 8,
+                pending_ttl: Duration::from_secs(60),
+                process_capacity: 8,
+                audit_path: audit_path.clone(),
+                mode_path: audit_path.with_extension("mode"),
+            })
             .expect("shared"),
         );
         assert_eq!(
@@ -975,15 +1013,16 @@ mod tests {
         let _ = fs::remove_file(&audit_path);
         let _ = fs::remove_file(&rules_path);
         let short = Arc::new(
-            Shared::new(
-                RuleSet::default(),
-                RulesStore::new(&rules_path),
-                "attached",
-                8,
-                Duration::from_millis(1),
-                8,
-                audit_path.clone(),
-            )
+            Shared::new(SharedConfig {
+                rules: RuleSet::default(),
+                store: RulesStore::new(&rules_path),
+                observation: "attached",
+                pending_capacity: 8,
+                pending_ttl: Duration::from_millis(1),
+                process_capacity: 8,
+                audit_path: audit_path.clone(),
+                mode_path: audit_path.with_extension("mode"),
+            })
             .expect("short shared"),
         );
         short.set_prompt_queue(crate::prompts::PromptQueue::new(
@@ -1221,6 +1260,7 @@ mod tests {
         let _suite = suite_lock();
         let (shared, audit_path, rules_path) = test_shared("nft-ok");
         let _ok = crate::nft::ForceNftOk::arm();
+        shared.set_enforcement("nfqueue");
         let (a, _b) = StdUnixStream::pair().unwrap();
         assert_eq!(
             dispatch(Request::NetworkInstall, &shared, &a),
@@ -1229,6 +1269,27 @@ mod tests {
         assert_eq!(
             dispatch(Request::NetworkRemove, &shared, &a),
             Response::Pong
+        );
+        cleanup_paths(&audit_path, &rules_path);
+    }
+
+    #[test]
+    fn pause_and_resume_round_trip() {
+        let _suite = suite_lock();
+        let (shared, audit_path, rules_path) = test_shared("pause-resume");
+        let _ok = crate::nft::ForceNftOk::arm();
+        shared.set_enforcement("nfqueue");
+        let (a, _b) = StdUnixStream::pair().unwrap();
+        assert_eq!(dispatch(Request::Resume, &shared, &a), Response::Pong);
+        assert_eq!(shared.enforcement(), "nfqueue");
+        assert_eq!(dispatch(Request::Pause, &shared, &a), Response::Pong);
+        assert_eq!(shared.enforcement(), "paused");
+        assert_eq!(dispatch(Request::Resume, &shared, &a), Response::Pong);
+        assert_eq!(shared.enforcement(), "nfqueue");
+        let stream = stream_without_peer_creds();
+        assert_eq!(
+            dispatch(Request::Pause, &shared, &stream),
+            Response::Error("unauthorized")
         );
         cleanup_paths(&audit_path, &rules_path);
     }
@@ -1352,15 +1413,16 @@ mod tests {
         let blocker = audit_path.with_extension("blocker");
         fs::write(&blocker, "x").expect("blocker");
         let shared = Arc::new(
-            Shared::new(
-                RuleSet::default(),
-                RulesStore::new(blocker.join("rules.toml")),
-                "attached",
-                8,
-                Duration::from_secs(60),
-                8,
-                audit_path.clone(),
-            )
+            Shared::new(SharedConfig {
+                rules: RuleSet::default(),
+                store: RulesStore::new(blocker.join("rules.toml")),
+                observation: "attached",
+                pending_capacity: 8,
+                pending_ttl: Duration::from_secs(60),
+                process_capacity: 8,
+                audit_path: audit_path.clone(),
+                mode_path: audit_path.with_extension("mode"),
+            })
             .expect("shared"),
         );
         let id = enqueue_prompt(&shared, "/usr/bin/curl", 443).expect("prompt room");

@@ -18,8 +18,12 @@ use crate::shared::Shared;
 pub fn bind_and_serve(shared: &Shared) -> std::io::Result<()> {
     let mut queue = Queue::open()?;
     queue.bind(NFQUEUE_NUM)?;
+    // Daemon loss must not freeze the host: accept when no userspace verdict.
+    queue.set_fail_open(NFQUEUE_NUM, true)?;
     shared.set_enforcement("nfqueue");
-    info!(queue = NFQUEUE_NUM, "NFQUEUE bound");
+    info!(queue = NFQUEUE_NUM, fail_open = true, "NFQUEUE bound");
+    let mode = crate::enforcement_mode::load(shared.mode_path());
+    crate::enforcement_mode::apply_table(mode);
     loop {
         let mut message = queue.recv()?;
         let verdict = lookup_verdict(message.get_payload(), shared);

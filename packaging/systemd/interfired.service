@@ -2,13 +2,14 @@
 [Unit]
 Description=InterFire application firewall daemon
 Documentation=https://github.com/Interchouette-ITC/InterFire
-After=network-pre.target interfire-nft.service
-Wants=interfire-nft.service
+After=network-pre.target
 RequiresMountsFor=/var/lib/interfire /etc/interfire
 
 [Service]
 Type=simple
 ExecStart=/usr/bin/interfired
+# Always drop the owned table on stop so a dead queue cannot freeze the host.
+ExecStop=-/usr/sbin/nft delete table inet interfire
 Restart=on-failure
 RestartSec=2s
 
