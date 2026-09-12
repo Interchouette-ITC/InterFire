@@ -5,6 +5,8 @@ updates:
     schedule:
       interval: weekly
       day: monday
+    reviewers:
+      - gRoussac
     open-pull-requests-limit: 5
     ignore:
       - dependency-name: "*"
@@ -15,6 +17,8 @@ updates:
     schedule:
       interval: weekly
       day: monday
+    reviewers:
+      - gRoussac
     open-pull-requests-limit: 5
     ignore:
       - dependency-name: "*"
