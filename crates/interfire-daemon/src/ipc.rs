@@ -1038,6 +1038,8 @@ mod tests {
             )),
             "prompt_expired"
         );
+        // Longer TTL so the next answer is not racing the 1ms expiry under load.
+        short.set_prompt_queue(crate::prompts::PromptQueue::new(4, Duration::from_secs(60)));
         let bad_id = enqueue_prompt(&short, "curl", 8080).expect("prompt room");
         assert_eq!(
             error_code(&exchange(
