@@ -194,7 +194,12 @@ mod tests {
     use super::*;
 
     fn temp_audit(name: &str) -> PathBuf {
-        std::env::temp_dir().join(format!("interfire-shared-{}-{name}", std::process::id()))
+        static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let n = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        std::env::temp_dir().join(format!(
+            "interfire-shared-{}-{n}-{name}",
+            std::process::id()
+        ))
     }
 
     #[test]

@@ -5,11 +5,14 @@ use std::env;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use tracing::{info, warn};
 
 /// Default path under the daemon state directory.
 pub const DEFAULT_MODE_PATH: &str = "/var/lib/interfire/enforcement.mode";
+
+static STORE_TMP_SEQ: AtomicU64 = AtomicU64::new(0);
 
 /// Operator-selected enforcement preference.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -61,7 +64,9 @@ pub fn store(path: &Path, mode: EnforcementMode) -> io::Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    let temporary = path.with_extension("mode.tmp");
+    // Unique sibling name so parallel tests do not race on the same `.tmp`.
+    let seq = STORE_TMP_SEQ.fetch_add(1, Ordering::Relaxed);
+    let temporary = path.with_extension(format!("tmp.{seq}"));
     fs::write(&temporary, format!("{}\n", mode.as_str()))?;
     fs::rename(&temporary, path)?;
     Ok(())
