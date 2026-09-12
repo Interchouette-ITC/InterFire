@@ -1048,6 +1048,22 @@ mod tests {
             })
         );
         assert_eq!(
+            Request::parse("v1 traffic-block scope=user direction=in\n"),
+            Ok(Request::TrafficBlock {
+                scope: "user".into(),
+                direction: "in".into(),
+            })
+        );
+        assert!(Request::parse("v1 traffic-block scope=bogus direction=out\n").is_err());
+        assert!(Request::parse("v1 traffic-block scope=user direction=bogus\n").is_err());
+        assert!(Request::parse("v1 traffic-unblock scope=bogus\n").is_err());
+        assert_eq!(
+            Request::parse("v1 traffic-unblock scope=user\n"),
+            Ok(Request::TrafficUnblock {
+                scope: "user".into(),
+            })
+        );
+        assert_eq!(
             Request::parse("v1 traffic-unblock\n"),
             Ok(Request::TrafficUnblock {
                 scope: "machine".into(),

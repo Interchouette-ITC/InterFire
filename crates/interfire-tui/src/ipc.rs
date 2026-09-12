@@ -608,10 +608,82 @@ mod tests {
         assert!(matches!(rx.recv().await, Some(IpcEvent::ActionError(_))));
 
         let error_daemon = FakeDaemon::start_with(FakeDaemonConfig {
-            rule_delete_error: true,
+            fail: FakeFail::RuleDelete,
             ..FakeDaemonConfig::default()
         });
         handle_command(&error_daemon.path, &tx, IpcCommand::DeleteRule { id: 1 }).await;
+        assert!(matches!(rx.recv().await, Some(IpcEvent::ActionError(_))));
+    }
+
+    #[tokio::test]
+    async fn handle_command_traffic_block_unblock_paths() {
+        let daemon = FakeDaemon::start();
+        let (tx, mut rx) = mpsc::unbounded_channel();
+
+        handle_command(
+            &daemon.path,
+            &tx,
+            IpcCommand::TrafficBlock {
+                scope: "user".into(),
+                direction: "out".into(),
+            },
+        )
+        .await;
+        assert!(matches!(rx.recv().await, Some(IpcEvent::ActionOk(_))));
+        handle_command(
+            &daemon.path,
+            &tx,
+            IpcCommand::TrafficUnblock {
+                scope: "user".into(),
+            },
+        )
+        .await;
+        assert!(matches!(rx.recv().await, Some(IpcEvent::ActionOk(_))));
+
+        let traffic_error = FakeDaemon::start_with(FakeDaemonConfig {
+            fail: FakeFail::Traffic,
+            ..FakeDaemonConfig::default()
+        });
+        handle_command(
+            &traffic_error.path,
+            &tx,
+            IpcCommand::TrafficBlock {
+                scope: "user".into(),
+                direction: "in".into(),
+            },
+        )
+        .await;
+        assert!(matches!(rx.recv().await, Some(IpcEvent::ActionError(_))));
+        handle_command(
+            &traffic_error.path,
+            &tx,
+            IpcCommand::TrafficUnblock {
+                scope: "user".into(),
+            },
+        )
+        .await;
+        assert!(matches!(rx.recv().await, Some(IpcEvent::ActionError(_))));
+
+        let missing_traffic = temp_socket("traffic-io");
+        let _ = std::fs::remove_file(&missing_traffic);
+        handle_command(
+            &missing_traffic.to_string_lossy(),
+            &tx,
+            IpcCommand::TrafficBlock {
+                scope: "user".into(),
+                direction: "all".into(),
+            },
+        )
+        .await;
+        assert!(matches!(rx.recv().await, Some(IpcEvent::ActionError(_))));
+        handle_command(
+            &missing_traffic.to_string_lossy(),
+            &tx,
+            IpcCommand::TrafficUnblock {
+                scope: "user".into(),
+            },
+        )
+        .await;
         assert!(matches!(rx.recv().await, Some(IpcEvent::ActionError(_))));
     }
 
@@ -783,7 +855,7 @@ mod tests {
         assert!(matches!(rx.recv().await, Some(IpcEvent::ActionError(_))));
 
         let error_daemon = FakeDaemon::start_with(FakeDaemonConfig {
-            rule_add_error: true,
+            fail: FakeFail::RuleAdd,
             ..FakeDaemonConfig::default()
         });
         handle_command(
@@ -800,7 +872,7 @@ mod tests {
         assert!(matches!(rx.recv().await, Some(IpcEvent::ActionError(_))));
 
         let prompt_error = FakeDaemon::start_with(FakeDaemonConfig {
-            prompt_answer_error: true,
+            fail: FakeFail::PromptAnswer,
             ..FakeDaemonConfig::default()
         });
         handle_command(
@@ -931,20 +1003,26 @@ mod tests {
         }
     }
 
+    #[derive(Clone, Copy, Default)]
+    enum FakeFail {
+        #[default]
+        None,
+        RuleDelete,
+        RuleAdd,
+        PromptAnswer,
+        Traffic,
+    }
+
     #[derive(Clone)]
     struct FakeDaemonConfig {
-        rule_delete_error: bool,
-        rule_add_error: bool,
-        prompt_answer_error: bool,
+        fail: FakeFail,
         subscribe_count: Arc<AtomicUsize>,
     }
 
     impl Default for FakeDaemonConfig {
         fn default() -> Self {
             Self {
-                rule_delete_error: false,
-                rule_add_error: false,
-                prompt_answer_error: false,
+                fail: FakeFail::None,
                 subscribe_count: Arc::new(AtomicUsize::new(0)),
             }
         }
@@ -996,22 +1074,36 @@ mod tests {
                 Response::Processes(row.encode_row()).encode()
             }
             line if line.starts_with("v1 rule-delete") => {
-                if config.rule_delete_error {
+                if matches!(config.fail, FakeFail::RuleDelete) {
                     Response::Error("missing rule").encode()
                 } else {
                     Response::Pong.encode()
                 }
             }
             line if line.starts_with("v1 rule-add") => {
-                if config.rule_add_error {
+                if matches!(config.fail, FakeFail::RuleAdd) {
                     Response::Error("invalid rule").encode()
                 } else {
                     Response::Pong.encode()
                 }
             }
             line if line.starts_with("v1 prompt-answer") => {
-                if config.prompt_answer_error {
+                if matches!(config.fail, FakeFail::PromptAnswer) {
                     Response::Error("prompt_expired").encode()
+                } else {
+                    Response::Pong.encode()
+                }
+            }
+            line if line.starts_with("v1 traffic-block") => {
+                if matches!(config.fail, FakeFail::Traffic) {
+                    Response::Error("traffic_block_failed").encode()
+                } else {
+                    Response::Pong.encode()
+                }
+            }
+            line if line.starts_with("v1 traffic-unblock") => {
+                if matches!(config.fail, FakeFail::Traffic) {
+                    Response::Error("traffic_unblock_failed").encode()
                 } else {
                     Response::Pong.encode()
                 }

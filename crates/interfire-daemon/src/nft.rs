@@ -846,6 +846,45 @@ table inet interfire {
         assert!(machine_all.contains("drop"));
         assert!(!machine_all.contains("queue"));
         assert!(!machine_all.contains("skuid"));
+        let machine_in = compose_traffic_script(&TrafficCompose {
+            machine: crate::traffic_mode::TrafficPreference::In,
+            users: &[],
+            rules_active: false,
+            queue_bound: false,
+        });
+        assert!(machine_in.contains("chain input"));
+        assert!(machine_in.contains("drop"));
+        let packaged_in = include_str!("../../../packaging/nft/interfire-block-in.nft");
+        assert_eq!(
+            normalize_nft_tokens(&machine_in),
+            normalize_nft_tokens(packaged_in)
+        );
+        let machine_all_seed = compose_traffic_script(&TrafficCompose {
+            machine: crate::traffic_mode::TrafficPreference::All,
+            users: &[],
+            rules_active: false,
+            queue_bound: false,
+        });
+        let packaged_all = include_str!("../../../packaging/nft/interfire-block-all.nft");
+        assert_eq!(
+            normalize_nft_tokens(&machine_all_seed),
+            normalize_nft_tokens(packaged_all)
+        );
+        let open = compose_traffic_script(&TrafficCompose {
+            machine: crate::traffic_mode::TrafficPreference::Open,
+            users: &[],
+            rules_active: false,
+            queue_bound: false,
+        });
+        assert!(open.is_empty());
+        let user_out_with_queue = compose_traffic_script(&TrafficCompose {
+            machine: crate::traffic_mode::TrafficPreference::Open,
+            users: &[(42, crate::traffic_mode::TrafficPreference::Out)],
+            rules_active: true,
+            queue_bound: true,
+        });
+        assert!(user_out_with_queue.contains("skuid 42"));
+        assert!(user_out_with_queue.contains("queue"));
     }
 
     #[test]

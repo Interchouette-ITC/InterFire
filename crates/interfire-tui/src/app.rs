@@ -1115,6 +1115,55 @@ mod tests {
     }
 
     #[test]
+    fn traffic_overlay_covers_direction_action_and_shortcuts() {
+        let mut app = App::new("/tmp/x.sock".into());
+        assert_eq!(app.handle_key(KeyCode::Char('t')), KeyAction::None);
+        assert_eq!(app.handle_key(KeyCode::Right), KeyAction::None);
+        assert_eq!(app.handle_key(KeyCode::Char('d')), KeyAction::None);
+        assert_eq!(app.handle_key(KeyCode::Left), KeyAction::None);
+        assert_eq!(app.handle_key(KeyCode::Char('u')), KeyAction::None);
+        assert_eq!(app.handle_key(KeyCode::Char('a')), KeyAction::None);
+        assert_eq!(app.handle_key(KeyCode::Char('b')), KeyAction::None);
+        assert_eq!(
+            app.handle_key(KeyCode::Enter),
+            KeyAction::Command(IpcCommand::TrafficBlock {
+                scope: "user".into(),
+                direction: "in".into(),
+            })
+        );
+        assert_eq!(
+            app.handle_key(KeyCode::Char('B')),
+            KeyAction::Command(IpcCommand::TrafficBlock {
+                scope: "user".into(),
+                direction: "all".into(),
+            })
+        );
+        assert_eq!(
+            app.handle_key(KeyCode::Char('b')),
+            KeyAction::Command(IpcCommand::TrafficBlock {
+                scope: "user".into(),
+                direction: "out".into(),
+            })
+        );
+        assert_eq!(
+            app.handle_key(KeyCode::Char('u')),
+            KeyAction::Command(IpcCommand::TrafficUnblock {
+                scope: "user".into(),
+            })
+        );
+        app.handle_key(KeyCode::Char('t'));
+        assert_eq!(app.handle_key(KeyCode::Esc), KeyAction::None);
+        assert_eq!(app.overlay, Overlay::None);
+        let help = super::help_lines().join("\n");
+        assert!(help.contains("Traffic"));
+        assert!(help.contains("pkexec"));
+        let footer = super::footer_hints(&app);
+        assert!(footer.contains("t traffic"));
+        app.handle_key(KeyCode::Char('t'));
+        assert!(super::footer_hints(&app).contains("Tab scope"));
+    }
+
+    #[test]
     fn rules_list_detail_and_delete_command() {
         let mut app = App::new("/tmp/x.sock".into());
         app.handle_key(KeyCode::Char('3'));
