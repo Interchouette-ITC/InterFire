@@ -53,9 +53,11 @@ or `--theme=dark`, default dark).
 
 Tray: protected | prompting | degraded | daemon-unavailable (Linux SNI via
 `ksni`; state also mirrored in Status chrome and the window status bar).
-On Debian GNOME, a visible tray needs a shell that exposes StatusNotifierItem;
-when SNI registration fails, Status still shows tray state and must not claim
-an icon is present. Pop!\_OS is a primary verify target alongside Debian GNOME.
+Unavailable uses a muted phoenix-orange pixmap (`icon-tray-unavailable-64.png`)
+so the icon stays readable on dark panels. On Debian GNOME, a visible tray needs
+a shell that exposes StatusNotifierItem; when SNI registration fails, Status
+still shows tray state and must not claim an icon is present. Pop!\_OS is a
+primary verify target alongside Debian GNOME.
 Rules: live list / select / add / delete over Unix IPC (`rule-list`,
 `rule-add`, `rule-delete`). Log: capped at 2,000 rows with a virtualized
 viewport; long-lived `audit-subscribe` id `interfire-ui` (reconnect

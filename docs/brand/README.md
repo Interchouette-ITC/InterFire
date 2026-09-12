@@ -43,6 +43,8 @@ Do not mutate `assets/`. Do not pad a small master into a larger empty canvas.
 - Desktop header: `logo-banner-desktop.png`
 - Mobile header: `logo-banner-mobile.png` or `icon-app-phoenix-128.png`
 - Favicon: `favicon-32.png` (from `icon-app-phoenix`)
+- Tray unavailable: `icon-tray-unavailable-64.png` (muted orange; dark-panel readable)
+- Desktop menu (`Icon=interfire`): hicolor installs of `icon-app-phoenix-*` / favicons
 
 Tagline: **FIREWALL · SECURE · CONTROL** (Linux-first Rust application firewall).
 
