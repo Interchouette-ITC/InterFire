@@ -12,6 +12,8 @@ pub enum TrayState {
     Prompting,
     /// Observation or enforcement reported degraded.
     Degraded,
+    /// Operator paused enforcement; owned nft table absent.
+    Paused,
     /// Daemon socket unreachable; UI makes no policy claim.
     Unavailable,
 }
@@ -29,6 +31,9 @@ impl TrayState {
                 if *pending_prompts > 0 {
                     return Self::Prompting;
                 }
+                if status.enforcement == "paused" {
+                    return Self::Paused;
+                }
                 if is_degraded(status) {
                     return Self::Degraded;
                 }
@@ -44,6 +49,7 @@ impl TrayState {
             Self::Protected => "protected",
             Self::Prompting => "prompting",
             Self::Degraded => "degraded",
+            Self::Paused => "paused",
             Self::Unavailable => "daemon unavailable",
         }
     }
@@ -59,6 +65,9 @@ impl TrayState {
             Self::Degraded => {
                 "Observation or enforcement is degraded. Check capabilities and InterFire nft queue."
             }
+            Self::Paused => {
+                "Firewall paused: owned nft table removed; new TCP is not filtered. Use Start to enforce."
+            }
             Self::Unavailable => {
                 "Cannot reach the daemon socket. Start interfired, check the socket path, then reconnect."
             }
@@ -71,7 +80,7 @@ impl TrayState {
         match self {
             Self::Protected => crate::brand::icon_protected_png(),
             Self::Prompting => crate::brand::icon_prompting_png(),
-            Self::Degraded => crate::brand::icon_degraded_png(),
+            Self::Degraded | Self::Paused => crate::brand::icon_degraded_png(),
             Self::Unavailable => crate::brand::icon_unavailable_png(),
         }
     }
@@ -113,7 +122,7 @@ mod tests {
     }
 
     #[test]
-    fn four_states_from_daemon_link() {
+    fn five_states_from_daemon_link() {
         assert_eq!(
             TrayState::from_link(&DaemonLink::Down {
                 reason: "connect".into()
@@ -122,14 +131,14 @@ mod tests {
         );
         assert_eq!(
             TrayState::from_link(&DaemonLink::Up {
-                status: status("rules", "attached"),
+                status: status("nfqueue", "attached"),
                 pending_prompts: 0,
             }),
             TrayState::Protected
         );
         assert_eq!(
             TrayState::from_link(&DaemonLink::Up {
-                status: status("rules", "attached"),
+                status: status("nfqueue", "attached"),
                 pending_prompts: 2,
             }),
             TrayState::Prompting
@@ -141,13 +150,20 @@ mod tests {
             }),
             TrayState::Degraded
         );
+        assert_eq!(
+            TrayState::from_link(&DaemonLink::Up {
+                status: status("paused", "attached"),
+                pending_prompts: 0,
+            }),
+            TrayState::Paused
+        );
     }
 
     #[test]
-    fn prompting_outranks_degraded_when_queue_nonempty() {
+    fn prompting_outranks_paused_and_degraded() {
         assert_eq!(
             TrayState::from_link(&DaemonLink::Up {
-                status: status("none", "degraded"),
+                status: status("paused", "degraded"),
                 pending_prompts: 1,
             }),
             TrayState::Prompting

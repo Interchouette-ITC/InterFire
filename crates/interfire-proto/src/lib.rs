@@ -79,6 +79,8 @@ pub enum Request {
     NetworkStatus,
     NetworkInstall,
     NetworkRemove,
+    Pause,
+    Resume,
 }
 
 impl Request {
@@ -110,6 +112,8 @@ impl Request {
             Some("network-status") if fields.next().is_none() => Ok(Self::NetworkStatus),
             Some("network-install") if fields.next().is_none() => Ok(Self::NetworkInstall),
             Some("network-remove") if fields.next().is_none() => Ok(Self::NetworkRemove),
+            Some("pause") if fields.next().is_none() => Ok(Self::Pause),
+            Some("resume") if fields.next().is_none() => Ok(Self::Resume),
             _ => Err(ProtocolError::Malformed),
         }
     }
@@ -923,6 +927,8 @@ mod tests {
             Request::parse("v1 network-remove\n"),
             Ok(Request::NetworkRemove)
         );
+        assert_eq!(Request::parse("v1 pause\n"), Ok(Request::Pause));
+        assert_eq!(Request::parse("v1 resume\n"), Ok(Request::Resume));
         let frame = Response::Network(NetworkStatusBody {
             table: NFT_TABLE,
             queue: NFQUEUE_NUM,

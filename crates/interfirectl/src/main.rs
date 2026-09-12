@@ -19,7 +19,9 @@ fn main() -> io::Result<()> {
 
     let command = match arguments.as_slice() {
         [] => "status".to_owned(),
-        [command] if matches!(command.as_str(), "ping" | "status") => command.clone(),
+        [command] if matches!(command.as_str(), "ping" | "status" | "pause" | "resume") => {
+            command.clone()
+        }
         [rules, list] if rules == "rules" && list == "list" => "rule-list".to_owned(),
         [rules, add, id, executable, verdict, port]
             if rules == "rules"
@@ -97,7 +99,7 @@ fn main() -> io::Result<()> {
 
 fn usage() -> io::Result<()> {
     eprintln!(
-        "usage: interfirectl [--socket=PATH] <ping|status|rules …|prompts …|dns …|audit tail [N]|audit subscribe ID [since=N]|network status|network install|network remove>"
+        "usage: interfirectl [--socket=PATH] <ping|status|pause|resume|rules …|prompts …|dns …|audit tail [N]|audit subscribe ID [since=N]|network status|network install|network remove>"
     );
     eprintln!("one-shot CLI only; use interfire-tui for interactive browse/answer");
     Err(io::Error::new(

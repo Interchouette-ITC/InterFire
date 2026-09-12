@@ -33,7 +33,8 @@
 ## What is and is not claimed today
 
 NFQUEUE is the primary verdict path (see [`architecture.md`](architecture.md)).
-The daemon can bind queue **4242** and apply allow/deny when the operator
-installs the InterFire-owned nftables rule and capabilities are present. Do not
-represent enforcement as production-reliable until latency, daemon-loss, and
-coexistence measurements pass on supported kernels.
+The daemon can bind queue **4242** with **fail-open** and apply allow/deny when
+the operator Starts enforcement (owned nftables table) and capabilities are
+present. Default install leaves enforcement **paused**. Daemon stop removes the
+owned table. Do not represent enforcement as production-reliable until latency,
+daemon-loss (fail-open), and coexistence measurements pass on supported kernels.

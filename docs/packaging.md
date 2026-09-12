@@ -9,7 +9,7 @@ install layout and how protection returns after reboot.
 | Path | Role |
 | --- | --- |
 | `packaging/systemd/interfired.service` | Daemon unit (`interfired`) |
-| `packaging/systemd/interfire-nft.service` | Oneshot: load/remove `inet interfire` |
+| `packaging/systemd/interfire-nft.service` | Manual recovery oneshot for `inet interfire` (not enabled by default) |
 | `packaging/nft/interfire.nft` | Owned table script (queue **4242**) |
 | `packaging/tmpfiles.d/interfire.conf` | `/run`, `/var/lib`, `/etc` dirs |
 | `packaging/defaults/rules.toml` | Empty durable rules (`schema_version = 1`) |
@@ -28,16 +28,17 @@ sudo dpkg -i target/debian/interfire_0.1.0_amd64.deb
 The package installs binaries (`interfired`, `interfirectl`, `interfire-tui`,
 `interfire-ui`), systemd units, the owned nft script, tmpfiles, and default
 rules. eBPF bytecode is embedded in `interfired` (no separate object file).
-`postinst` enables and starts `interfire-nft` + `interfired`. Primary verify
-images: Debian (stable) GNOME and Pop!\_OS, `x86_64`. Full install / upgrade /
-reboot / uninstall checklist and migration notes:
-[`install-matrix.md`](install-matrix.md).
+`postinst` enables and starts **`interfired` only**, and **disables**
+`interfire-nft`. Default enforcement mode is **paused** (no owned table until
+Start / `interfirectl resume`). Primary verify images: Debian (stable) GNOME and
+Pop!\_OS, `x86_64`. Full install / upgrade / reboot / uninstall checklist and
+migration notes: [`install-matrix.md`](install-matrix.md).
 
 | Host path | Content |
 | --- | --- |
 | `/usr/bin/interfired` | Daemon |
 | `/usr/lib/systemd/system/interfired.service` | Daemon unit |
-| `/usr/lib/systemd/system/interfire-nft.service` | nft oneshot |
+| `/usr/lib/systemd/system/interfire-nft.service` | nft oneshot (manual recovery) |
 | `/usr/share/interfire/interfire.nft` | Owned table |
 | `/usr/lib/tmpfiles.d/interfire.conf` | Directory mode |
 | `/etc/interfire/rules.toml` | Durable rules |
@@ -45,6 +46,7 @@ reboot / uninstall checklist and migration notes:
 | `/etc/xdg/autostart/interfire.desktop` | Session autostart for `interfire-ui` (tray) |
 | `/run/interfire/interfired.sock` | IPC socket |
 | `/var/lib/interfire/audit.log` | Capped audit log |
+| `/var/lib/interfire/enforcement.mode` | `paused` or `active` (default missing = paused) |
 
 ## Capabilities
 
@@ -81,17 +83,19 @@ Rules, or the desktop UI.
 
 ## Reboot recovery
 
-1. Enable both units: `systemctl enable --now interfire-nft.service interfired.service`.
-2. After reboot, systemd starts `interfire-nft` before `interfired`, reloading
-   only table `inet interfire` from `/usr/share/interfire/interfire.nft`.
-3. The daemon binds NFQUEUE **4242** and recreates `/run/interfire/interfired.sock`.
+1. Enable the daemon only: `systemctl enable --now interfired.service`.
+   Leave `interfire-nft` **disabled** unless recovering manually.
+2. After reboot, `interfired` binds NFQUEUE **4242** with **fail-open**, then
+   reads `/var/lib/interfire/enforcement.mode`. If `active`, it installs the
+   owned table; if `paused` or missing, the table stays absent (network works).
+3. Stopping `interfired` runs `nft delete table inet interfire` so a dead queue
+   cannot freeze the host.
 4. Durable rules under `/etc/interfire/rules.toml` and audit under
    `/var/lib/interfire/` survive reboot.
 
-If `interfire-nft` fails (nft missing or conflict), the daemon may still start
-with `enforcement=nfqueue` or `degraded`, but packets are not queued until the
-owned table is present. Fix by repairing the nft oneshot and restarting both
-units. Do not edit unrelated firewall tables to recover.
+Pause / Start: `interfirectl pause` / `resume`, or the UI header / tray control.
+Do not enable `interfire-nft` at boot for day-to-day use. Do not Start while
+another application-firewall queue is already active on the host.
 
 Manual smoke without the package:
 
@@ -102,6 +106,7 @@ sudo cp packaging/defaults/rules.toml /etc/interfire/rules.toml
 sudo cp packaging/nft/interfire.nft /usr/share/interfire/interfire.nft
 sudo cp packaging/systemd/*.service /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable --now interfire-nft.service interfired.service
+sudo systemctl enable --now interfired.service
 interfirectl status
+# expect enforcement=paused until: interfirectl resume
 ```

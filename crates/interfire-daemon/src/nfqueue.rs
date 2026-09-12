@@ -230,29 +230,42 @@ mod tests {
     use nfq::Verdict;
 
     use crate::pending::DestKey;
-    use crate::shared::Shared;
+    use crate::shared::{Shared, SharedConfig};
 
     use super::*;
 
     fn temp_audit(name: &str) -> std::path::PathBuf {
-        std::env::temp_dir().join(format!("interfire-nfqueue-{}-{name}", std::process::id()))
+        static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let n = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        std::env::temp_dir().join(format!(
+            "interfire-nfqueue-{}-{n}-{name}",
+            std::process::id()
+        ))
     }
 
     fn test_shared() -> (Arc<Shared>, std::path::PathBuf) {
         let audit_path = temp_audit("audit.log");
         let rules_path = audit_path.with_extension("rules.toml");
+        let mode_path = audit_path.with_extension("mode");
         let _ = fs::remove_file(&audit_path);
         let _ = fs::remove_file(&rules_path);
+        let _ = fs::remove_file(&mode_path);
+        crate::enforcement_mode::store(
+            &mode_path,
+            crate::enforcement_mode::EnforcementMode::Active,
+        )
+        .expect("mode");
         let shared = Arc::new(
-            Shared::new(
-                RuleSet::default(),
-                RulesStore::new(&rules_path),
-                "attached",
-                8,
-                Duration::from_secs(60),
-                8,
-                audit_path.clone(),
-            )
+            Shared::new(SharedConfig {
+                rules: RuleSet::default(),
+                store: RulesStore::new(&rules_path),
+                observation: "attached",
+                pending_capacity: 8,
+                pending_ttl: Duration::from_secs(60),
+                process_capacity: 8,
+                audit_path: audit_path.clone(),
+                mode_path,
+            })
             .expect("shared state"),
         );
         (shared, audit_path)

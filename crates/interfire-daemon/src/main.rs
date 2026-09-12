@@ -2,6 +2,7 @@
 
 mod audit;
 mod dns;
+mod enforcement_mode;
 mod ipc;
 mod nfqueue;
 #[cfg(not(test))]
@@ -38,7 +39,7 @@ use interfire_rules::RulesStore;
 use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
 
-use crate::shared::Shared;
+use crate::shared::{Shared, SharedConfig};
 
 fn main() -> io::Result<()> {
     init_tracing();
@@ -48,15 +49,16 @@ fn main() -> io::Result<()> {
     let rule_count = rules.rules().len();
 
     let (observer, observation) = start_observation(options.skip_ebpf);
-    let shared = Arc::new(Shared::new(
+    let shared = Arc::new(Shared::new(SharedConfig {
         rules,
         store,
         observation,
-        4_096,
-        Duration::from_secs(5),
-        1_024,
-        options.audit_path.clone(),
-    )?);
+        pending_capacity: 4_096,
+        pending_ttl: Duration::from_secs(5),
+        process_capacity: 1_024,
+        audit_path: options.audit_path.clone(),
+        mode_path: enforcement_mode::path_from_env(),
+    })?);
 
     if let Some(observer) = observer {
         let shared_observe = Arc::clone(&shared);

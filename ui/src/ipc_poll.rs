@@ -112,6 +112,24 @@ pub fn remove_network(socket: &str) -> Result<(), String> {
     send_expect_pong(socket, "v1 network-remove\n")
 }
 
+/// Pause enforcement (`v1 pause`): remove owned table; network unfiltered.
+///
+/// # Errors
+///
+/// Returns a daemon error message or transport failure text.
+pub fn pause_firewall(socket: &str) -> Result<(), String> {
+    send_expect_pong(socket, "v1 pause\n")
+}
+
+/// Resume enforcement (`v1 resume`): install owned table when the queue is bound.
+///
+/// # Errors
+///
+/// Returns a daemon error message or transport failure text.
+pub fn resume_firewall(socket: &str) -> Result<(), String> {
+    send_expect_pong(socket, "v1 resume\n")
+}
+
 /// Fetch owned nftables status (`v1 network-status`).
 ///
 /// # Errors

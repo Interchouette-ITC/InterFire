@@ -120,8 +120,9 @@ if command -v systemd-tmpfiles >/dev/null 2>&1; then
 fi
 if command -v systemctl >/dev/null 2>&1; then
   systemctl daemon-reload || true
-  systemctl enable interfire-nft.service interfired.service >/dev/null 2>&1 || true
-  systemctl start interfire-nft.service interfired.service >/dev/null 2>&1 || true
+  systemctl disable interfire-nft.service >/dev/null 2>&1 || true
+  systemctl enable interfired.service >/dev/null 2>&1 || true
+  systemctl start interfired.service >/dev/null 2>&1 || true
 fi
 if command -v gtk-update-icon-cache >/dev/null 2>&1; then
   gtk-update-icon-cache -f /usr/share/icons/hicolor >/dev/null 2>&1 || true

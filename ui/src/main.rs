@@ -159,6 +159,12 @@ fn spawn_tray_action_loop(
                             cx.quit();
                             return true;
                         }
+                        TrayAction::Pause => {
+                            let _ = ipc_poll::pause_firewall(&socket);
+                        }
+                        TrayAction::Resume => {
+                            let _ = ipc_poll::resume_firewall(&socket);
+                        }
                     }
                 }
                 false

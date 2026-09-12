@@ -9,7 +9,7 @@ v0.1 clients share the same Unix IPC:
 
 | Surface | Status | Role |
 | --- | --- | --- |
-| `interfirectl` | Shipped | One-shot commands only (`ping`, `status`, rules / prompts / dns / audit / network) |
+| `interfirectl` | Shipped | One-shot commands only (`ping`, `status`, `pause`, `resume`, rules / prompts / dns / audit / network) |
 | `interfire-tui` | Shipped | Interactive control plane (Status \| Rules \| Prompts \| Log \| Help) |
 | GPUI app under `ui/` | Shipped (`interfire-ui`: tray, alert, Status, Applications, Rules, Log, Network, Profiling, Settings, RSS gates) | - |
 
@@ -64,7 +64,8 @@ virtualized; reconnect replaces the audit subscription.
 | --- | --- | --- | --- |
 | Protected | enabled | normal status | rules and prompt policy active |
 | Prompting | attention state | pending alert count | bounded prompt queue active |
-| Degraded | warning state | reason and recovery action | documented fail-closed policy |
+| Degraded | warning state | reason and recovery action | queue or observation degraded |
+| Paused | warning state | Firewall: Paused + Start | owned table absent; network unfiltered |
 | Daemon unavailable | muted orange tray warning | reconnect guidance | UI makes no policy claim |
 
 ### Connection alert

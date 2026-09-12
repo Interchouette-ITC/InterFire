@@ -1,10 +1,12 @@
-# Restore InterFire-owned nftables table after boot (inet interfire only).
+# Restore InterFire-owned nftables table (manual recovery only).
+# Package install does not enable this unit. Prefer `interfirectl resume` /
+# UI Start after `interfired` has bound NFQUEUE with fail-open.
 [Unit]
 Description=InterFire owned nftables queue rule
 Documentation=https://github.com/Interchouette-ITC/InterFire
 DefaultDependencies=no
-After=network-pre.target systemd-modules-load.service
-Before=interfired.service network.target
+After=network-pre.target systemd-modules-load.service interfired.service
+Before=network.target
 Wants=network-pre.target
 
 [Service]
@@ -15,4 +17,3 @@ ExecStop=-/usr/sbin/nft delete table inet interfire
 
 [Install]
 WantedBy=multi-user.target
-Also=interfired.service
