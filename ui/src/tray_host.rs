@@ -2,7 +2,7 @@
 #![cfg(target_os = "linux")]
 #![forbid(unsafe_code)]
 
-use std::sync::mpsc::{self, Sender};
+use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, OnceLock};
 use std::thread;
 
@@ -20,6 +20,15 @@ pub enum TrayCommand {
     SetState(TrayState),
 }
 
+/// Actions from the tray menu back to the GPUI app.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TrayAction {
+    /// Show or reopen the main window.
+    Show,
+    /// Quit the UI process.
+    Quit,
+}
+
 /// Best-effort Linux tray handle (None when SNI/D-Bus is unavailable).
 #[derive(Clone)]
 pub struct TrayHost {
@@ -29,14 +38,18 @@ pub struct TrayHost {
 impl TrayHost {
     /// Spawn a background SNI tray. Returns `None` when registration fails.
     #[must_use]
-    pub fn try_spawn(initial: TrayState) -> Option<Self> {
+    pub fn try_spawn(initial: TrayState) -> Option<(Self, Receiver<TrayAction>)> {
         let (tx, rx) = mpsc::channel();
+        let (action_tx, action_rx) = mpsc::channel();
         let (ready_tx, ready_rx) = mpsc::channel();
 
         thread::Builder::new()
             .name("interfire-tray".into())
             .spawn(move || {
-                let tray = InterfireTray { state: initial };
+                let tray = InterfireTray {
+                    state: initial,
+                    actions: action_tx,
+                };
                 match tray.spawn() {
                     Ok(handle) => {
                         let _ = ready_tx.send(true);
@@ -58,7 +71,7 @@ impl TrayHost {
             .ok()?;
 
         match ready_rx.recv() {
-            Ok(true) => Some(Self { tx }),
+            Ok(true) => Some((Self { tx }, action_rx)),
             _ => None,
         }
     }
@@ -71,6 +84,7 @@ impl TrayHost {
 
 struct InterfireTray {
     state: TrayState,
+    actions: Sender<TrayAction>,
 }
 
 impl Tray for InterfireTray {
@@ -121,6 +135,8 @@ impl Tray for InterfireTray {
     }
 
     fn menu(&self) -> Vec<MenuItem<Self>> {
+        let show_tx = self.actions.clone();
+        let quit_tx = self.actions.clone();
         vec![
             StandardItem {
                 label: format!("State: {}", self.state.label()),
@@ -130,8 +146,18 @@ impl Tray for InterfireTray {
             .into(),
             MenuItem::Separator,
             StandardItem {
+                label: "Open InterFire".into(),
+                activate: Box::new(move |_| {
+                    let _ = show_tx.send(TrayAction::Show);
+                }),
+                ..Default::default()
+            }
+            .into(),
+            StandardItem {
                 label: "Quit InterFire UI".into(),
-                activate: Box::new(|_| std::process::exit(0)),
+                activate: Box::new(move |_| {
+                    let _ = quit_tx.send(TrayAction::Quit);
+                }),
                 ..Default::default()
             }
             .into(),

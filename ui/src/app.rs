@@ -102,7 +102,7 @@ pub struct App {
 impl App {
     #[must_use]
     #[hotpath::measure]
-    pub fn new(socket: String) -> Self {
+    pub fn new(socket: String, #[cfg(target_os = "linux")] tray: Option<TrayHost>) -> Self {
         let link = DaemonLink::Down {
             reason: "connecting".into(),
         };
@@ -132,7 +132,7 @@ impl App {
             daemon_cpu: CpuTracker::default(),
             chrome_pref: ChromePreference::System,
             #[cfg(target_os = "linux")]
-            tray: TrayHost::try_spawn(tray_state),
+            tray,
         };
         app.refresh_profiling(None);
         app

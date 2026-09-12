@@ -54,10 +54,14 @@ or `--theme=dark`, default dark).
 Tray: protected | prompting | degraded | daemon-unavailable (Linux SNI via
 `ksni`; state also mirrored in Status chrome and the window status bar).
 Unavailable uses a muted phoenix-orange pixmap (`icon-tray-unavailable-64.png`)
-so the icon stays readable on dark panels. On Debian GNOME, a visible tray needs
-a shell that exposes StatusNotifierItem; when SNI registration fails, Status
-still shows tray state and must not claim an icon is present. Pop!\_OS is a
-primary verify target alongside Debian GNOME.
+so the icon stays readable on dark panels. When the tray registers successfully,
+closing the main window leaves the process running (`QuitMode::Explicit`); tray
+menu **Open InterFire** / **Quit InterFire UI** reopen or exit. Session
+autostart installs `/etc/xdg/autostart/interfire.desktop`. On Debian GNOME, a
+visible tray needs a shell that exposes StatusNotifierItem; when SNI
+registration fails, Status still shows tray state and must not claim an icon is
+present (and closing the window quits as usual). Pop!\_OS is a primary verify
+target alongside Debian GNOME.
 Rules: live list / select / add / delete over Unix IPC (`rule-list`,
 `rule-add`, `rule-delete`). Log: capped at 2,000 rows with a virtualized
 viewport; long-lived `audit-subscribe` id `interfire-ui` (reconnect

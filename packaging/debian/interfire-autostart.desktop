@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=InterFire
+Comment=InterFire tray (application firewall)
+Exec=interfire-ui
+Icon=interfire
+Terminal=false
+Categories=System;Security;Network;
+X-GNOME-Autostart-enabled=true
+StartupNotify=false
