@@ -6,8 +6,6 @@ crates/interfire-ebpf-programs/target/
 !.cargo/
 !.cargo/config.toml
 *.swp
-.cursor/
-.github_credentials
 coverage/
 fuzz/target/
 fuzz/corpus/
