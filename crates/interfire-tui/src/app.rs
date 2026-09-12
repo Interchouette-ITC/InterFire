@@ -1781,6 +1781,24 @@ mod tests {
                 .iter()
                 .any(|line| line.contains("waiting"))
         );
+        app.apply(IpcEvent::Status(DaemonStatus {
+            enforcement: "paused".into(),
+            observation: "attached".into(),
+            traffic: "blocked".into(),
+            traffic_machine: "open".into(),
+            traffic_user: "out".into(),
+            traffic_effective: "user:1000:out".into(),
+            ipc_version: 1,
+            pid: Some(1),
+            rss_kib: Some(1),
+            cpu_jiffies: Some(1),
+        }));
+        let detail = app.detail_lines().join("\n");
+        assert!(detail.contains("machine=open"));
+        assert!(detail.contains("user=out"));
+        assert!(detail.contains("effective=user:1000:out"));
+        app.handle_key(KeyCode::Char('t'));
+        assert_eq!(app.handle_key(KeyCode::Char('z')), KeyAction::None);
         app.tab = Tab::Help;
         assert!(app.visible_list(5).items.is_empty());
     }

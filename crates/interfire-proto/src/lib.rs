@@ -1087,6 +1087,13 @@ mod tests {
         let parsed = DaemonStatus::parse(&blocked).expect("status");
         assert_eq!(parsed.traffic_machine, "all");
         assert_eq!(parsed.traffic_effective, "machine:all");
+        let legacy = DaemonStatus::parse(
+            "v1 status enforcement=paused observation=attached traffic=blocked ipc_version=1 pid=1 rss_kib=1 cpu_jiffies=1\n",
+        )
+        .expect("legacy status");
+        assert_eq!(legacy.traffic_machine, "out");
+        assert_eq!(legacy.traffic_user, "open");
+        assert_eq!(legacy.traffic_effective, "blocked");
         let frame = Response::Network(NetworkStatusBody {
             table: NFT_TABLE,
             queue: NFQUEUE_NUM,

@@ -1051,6 +1051,68 @@ table inet interfire {
     }
 
     #[test]
+    fn install_composed_and_apply_modes_cover_open_user_and_queue() {
+        {
+            let _ok = ForceNftOk::arm();
+            install_composed(&TrafficCompose {
+                machine: crate::traffic_mode::TrafficPreference::Open,
+                users: &[],
+                rules_active: false,
+                queue_bound: false,
+            })
+            .expect("empty compose removes");
+            apply_modes(
+                crate::traffic_mode::TrafficPreference::Open,
+                &[],
+                crate::enforcement_mode::EnforcementMode::Paused,
+                false,
+            );
+            apply_modes(
+                crate::traffic_mode::TrafficPreference::Open,
+                &[],
+                crate::enforcement_mode::EnforcementMode::Active,
+                true,
+            );
+            apply_modes(
+                crate::traffic_mode::TrafficPreference::Open,
+                &[(9, crate::traffic_mode::TrafficPreference::In)],
+                crate::enforcement_mode::EnforcementMode::Paused,
+                false,
+            );
+            apply_modes(
+                crate::traffic_mode::TrafficPreference::All,
+                &[],
+                crate::enforcement_mode::EnforcementMode::Active,
+                true,
+            );
+        }
+        {
+            let _reject = ForceNftRemoveReject::arm();
+            apply_modes(
+                crate::traffic_mode::TrafficPreference::Open,
+                &[],
+                crate::enforcement_mode::EnforcementMode::Paused,
+                false,
+            );
+            apply_modes(
+                crate::traffic_mode::TrafficPreference::Open,
+                &[],
+                crate::enforcement_mode::EnforcementMode::Active,
+                false,
+            );
+        }
+        {
+            let _reject = ForceNftInstallReject::arm();
+            apply_modes(
+                crate::traffic_mode::TrafficPreference::Open,
+                &[(1, crate::traffic_mode::TrafficPreference::Out)],
+                crate::enforcement_mode::EnforcementMode::Active,
+                true,
+            );
+        }
+    }
+
+    #[test]
     fn stderr_indicates_missing_matches_common_messages() {
         assert!(stderr_indicates_missing("Error: No such file or directory"));
         assert!(stderr_indicates_missing("table does not exist"));
