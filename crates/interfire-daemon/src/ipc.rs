@@ -449,14 +449,13 @@ fn mutate(shared: &Shared, stream: &UnixStream, action: Mutate) -> Response {
     }
 }
 
-/// Allow mutate when the peer UID matches the daemon UID or is root.
+/// Allow mutate when the peer is root, shares the daemon UID, or is in group `interfire`.
 #[must_use]
 pub fn peer_may_mutate(stream: &UnixStream) -> bool {
     let Ok(cred) = getsockopt(&stream.as_fd(), PeerCredentials) else {
         return false;
     };
-    let peer = Uid::from_raw(cred.uid());
-    peer.is_root() || peer == Uid::current()
+    crate::operator_auth::uid_may_mutate(Uid::from_raw(cred.uid()))
 }
 
 #[cfg(test)]
