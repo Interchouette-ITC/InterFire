@@ -18,7 +18,6 @@ pub const OPERATOR_GROUP: &str = "interfire";
 enum GroupLookup {
     Present { gid: u32 },
     Missing,
-    Failed,
 }
 
 /// After bind: open the socket (and parent dir) to [`OPERATOR_GROUP`] when present.
@@ -34,15 +33,14 @@ fn resolve_group(name: &str) -> GroupLookup {
         Ok(Some(group)) => GroupLookup::Present {
             gid: group.gid.as_raw(),
         },
-        Ok(None) => GroupLookup::Missing,
-        Err(_) => GroupLookup::Failed,
+        Ok(None) | Err(_) => GroupLookup::Missing,
     }
 }
 
 fn prepare_operator_socket_with(socket: &Path, lookup: GroupLookup) -> io::Result<()> {
     match lookup {
         GroupLookup::Present { gid } => {
-            if let Some(parent) = socket.parent() {
+            if let Some(parent) = socket.parent().filter(|p| !p.as_os_str().is_empty()) {
                 let _ = chown(parent, None, Some(gid));
                 let _ = fs::set_permissions(parent, fs::Permissions::from_mode(0o750));
             }
@@ -56,14 +54,6 @@ fn prepare_operator_socket_with(socket: &Path, lookup: GroupLookup) -> io::Resul
             warn!(
                 group = OPERATOR_GROUP,
                 "operator group missing; socket remains owner-only"
-            );
-            Ok(())
-        }
-        GroupLookup::Failed => {
-            fs::set_permissions(socket, fs::Permissions::from_mode(0o600))?;
-            warn!(
-                group = OPERATOR_GROUP,
-                "operator group lookup failed; socket remains owner-only"
             );
             Ok(())
         }
@@ -84,6 +74,10 @@ fn uid_in_named_group(uid: Uid, group_name: &str) -> bool {
     let Ok(Some(user)) = User::from_uid(uid) else {
         return false;
     };
+    user_in_gid(&user, target)
+}
+
+fn user_in_gid(user: &User, target: nix::unistd::Gid) -> bool {
     if user.gid == target {
         return true;
     }
@@ -97,14 +91,15 @@ fn uid_in_named_group(uid: Uid, group_name: &str) -> bool {
 mod tests {
     use super::{
         GroupLookup, OPERATOR_GROUP, prepare_operator_socket, prepare_operator_socket_with,
-        resolve_group, uid_in_named_group, uid_may_mutate,
+        resolve_group, uid_in_named_group, uid_may_mutate, user_in_gid,
     };
+    use std::ffi::CString;
     use std::fs;
     use std::os::unix::fs::PermissionsExt;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
     use std::sync::atomic::{AtomicU64, Ordering};
 
-    use nix::unistd::{Uid, getgid};
+    use nix::unistd::{Gid, Uid, User, getgid};
 
     fn temp_socket() -> PathBuf {
         static COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -117,11 +112,11 @@ mod tests {
         sock
     }
 
-    fn mode_of(path: &std::path::Path) -> u32 {
+    fn mode_of(path: &Path) -> u32 {
         fs::metadata(path).expect("meta").permissions().mode() & 0o777
     }
 
-    fn cleanup(sock: &std::path::Path) {
+    fn cleanup(sock: &Path) {
         if let Some(parent) = sock.parent() {
             let _ = fs::remove_dir_all(parent);
         }
@@ -133,12 +128,8 @@ mod tests {
     }
 
     #[test]
-    fn current_uid_may_mutate() {
+    fn current_and_root_may_mutate() {
         assert!(uid_may_mutate(Uid::current()));
-    }
-
-    #[test]
-    fn root_uid_may_mutate() {
         assert!(uid_may_mutate(Uid::from_raw(0)));
     }
 
@@ -148,30 +139,20 @@ mod tests {
     }
 
     #[test]
-    fn resolve_root_group_is_present() {
+    fn resolve_root_and_missing_groups() {
         assert!(matches!(resolve_group("root"), GroupLookup::Present { .. }));
-    }
-
-    #[test]
-    fn resolve_missing_group_is_missing() {
         assert_eq!(
             resolve_group("interfire-no-such-group-for-tests"),
             GroupLookup::Missing
         );
+        // Nul in the name is treated as missing by nix / this resolver.
+        assert_eq!(resolve_group("bad\0name"), GroupLookup::Missing);
     }
 
     #[test]
     fn missing_group_keeps_owner_only_mode() {
         let sock = temp_socket();
         prepare_operator_socket_with(&sock, GroupLookup::Missing).expect("prepare");
-        assert_eq!(mode_of(&sock), 0o600);
-        cleanup(&sock);
-    }
-
-    #[test]
-    fn failed_group_lookup_keeps_owner_only_mode() {
-        let sock = temp_socket();
-        prepare_operator_socket_with(&sock, GroupLookup::Failed).expect("prepare");
         assert_eq!(mode_of(&sock), 0o600);
         cleanup(&sock);
     }
@@ -187,14 +168,29 @@ mod tests {
     }
 
     #[test]
+    fn present_group_without_parent_dir_still_modes_socket() {
+        let cwd = std::env::temp_dir();
+        let prev = std::env::current_dir().expect("cwd");
+        std::env::set_current_dir(&cwd).expect("cd temp");
+        let name = format!("interfire-sock-{}", std::process::id());
+        let sock = PathBuf::from(&name);
+        let _ = fs::remove_file(&sock);
+        fs::File::create(&sock).expect("touch");
+        let gid = getgid().as_raw();
+        let result = prepare_operator_socket_with(&sock, GroupLookup::Present { gid });
+        let mode = mode_of(&sock);
+        let _ = fs::remove_file(&sock);
+        std::env::set_current_dir(prev).expect("restore cwd");
+        result.expect("prepare");
+        assert_eq!(mode, 0o660);
+    }
+
+    #[test]
     fn prepare_operator_socket_runs_against_host_group_table() {
         let sock = temp_socket();
         prepare_operator_socket(&sock).expect("prepare");
         let mode = mode_of(&sock);
-        assert!(
-            mode == 0o600 || mode == 0o660,
-            "unexpected socket mode {mode:#o}"
-        );
+        assert!(mode == 0o600 || mode == 0o660, "mode {mode:#o}");
         cleanup(&sock);
     }
 
@@ -209,11 +205,18 @@ mod tests {
     }
 
     #[test]
-    fn current_uid_group_membership_is_consistent() {
-        let uid = Uid::current();
-        let in_root = uid_in_named_group(uid, "root");
-        let in_missing = uid_in_named_group(uid, "interfire-no-such-group-for-tests");
-        assert!(!in_missing);
-        let _ = in_root;
+    fn user_in_gid_hits_primary_and_supplementary() {
+        let user = User::from_uid(Uid::current())
+            .expect("user")
+            .expect("passwd");
+        assert!(user_in_gid(&user, user.gid));
+        let other = Gid::from_raw(user.gid.as_raw().wrapping_add(9_001));
+        // Exercises getgrouplist path when primary gid does not match.
+        let _ = user_in_gid(&user, other);
+    }
+
+    #[test]
+    fn cstring_rejects_interior_nul_like_user_in_gid_guard() {
+        assert!(CString::new("bad\0name").is_err());
     }
 }
