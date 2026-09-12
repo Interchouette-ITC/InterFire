@@ -27,6 +27,10 @@ pub enum TrayAction {
     Show,
     /// Quit the UI process.
     Quit,
+    /// Request pause after operator confirmation in the main UI.
+    Pause,
+    /// Request resume after operator confirmation in the main UI.
+    Resume,
 }
 
 /// Best-effort Linux tray handle (None when SNI/D-Bus is unavailable).
@@ -119,9 +123,10 @@ impl Tray for InterfireTray {
     fn status(&self) -> ksni::Status {
         match self.state {
             TrayState::Prompting => ksni::Status::NeedsAttention,
-            TrayState::Protected | TrayState::Degraded | TrayState::Unavailable => {
-                ksni::Status::Active
-            }
+            TrayState::Protected
+            | TrayState::Degraded
+            | TrayState::Paused
+            | TrayState::Unavailable => ksni::Status::Active,
         }
     }
 
@@ -136,7 +141,10 @@ impl Tray for InterfireTray {
 
     fn menu(&self) -> Vec<MenuItem<Self>> {
         let show_tx = self.actions.clone();
+        let pause_tx = self.actions.clone();
+        let resume_tx = self.actions.clone();
         let quit_tx = self.actions.clone();
+        let paused = matches!(self.state, TrayState::Paused);
         vec![
             StandardItem {
                 label: format!("State: {}", self.state.label()),
@@ -149,6 +157,22 @@ impl Tray for InterfireTray {
                 label: "Open InterFire".into(),
                 activate: Box::new(move |_| {
                     let _ = show_tx.send(TrayAction::Show);
+                }),
+                ..Default::default()
+            }
+            .into(),
+            StandardItem {
+                label: if paused {
+                    "Start firewall…".into()
+                } else {
+                    "Pause firewall…".into()
+                },
+                activate: Box::new(move |_| {
+                    if paused {
+                        let _ = resume_tx.send(TrayAction::Resume);
+                    } else {
+                        let _ = pause_tx.send(TrayAction::Pause);
+                    }
                 }),
                 ..Default::default()
             }

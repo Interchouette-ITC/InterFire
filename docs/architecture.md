@@ -6,17 +6,18 @@ InterFire uses eBPF for TCP-connect observation, then resolves the executable,
 command line, uid, cgroup, and start-time through `/proc` in userspace. eBPF
 observation alone is not the verdict path.
 
-The primary verdict path is NFQUEUE: the daemon binds queue **4242**, stores
-recent connect decisions keyed by destination IPv4 and port, and accepts or
-drops queued packets. Prompt verdicts stay **deny** until answered over IPC
-(`interfire-tui` or `interfirectl`). Unattributed events and packets without a
-pending decision are **deny**.
+The primary verdict path is NFQUEUE: the daemon binds queue **4242** with
+**fail-open** (daemon loss must not freeze the host), stores recent connect
+decisions keyed by destination IPv4 and port, and accepts or drops queued
+packets while enforcement is **active**. Default mode after install is
+**paused** (owned table absent). Prompt verdicts stay **deny** until answered
+over IPC (`interfire-tui` or `interfirectl`). Unattributed events and packets
+without a pending decision are **deny** while Active.
 
-The InterFire-owned nftables table is **`inet interfire`**. The Network tab
-(`interfire-ui`) and one-shot CLI (`interfirectl network install|remove|status`)
-install or remove only that table: an `output` chain that queues new outbound
-TCP (`ct state new`) to queue 4242. Unrelated tables are never listed or
-edited. Open gaps: production latency/coexistence measurements. A root
+The InterFire-owned nftables table is **`inet interfire`**. Pause/Start
+(`interfirectl pause|resume`, UI header) and Network install/remove install or
+remove only that table: an `output` chain that queues new outbound TCP
+(`ct state new`) to queue 4242. Unrelated tables are never listed or edited. Open gaps: production latency/coexistence measurements. A root
 network-namespace gate (`make integration` /
 `scripts/enforcement-allow-deny.sh`) proves controlled allow and deny. Idle
 daemon RSS is checked with `make memcheck` against the < 40 MiB budget.

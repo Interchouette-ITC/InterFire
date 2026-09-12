@@ -95,6 +95,8 @@ pub struct App {
     ui_cpu: CpuTracker,
     daemon_cpu: CpuTracker,
     chrome_pref: ChromePreference,
+    /// Pending Pause/Start confirmation from tray (`true` = pause).
+    fw_confirm_pause: Option<bool>,
     #[cfg(target_os = "linux")]
     tray: Option<TrayHost>,
 }
@@ -131,6 +133,7 @@ impl App {
             ui_cpu: CpuTracker::default(),
             daemon_cpu: CpuTracker::default(),
             chrome_pref: ChromePreference::System,
+            fw_confirm_pause: None,
             #[cfg(target_os = "linux")]
             tray,
         };
@@ -472,6 +475,73 @@ impl App {
         self.refresh_from_daemon();
         cx.notify();
     }
+
+    pub(crate) fn request_pause_confirm(&mut self, cx: &mut Context<Self>) {
+        self.fw_confirm_pause = Some(true);
+        cx.notify();
+    }
+
+    pub(crate) fn request_resume_confirm(&mut self, cx: &mut Context<Self>) {
+        self.fw_confirm_pause = Some(false);
+        cx.notify();
+    }
+
+    pub(crate) fn request_pause_confirm_click(
+        &mut self,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.request_pause_confirm(cx);
+    }
+
+    pub(crate) fn request_resume_confirm_click(
+        &mut self,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.request_resume_confirm(cx);
+    }
+
+    pub(crate) fn cancel_fw_confirm(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        self.fw_confirm_pause = None;
+        cx.notify();
+    }
+
+    pub(crate) fn confirm_fw_action(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let pause = self.fw_confirm_pause.take();
+        match pause {
+            Some(true) => self.pause_firewall(window, cx),
+            Some(false) => self.resume_firewall(window, cx),
+            None => cx.notify(),
+        }
+    }
+
+    pub(crate) fn pause_firewall(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        match ipc_poll::pause_firewall(&self.socket) {
+            Ok(()) => {
+                self.network_message = Some("firewall paused".into());
+                self.refresh_from_daemon();
+            }
+            Err(message) => {
+                self.network_message = Some(message);
+            }
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn resume_firewall(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        match ipc_poll::resume_firewall(&self.socket) {
+            Ok(()) => {
+                self.network_message =
+                    Some("firewall started (stop other queue firewalls first if present)".into());
+                self.refresh_from_daemon();
+            }
+            Err(message) => {
+                self.network_message = Some(message);
+            }
+        }
+        cx.notify();
+    }
 }
 
 impl Render for App {
@@ -532,8 +602,72 @@ impl Render for App {
         if let Some(alert) = alert {
             shell = shell.child(alert_overlay(&alert, cx));
         }
+        if let Some(pause) = self.fw_confirm_pause {
+            shell = shell.child(fw_confirm_overlay(pause, cx));
+        }
         shell
     }
+}
+
+fn fw_confirm_overlay(pause: bool, cx: &Context<App>) -> impl IntoElement {
+    let title = if pause {
+        "Pause firewall?"
+    } else {
+        "Start firewall?"
+    };
+    let body = if pause {
+        "Temporary pause removes the InterFire nftables table. New outbound TCP is no longer filtered until you Start again."
+    } else {
+        "Start installs the InterFire queue table. Do not Start while another application-firewall queue is already active."
+    };
+    div()
+        .id("fw-confirm-overlay")
+        .absolute()
+        .inset_0()
+        .flex()
+        .items_center()
+        .justify_center()
+        .bg(cx.theme().background.opacity(0.72))
+        .child(
+            div()
+                .w(px(420.))
+                .p_4()
+                .rounded_lg()
+                .border_1()
+                .border_color(cx.theme().border)
+                .bg(cx.theme().popover)
+                .v_flex()
+                .gap_3()
+                .child(div().text_lg().font_semibold().child(title))
+                .child(
+                    div()
+                        .text_sm()
+                        .text_color(cx.theme().muted_foreground)
+                        .child(body),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .gap_2()
+                        .justify_end()
+                        .child(crate::rules_view::action_chip(
+                            "fw-confirm-cancel",
+                            "Cancel",
+                            true,
+                            false,
+                            cx,
+                            App::cancel_fw_confirm,
+                        ))
+                        .child(crate::rules_view::action_chip(
+                            "fw-confirm-ok",
+                            if pause { "Pause" } else { "Start" },
+                            true,
+                            true,
+                            cx,
+                            App::confirm_fw_action,
+                        )),
+                ),
+        )
 }
 
 fn nav_column(selected: Section, chrome_mode: ChromeMode, cx: &Context<App>) -> impl IntoElement {
@@ -661,6 +795,15 @@ fn content_column(content: &ShellContent<'_>, cx: &Context<App>) -> impl IntoEle
 }
 
 fn content_header(content: &ShellContent<'_>, cx: &Context<App>) -> impl IntoElement {
+    let paused = matches!(content.tray_state, TrayState::Paused);
+    let daemon_up = !matches!(content.tray_state, TrayState::Unavailable);
+    let fw_label = if paused {
+        "Firewall: Paused"
+    } else if daemon_up {
+        "Firewall: Active"
+    } else {
+        "Firewall: —"
+    };
     div()
         .id("content-header")
         .flex()
@@ -673,7 +816,38 @@ fn content_header(content: &ShellContent<'_>, cx: &Context<App>) -> impl IntoEle
                 .text_color(cx.theme().foreground)
                 .child(content.section.label()),
         )
-        .child(tray_chip(content.tray_state, cx))
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .gap_2()
+                .child(
+                    div()
+                        .text_xs()
+                        .font_semibold()
+                        .text_color(if paused {
+                            cx.theme().warning
+                        } else if daemon_up {
+                            cx.theme().success
+                        } else {
+                            cx.theme().muted_foreground
+                        })
+                        .child(fw_label),
+                )
+                .child(crate::rules_view::action_chip(
+                    "fw-toggle",
+                    if paused { "Start" } else { "Pause" },
+                    daemon_up,
+                    paused,
+                    cx,
+                    if paused {
+                        App::request_resume_confirm_click
+                    } else {
+                        App::request_pause_confirm_click
+                    },
+                ))
+                .child(tray_chip(content.tray_state, cx)),
+        )
 }
 
 fn tray_chip(state: TrayState, cx: &Context<App>) -> impl IntoElement {
@@ -681,6 +855,7 @@ fn tray_chip(state: TrayState, cx: &Context<App>) -> impl IntoElement {
         TrayState::Protected => (cx.theme().success.opacity(0.2), cx.theme().success),
         TrayState::Prompting => (cx.theme().accent.opacity(0.25), cx.theme().accent),
         TrayState::Degraded => (cx.theme().warning.opacity(0.22), cx.theme().warning),
+        TrayState::Paused => (cx.theme().warning.opacity(0.18), cx.theme().warning),
         TrayState::Unavailable => (cx.theme().danger.opacity(0.22), cx.theme().danger),
     };
     div()
