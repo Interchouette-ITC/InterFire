@@ -827,7 +827,42 @@ table inet interfire {
     fn force_ok_short_circuits_install_and_remove() {
         let _ok = ForceNftOk::arm();
         install().expect("forced install ok");
+        install_block().expect("forced block install ok");
         remove().expect("forced remove ok");
+    }
+
+    #[test]
+    fn install_block_success_and_failure_paths() {
+        {
+            let _success = ForceNftInstallSuccess::arm();
+            install_block().expect("forced block install success");
+        }
+        {
+            let _fail = ForceNftSpawnFail::arm();
+            let error = install_block().expect_err("spawn fail");
+            assert!(error.to_string().contains("spawn failed"));
+        }
+        {
+            let _stdin = ForceNftStdinUnavailable::arm();
+            let error = install_block().expect_err("stdin unavailable");
+            assert!(error.to_string().contains("nft stdin unavailable"));
+        }
+        {
+            let _reject = ForceNftInstallReject::arm();
+            let error = install_block().expect_err("install reject");
+            assert!(error.to_string().contains("install failed"));
+        }
+        let error = install_block().expect_err("live unavailable");
+        assert!(error.to_string().contains("unavailable under unit tests"));
+    }
+
+    #[test]
+    fn apply_modes_blocked_logs_install_failure() {
+        let _reject = ForceNftInstallReject::arm();
+        apply_modes(
+            crate::traffic_mode::TrafficMode::Blocked,
+            crate::enforcement_mode::EnforcementMode::Paused,
+        );
     }
 
     #[test]

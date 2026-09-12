@@ -1355,6 +1355,30 @@ mod tests {
     }
 
     #[test]
+    fn traffic_block_and_unblock_failure_paths() {
+        let _suite = suite_lock();
+        let (shared, audit_path, rules_path) = test_shared("traffic-fail");
+        let _ok = crate::nft::ForceNftOk::arm();
+        let (a, _b) = StdUnixStream::pair().unwrap();
+        assert_eq!(dispatch(Request::TrafficBlock, &shared, &a), Response::Pong);
+        let traffic_path = shared.traffic_path().to_path_buf();
+        let _ = fs::remove_file(&traffic_path);
+        fs::create_dir_all(&traffic_path).expect("dir");
+        assert_eq!(
+            dispatch(Request::TrafficUnblock, &shared, &a),
+            Response::Error("traffic_unblock_failed")
+        );
+        let _ = fs::remove_dir_all(&traffic_path);
+        fs::create_dir_all(&traffic_path).expect("dir again");
+        assert_eq!(
+            dispatch(Request::TrafficBlock, &shared, &a),
+            Response::Error("traffic_block_failed")
+        );
+        let _ = fs::remove_dir_all(&traffic_path);
+        cleanup_paths(&audit_path, &rules_path);
+    }
+
+    #[test]
     fn pause_and_resume_round_trip() {
         let _suite = suite_lock();
         let (shared, audit_path, rules_path) = test_shared("pause-resume");

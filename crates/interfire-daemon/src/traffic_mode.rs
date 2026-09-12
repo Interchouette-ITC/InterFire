@@ -91,7 +91,7 @@ pub fn resolve_traffic_path(override_path: Option<PathBuf>) -> PathBuf {
 mod tests {
     use super::{TrafficMode, load, resolve_traffic_path, store};
     use std::fs;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
     use std::sync::atomic::{AtomicU64, Ordering};
 
     fn temp_traffic() -> PathBuf {
@@ -138,5 +138,35 @@ mod tests {
         );
         let custom = temp_traffic();
         assert_eq!(resolve_traffic_path(Some(custom.clone())), custom);
+    }
+
+    #[test]
+    fn as_str_and_parse_cover_both_modes() {
+        assert_eq!(TrafficMode::Open.as_str(), "open");
+        assert_eq!(TrafficMode::Blocked.as_str(), "blocked");
+        assert_eq!(TrafficMode::parse(" open "), Some(TrafficMode::Open));
+        assert_eq!(TrafficMode::parse("blocked"), Some(TrafficMode::Blocked));
+        assert_eq!(TrafficMode::parse("nope"), None);
+    }
+
+    #[test]
+    fn unreadable_path_defaults_open() {
+        let path = temp_traffic();
+        fs::create_dir_all(&path).expect("dir");
+        assert_eq!(load(&path), TrafficMode::Open);
+        let _ = fs::remove_dir_all(&path);
+    }
+
+    #[test]
+    fn store_creates_parent_and_path_from_env_default() {
+        let path = temp_traffic().join("nested").join("traffic.mode");
+        store(&path, TrafficMode::Blocked).expect("store nested");
+        assert_eq!(load(&path), TrafficMode::Blocked);
+        let _ = fs::remove_dir_all(path.parent().expect("parent").parent().expect("root"));
+        assert_eq!(
+            super::path_from_env(),
+            PathBuf::from(super::DEFAULT_TRAFFIC_PATH)
+        );
+        assert!(super::ensure_parent(Path::new("traffic.mode")).is_ok());
     }
 }
