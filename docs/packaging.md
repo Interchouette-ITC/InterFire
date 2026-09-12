@@ -96,11 +96,11 @@ Rules, or the desktop UI.
 1. Enable the daemon only: `systemctl enable --now interfired.service`.
    Leave `interfire-nft` **disabled** unless recovering manually.
 2. After reboot, `interfired` binds NFQUEUE **4242** with **fail-open**, then
-   reads traffic prefs (`traffic.machine`, `traffic.user.<uid>`; legacy
-   `traffic.mode=blocked` migrates once to machine `out`) and `enforcement.mode`.
-   Machine block installs host-wide fail-closed drops for the chosen direction
-   (loopback allowed). Else a user block installs uid-scoped drops. Else Rules
-   **active** installs the queue table; **paused** leaves the table absent.
+   reads traffic prefs (`traffic.machine`, `traffic.user.<uid>`) and
+   `enforcement.mode`. Machine block installs host-wide fail-closed drops for
+   the chosen direction (loopback allowed). Else a user block installs
+   uid-scoped drops. Else Rules **active** installs the queue table; **paused**
+   leaves the table absent.
 3. Stopping `interfired` runs `/usr/lib/interfire/interfire-nft-stop.sh`: if any
    machine or user block is stored, a composed drop table is kept; otherwise the
    owned table is deleted.

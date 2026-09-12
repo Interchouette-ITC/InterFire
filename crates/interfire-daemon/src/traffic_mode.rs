@@ -11,8 +11,6 @@ use tracing::warn;
 
 /// Default machine traffic path under the daemon state directory.
 pub const DEFAULT_MACHINE_PATH: &str = "/var/lib/interfire/traffic.machine";
-/// Legacy Phase C path (`blocked` → machine `out`).
-pub const LEGACY_TRAFFIC_PATH: &str = "/var/lib/interfire/traffic.mode";
 
 static STORE_TMP_SEQ: AtomicU64 = AtomicU64::new(0);
 
@@ -44,7 +42,7 @@ impl TrafficPreference {
     pub fn parse(raw: &str) -> Option<Self> {
         match raw.trim() {
             "open" => Some(Self::Open),
-            "out" | "blocked" => Some(Self::Out),
+            "out" => Some(Self::Out),
             "in" => Some(Self::In),
             "all" => Some(Self::All),
             _ => None,
@@ -159,29 +157,6 @@ pub fn user_path(machine_path: &Path, uid: u32) -> PathBuf {
     state_dir(machine_path).join(format!("traffic.user.{uid}"))
 }
 
-/// Legacy Phase C path beside the machine file.
-#[must_use]
-pub fn legacy_path(machine_path: &Path) -> PathBuf {
-    state_dir(machine_path).join(
-        Path::new(LEGACY_TRAFFIC_PATH)
-            .file_name()
-            .unwrap_or_else(|| std::ffi::OsStr::new("traffic.mode")),
-    )
-}
-
-/// Migrate `traffic.mode=blocked` → `traffic.machine=out` once.
-pub fn migrate_legacy(machine_path: &Path) {
-    if machine_path.exists() {
-        return;
-    }
-    let legacy = legacy_path(machine_path);
-    if load(&legacy) == TrafficPreference::Out {
-        if let Err(error) = store(machine_path, TrafficPreference::Out) {
-            warn!(%error, "legacy traffic.mode migrate failed");
-        }
-    }
-}
-
 /// Load every non-open `traffic.user.<uid>` under the state directory.
 #[must_use]
 pub fn load_user_blocks(machine_path: &Path) -> Vec<(u32, TrafficPreference)> {
@@ -234,7 +209,7 @@ pub fn resolve_machine_path(override_path: Option<PathBuf>) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::{
-        TrafficPreference, any_block_active, effective, load, load_user_blocks, migrate_legacy,
+        TrafficPreference, any_block_active, effective, load, load_user_blocks,
         resolve_machine_path, store, user_path,
     };
     use std::fs;
@@ -272,11 +247,18 @@ mod tests {
     }
 
     #[test]
-    fn blocked_alias_is_out() {
-        assert_eq!(
-            TrafficPreference::parse("blocked"),
-            Some(TrafficPreference::Out)
-        );
+    fn parse_rejects_unknown_tokens() {
+        assert_eq!(TrafficPreference::parse("blocked"), None);
+        assert_eq!(TrafficPreference::parse("nope"), None);
+    }
+
+    #[test]
+    fn load_unreadable_defaults_open() {
+        let dir = temp_dir();
+        let as_dir = dir.join("as-dir");
+        fs::create_dir_all(&as_dir).expect("dir");
+        assert_eq!(load(&as_dir), TrafficPreference::Open);
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -309,52 +291,6 @@ mod tests {
             .label(),
             "user:7:all"
         );
-    }
-
-    #[test]
-    fn migrate_legacy_blocked_to_machine_out() {
-        let dir = temp_dir();
-        let machine = dir.join("traffic.machine");
-        let legacy = dir.join("traffic.mode");
-        fs::write(&legacy, "blocked\n").expect("legacy");
-        migrate_legacy(&machine);
-        assert_eq!(load(&machine), TrafficPreference::Out);
-        migrate_legacy(&machine);
-        assert_eq!(load(&machine), TrafficPreference::Out);
-        let _ = fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn load_unreadable_defaults_open() {
-        let dir = temp_dir();
-        let as_dir = dir.join("as-dir");
-        fs::create_dir_all(&as_dir).expect("dir");
-        assert_eq!(load(&as_dir), TrafficPreference::Open);
-        let _ = fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn migrate_legacy_store_failure_is_soft() {
-        let dir = temp_dir();
-        let machine = dir.join("traffic.machine");
-        let legacy = dir.join("traffic.mode");
-        fs::write(&legacy, "blocked\n").expect("legacy");
-        let mut perms = fs::metadata(&dir).expect("meta").permissions();
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt as _;
-            perms.set_mode(0o555);
-            fs::set_permissions(&dir, perms.clone()).expect("ro");
-        }
-        migrate_legacy(&machine);
-        assert!(!machine.is_file());
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt as _;
-            perms.set_mode(0o755);
-            fs::set_permissions(&dir, perms).expect("rw");
-        }
-        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
