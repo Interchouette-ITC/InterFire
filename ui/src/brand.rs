@@ -11,7 +11,7 @@ const MARK_HEAD_64: &[u8] = include_bytes!("../../docs/brand/mark-phoenix-head-6
 const ICON_APP_64: &[u8] = include_bytes!("../../docs/brand/icon-app-phoenix-64.png");
 const ICON_GRADIENT_64: &[u8] = include_bytes!("../../docs/brand/icon-app-phoenix-gradient-64.png");
 const ICON_LIGHT_64: &[u8] = include_bytes!("../../docs/brand/icon-app-phoenix-light-64.png");
-const ICON_MONO_64: &[u8] = include_bytes!("../../docs/brand/mark-phoenix-mono-64.png");
+const ICON_UNAVAILABLE_64: &[u8] = include_bytes!("../../docs/brand/icon-tray-unavailable-64.png");
 const LOGO_HORIZONTAL: &[u8] = include_bytes!("../../docs/brand/logo-horizontal-readme.png");
 
 /// Nav mark for the active chrome mode.
@@ -54,10 +54,10 @@ pub const fn icon_degraded_png() -> &'static [u8] {
     ICON_LIGHT_64
 }
 
-/// Tray unavailable icon bytes.
+/// Tray unavailable icon bytes (muted orange; readable on dark panels).
 #[must_use]
 pub const fn icon_unavailable_png() -> &'static [u8] {
-    ICON_MONO_64
+    ICON_UNAVAILABLE_64
 }
 
 fn png(bytes: &'static [u8]) -> Arc<Image> {
@@ -74,9 +74,10 @@ mod tests {
         assert!(ICON_APP_64.len() > 100);
         assert!(ICON_GRADIENT_64.len() > 100);
         assert!(ICON_LIGHT_64.len() > 100);
-        assert!(ICON_MONO_64.len() > 100);
+        assert!(ICON_UNAVAILABLE_64.len() > 100);
         assert!(LOGO_HORIZONTAL.len() > 100);
         assert_eq!(icon_protected_png(), ICON_APP_64);
+        assert_eq!(icon_unavailable_png(), ICON_UNAVAILABLE_64);
         let _ = nav_mark_source(ChromeMode::Dark);
         let _ = nav_mark_source(ChromeMode::Light);
     }

@@ -65,7 +65,7 @@ virtualized; reconnect replaces the audit subscription.
 | Protected | enabled | normal status | rules and prompt policy active |
 | Prompting | attention state | pending alert count | bounded prompt queue active |
 | Degraded | warning state | reason and recovery action | documented fail-closed policy |
-| Daemon unavailable | warning state | reconnect guidance | UI makes no policy claim |
+| Daemon unavailable | muted orange tray warning | reconnect guidance | UI makes no policy claim |
 
 ### Connection alert
 

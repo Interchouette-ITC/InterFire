@@ -48,6 +48,20 @@ install -m 0644 packaging/defaults/rules.toml \
 install -m 0644 packaging/debian/interfire.desktop \
   "${stage}/usr/share/applications/interfire.desktop"
 
+# Brand icons for the applications menu (same family as Protected tray).
+for size in 16 32 48 64 128 256; do
+  icon_dir="${stage}/usr/share/icons/hicolor/${size}x${size}/apps"
+  mkdir -p "${icon_dir}"
+  if [ "${size}" = "16" ]; then
+    src="docs/brand/favicon-16.png"
+  elif [ "${size}" = "32" ]; then
+    src="docs/brand/favicon-32.png"
+  else
+    src="docs/brand/icon-app-phoenix-${size}.png"
+  fi
+  install -m 0644 "${src}" "${icon_dir}/interfire.png"
+done
+
 {
   printf '%s\n' 'Format: 1.0'
   printf '%s\n' 'Name: InterFire'
@@ -92,6 +106,9 @@ if command -v systemctl >/dev/null 2>&1; then
   systemctl daemon-reload || true
   systemctl enable interfire-nft.service interfired.service >/dev/null 2>&1 || true
   systemctl start interfire-nft.service interfired.service >/dev/null 2>&1 || true
+fi
+if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+  gtk-update-icon-cache -f /usr/share/icons/hicolor >/dev/null 2>&1 || true
 fi
 exit 0
 EOF
