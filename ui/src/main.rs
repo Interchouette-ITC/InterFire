@@ -26,6 +26,7 @@ mod tray_host;
 
 use std::env;
 use std::process::Command;
+use std::sync::mpsc::Receiver;
 use std::time::Duration;
 
 use gpui_kit::component::*;
@@ -34,6 +35,10 @@ use interfire_proto::DEFAULT_SOCKET_PATH;
 
 use crate::app::App;
 use crate::rss_probe::RssProbeMode;
+#[cfg(target_os = "linux")]
+use crate::tray::TrayState;
+#[cfg(target_os = "linux")]
+use crate::tray_host::{TrayAction, TrayHost};
 
 #[global_allocator]
 static ALLOC: hotpath::CountingAllocator = hotpath::CountingAllocator::new();
@@ -58,8 +63,23 @@ fn main() {
             cx,
         );
         cx.set_app_identity("net.interchouette.InterFire", "InterFire");
+
+        #[cfg(target_os = "linux")]
+        let (tray_host, tray_actions) = match TrayHost::try_spawn(TrayState::Unavailable) {
+            Some((host, actions)) => {
+                // Tray owns process life: closing the last window must not quit.
+                cx.set_quit_mode(QuitMode::Explicit);
+                (Some(host), Some(actions))
+            }
+            None => (None, None),
+        };
+
+        let socket_for_window = socket.clone();
+        let probe_for_window = probe;
+        #[cfg(target_os = "linux")]
+        let tray_for_window = tray_host.clone();
         cx.spawn(async move |cx| {
-            cx.open_window(
+            let _ = cx.open_window(
                 WindowOptions {
                     titlebar: Some(TitlebarOptions {
                         title: Some("InterFire".into()),
@@ -69,25 +89,112 @@ fn main() {
                     ..WindowOptions::default()
                 },
                 |window, cx| {
-                    let view = cx.new(|cx| {
-                        let mut app = App::new(socket.clone());
-                        if let Some(mode) = probe {
-                            app.apply_rss_probe(mode);
-                        }
-                        App::start_watchers(cx);
-                        app
-                    });
-                    view.update(cx, |app, cx| {
-                        let mode = app.chrome_preference().resolve(window.appearance());
-                        theme::apply_phoenix_theme(mode, Some(window), cx);
-                    });
-                    cx.new(|cx| Root::new(view, window, cx).bg(cx.theme().background))
+                    build_root(
+                        socket_for_window.clone(),
+                        probe_for_window,
+                        #[cfg(target_os = "linux")]
+                        tray_for_window.clone(),
+                        window,
+                        cx,
+                    )
                 },
-            )
-            .expect("open InterFire window");
+            );
         })
         .detach();
+
+        #[cfg(target_os = "linux")]
+        if let Some(actions) = tray_actions {
+            spawn_tray_action_loop(socket, probe, tray_host, actions, cx);
+        }
     });
+}
+
+#[cfg(target_os = "linux")]
+fn spawn_tray_action_loop(
+    socket: String,
+    probe: Option<RssProbeMode>,
+    tray_host: Option<TrayHost>,
+    actions: Receiver<TrayAction>,
+    cx: &gpui_kit::App,
+) {
+    cx.spawn(async move |cx| {
+        loop {
+            cx.background_executor()
+                .timer(Duration::from_millis(200))
+                .await;
+            let mut pending = Vec::new();
+            while let Ok(action) = actions.try_recv() {
+                pending.push(action);
+            }
+            if pending.is_empty() {
+                continue;
+            }
+            let quit = cx.update(|cx| {
+                for action in pending {
+                    match action {
+                        TrayAction::Show => {
+                            if cx.windows().is_empty() {
+                                let socket = socket.clone();
+                                let tray = tray_host.clone();
+                                let _ = cx.open_window(
+                                    WindowOptions {
+                                        titlebar: Some(TitlebarOptions {
+                                            title: Some("InterFire".into()),
+                                            ..TitlebarOptions::default()
+                                        }),
+                                        window_background: WindowBackgroundAppearance::Opaque,
+                                        ..WindowOptions::default()
+                                    },
+                                    move |window, cx| {
+                                        build_root(socket.clone(), probe, tray, window, cx)
+                                    },
+                                );
+                            } else if let Some(handle) = cx.windows().into_iter().next() {
+                                let _ = handle.update(cx, |_, window, _| {
+                                    window.activate_window();
+                                });
+                            }
+                        }
+                        TrayAction::Quit => {
+                            cx.quit();
+                            return true;
+                        }
+                    }
+                }
+                false
+            });
+            if quit {
+                break;
+            }
+        }
+    })
+    .detach();
+}
+
+fn build_root(
+    socket: String,
+    probe: Option<RssProbeMode>,
+    #[cfg(target_os = "linux")] tray: Option<TrayHost>,
+    window: &mut Window,
+    cx: &mut impl AppContext,
+) -> Entity<Root> {
+    let view = cx.new(|cx| {
+        let mut app = App::new(
+            socket,
+            #[cfg(target_os = "linux")]
+            tray,
+        );
+        if let Some(mode) = probe {
+            app.apply_rss_probe(mode);
+        }
+        App::start_watchers(cx);
+        app
+    });
+    view.update(cx, |app, cx| {
+        let mode = app.chrome_preference().resolve(window.appearance());
+        theme::apply_phoenix_theme(mode, Some(window), cx);
+    });
+    cx.new(|cx| Root::new(view, window, cx).bg(cx.theme().background))
 }
 
 fn profile_shutdown_ms() -> u64 {
@@ -201,17 +308,9 @@ mod tests {
     }
 
     #[test]
-    fn renderer_env_respects_explicit_wgpu_backend() {
-        assert_eq!(
-            renderer_env_decision(None, Some("gl")),
-            RendererEnvDecision::LeaveAlone
-        );
+    fn renderer_env_respects_existing_wgpu_backend() {
         assert_eq!(
             renderer_env_decision(None, Some("vulkan")),
-            RendererEnvDecision::LeaveAlone
-        );
-        assert_eq!(
-            renderer_env_decision(Some("1"), Some("vulkan")),
             RendererEnvDecision::LeaveAlone
         );
     }

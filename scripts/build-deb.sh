@@ -47,6 +47,9 @@ install -m 0644 packaging/defaults/rules.toml \
   "${stage}/etc/interfire/rules.toml"
 install -m 0644 packaging/debian/interfire.desktop \
   "${stage}/usr/share/applications/interfire.desktop"
+mkdir -p "${stage}/etc/xdg/autostart"
+install -m 0644 packaging/debian/interfire-autostart.desktop \
+  "${stage}/etc/xdg/autostart/interfire.desktop"
 
 # Brand icons for the applications menu (same family as Protected tray).
 for size in 16 32 48 64 128 256; do

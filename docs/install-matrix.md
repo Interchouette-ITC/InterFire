@@ -27,6 +27,8 @@ On each primary image:
 7. Under a graphical session, launch `interfire-ui` (menu or CLI). Confirm the
    window opens. Tray: StatusNotifierItem visible, **or** Status chrome reports
    honest degrade when the shell has no SNI.
+8. With tray present: close the main window; tray remains. Tray **Open
+   InterFire** reopens the window; **Quit InterFire UI** exits the process.
 
 ## Upgrade
 

@@ -14,6 +14,7 @@ install layout and how protection returns after reboot.
 | `packaging/tmpfiles.d/interfire.conf` | `/run`, `/var/lib`, `/etc` dirs |
 | `packaging/defaults/rules.toml` | Empty durable rules (`schema_version = 1`) |
 | `packaging/debian/interfire.desktop` | Desktop entry for `interfire-ui` |
+| `packaging/debian/interfire-autostart.desktop` | Session autostart for tray UI |
 | `scripts/build-deb.sh` | Stage + `dpkg-deb` (`make deb`) |
 
 ## Debian package
@@ -40,6 +41,8 @@ reboot / uninstall checklist and migration notes:
 | `/usr/share/interfire/interfire.nft` | Owned table |
 | `/usr/lib/tmpfiles.d/interfire.conf` | Directory mode |
 | `/etc/interfire/rules.toml` | Durable rules |
+| `/usr/share/applications/interfire.desktop` | Applications menu entry |
+| `/etc/xdg/autostart/interfire.desktop` | Session autostart for `interfire-ui` (tray) |
 | `/run/interfire/interfired.sock` | IPC socket |
 | `/var/lib/interfire/audit.log` | Capped audit log |
 
