@@ -272,7 +272,7 @@ impl Shared {
         self.bind_label()
     }
 
-    /// Effective traffic label for status (`open` or `machine:…` / `user:…`).
+    /// Effective traffic label for status (`open` or `machine:...` / `user:...`).
     #[must_use]
     pub fn traffic_effective(&self, uid: u32) -> String {
         traffic_mode::effective(self.machine_preference(), self.user_preference(uid), uid).label()
@@ -351,10 +351,12 @@ mod tests {
     fn temp_audit(name: &str) -> PathBuf {
         static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let n = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        std::env::temp_dir().join(format!(
+        let dir = std::env::temp_dir().join(format!(
             "interfire-shared-{}-{n}-{name}",
             std::process::id()
-        ))
+        ));
+        let _ = fs::create_dir_all(&dir);
+        dir.join("audit.log")
     }
 
     fn shared_for(audit_path: &Path, mode: EnforcementMode) -> Shared {

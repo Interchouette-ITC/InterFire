@@ -10,6 +10,7 @@ use crate::app::App;
 use crate::brand;
 use crate::rules_view;
 use crate::section::Section;
+use crate::stats_view::EMPTY_CELL;
 use crate::theme::ChromeMode;
 use crate::tray::{DaemonLink, TrayState};
 
@@ -17,8 +18,8 @@ struct OperatorLabels {
     daemon_up: bool,
     rules_paused: bool,
     daemon_label: &'static str,
-    rules_label: &'static str,
-    traffic_label: &'static str,
+    rules_label: String,
+    traffic_label: String,
     traffic_accent: bool,
 }
 
@@ -34,27 +35,27 @@ fn operator_labels(tray_state: TrayState, link: &DaemonLink) -> OperatorLabels {
         "Daemon: Stopped"
     };
     let rules_label = if !daemon_up {
-        "Rules: —"
+        format!("Rules: {EMPTY_CELL}")
     } else if rules_paused {
-        "Rules: Paused"
+        "Rules: Paused".to_owned()
     } else {
-        "Rules: Active"
+        "Rules: Active".to_owned()
     };
     let traffic_label = if daemon_up {
         match link {
             DaemonLink::Up { status, .. } => {
                 if status.traffic_machine != "open" {
-                    "Traffic: Machine"
+                    "Traffic: Machine".to_owned()
                 } else if status.traffic_user != "open" {
-                    "Traffic: User"
+                    "Traffic: User".to_owned()
                 } else {
-                    "Traffic: Open"
+                    "Traffic: Open".to_owned()
                 }
             }
-            DaemonLink::Down { .. } => "Traffic: —",
+            DaemonLink::Down { .. } => format!("Traffic: {EMPTY_CELL}"),
         }
     } else {
-        "Traffic: —"
+        format!("Traffic: {EMPTY_CELL}")
     };
     let traffic_accent = matches!(
         link,
@@ -134,7 +135,7 @@ fn toolbar_right(
         ))
         .child(control_chip(
             "rules-btn",
-            labels.rules_label,
+            &labels.rules_label,
             if labels.rules_paused {
                 "Start"
             } else {
@@ -151,7 +152,7 @@ fn toolbar_right(
         ))
         .child(control_chip(
             "traffic-btn",
-            labels.traffic_label,
+            &labels.traffic_label,
             "Open",
             labels.daemon_up,
             labels.traffic_accent,
@@ -267,7 +268,7 @@ fn tab_button(section: Section, selected: bool, cx: &Context<App>) -> impl IntoE
 
 pub fn control_chip(
     id: &'static str,
-    label: &'static str,
+    label: &str,
     action: &'static str,
     enabled: bool,
     warning: bool,
@@ -290,7 +291,7 @@ pub fn control_chip(
                 } else {
                     cx.theme().muted_foreground
                 })
-                .child(label),
+                .child(label.to_owned()),
         )
         .child(rules_view::action_chip(
             id, action, enabled, warning, cx, on_click,

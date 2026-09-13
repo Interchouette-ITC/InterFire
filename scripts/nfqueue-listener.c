@@ -1,5 +1,6 @@
 // Minimal, single-packet NFQUEUE verdict helper for the isolated NFQUEUE test.
 // It is intentionally not production daemon code.
+// Queue number 4242 must match interfire_proto::NFQUEUE_NUM (production queue).
 #include <arpa/inet.h>
 #include <errno.h>
 #include <linux/netfilter.h>

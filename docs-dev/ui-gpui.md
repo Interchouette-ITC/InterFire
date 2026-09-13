@@ -4,8 +4,8 @@ Private developer notes for the `interfire-ui` GPUI app under `ui/`.
 
 ## Goal
 
-Linux desktop client with Kerio-feeling chrome (left nav + dense Rules) and a
-personal-firewall tray/alert path. Same Unix IPC as `interfirectl` /
+Linux desktop client with personal-firewall tray/alert path and dense Rules
+chrome (left nav + tables). Same Unix IPC as `interfirectl` /
 `interfire-tui`. Rules is the primary surface.
 
 ## Theme (phoenix chrome)
@@ -224,6 +224,5 @@ the memcheck overrides above.
 ## Related docs
 
 - Product contract: [`../docs/ux-interfire.md`](../docs/ux-interfire.md)
-- Kerio structure study: [`../docs/ux-kerio.md`](../docs/ux-kerio.md)
 - Make index: [`DEVELOPMENT.md`](DEVELOPMENT.md)
-- Private manuals/screenshots: `.cursor/refs/kerio/` (not in application git)
+- Private structure study and manuals: `.cursor/refs/kerio/` (not in application git)

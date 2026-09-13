@@ -1,11 +1,17 @@
 //! Versioned, bounded Unix-socket IPC framing for daemon and clients.
 #![forbid(unsafe_code)]
 
+/// IPC framing version (`v1` line prefixes).
 pub const IPC_VERSION: u16 = 1;
+/// Maximum Unix-socket frame payload size in bytes.
 pub const MAX_FRAME_BYTES: usize = 8 * 1024;
+/// Cap on buffered audit/log records retained per subscriber.
 pub const MAX_LOG_RECORDS_PER_SUBSCRIBER: usize = 2_000;
+/// Cap on concurrent unanswered connection prompts.
 pub const MAX_PENDING_PROMPTS: usize = 100;
+/// Cap on cached DNS hostname entries.
 pub const MAX_DNS_ENTRIES: usize = 2_048;
+/// Soft cap on on-disk audit log file size before rotation/trim.
 pub const MAX_AUDIT_FILE_BYTES: u64 = 1_048_576;
 
 /// Default daemon listen path.

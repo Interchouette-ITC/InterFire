@@ -101,7 +101,6 @@ isolated NFQUEUE test is scoped.
 | [`install-matrix.md`](install-matrix.md) | Install/upgrade/reboot/uninstall gates |
 | [`threat-model.md`](threat-model.md) | Assets, trust boundaries, controls |
 | [`ux-interfire.md`](ux-interfire.md) | Locked UI contract |
-| [`ux-kerio.md`](ux-kerio.md) | Kerio-era interaction study |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | Lint bar, Make targets, PR habits |
 | [`pull_request_template.md`](pull_request_template.md) | PR Summary + Test plan template |
 | [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) | Community standards |
