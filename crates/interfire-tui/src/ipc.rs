@@ -5,7 +5,7 @@ use std::io;
 use std::time::Duration;
 
 use interfire_proto::{
-    AuditStreamRecord, DaemonStatus, MAX_FRAME_BYTES, ProcessRow, PromptRow, RuleRow,
+    AuditStreamRecord, DaemonStatus, MAX_FRAME_BYTES, ProcessRow, PromptRow, RuleRow, StatsSummary,
     parse_error_message,
 };
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -24,6 +24,7 @@ const RECONNECT_BACKOFF: Duration = Duration::from_millis(500);
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum IpcEvent {
     Status(DaemonStatus),
+    StatsSummary(StatsSummary),
     Down(String),
     Audit(AuditStreamRecord),
     SubscriptionReady,
@@ -99,6 +100,11 @@ async fn status_loop(socket: String, tx: mpsc::UnboundedSender<IpcEvent>) {
                     return;
                 }
             }
+        }
+        if let Ok(summary) = fetch_stats_summary(&socket).await
+            && tx.send(IpcEvent::StatsSummary(summary)).is_err()
+        {
+            return;
         }
     }
 }
@@ -258,6 +264,12 @@ async fn fetch_status(socket: &str) -> io::Result<DaemonStatus> {
     let frame = one_shot(socket, "v1 status\n").await?;
     DaemonStatus::parse(&frame)
         .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "malformed_status"))
+}
+
+async fn fetch_stats_summary(socket: &str) -> io::Result<StatsSummary> {
+    let frame = one_shot(socket, "v1 stats-summary\n").await?;
+    StatsSummary::parse(&frame)
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "malformed_stats_summary"))
 }
 
 async fn fetch_rules(socket: &str) -> io::Result<Vec<RuleRow>> {

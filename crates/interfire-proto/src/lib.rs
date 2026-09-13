@@ -88,6 +88,12 @@ pub enum Request {
     TrafficUnblock {
         scope: String,
     },
+    StatsSummary,
+    StatsHosts,
+    StatsProcs,
+    StatsAddrs,
+    StatsPorts,
+    StatsUsers,
 }
 
 impl Request {
@@ -123,6 +129,12 @@ impl Request {
             Some("resume") if fields.next().is_none() => Ok(Self::Resume),
             Some("traffic-block") => parse_traffic_block(&mut fields),
             Some("traffic-unblock") => parse_traffic_unblock(&mut fields),
+            Some("stats-summary") if fields.next().is_none() => Ok(Self::StatsSummary),
+            Some("stats-hosts") if fields.next().is_none() => Ok(Self::StatsHosts),
+            Some("stats-procs") if fields.next().is_none() => Ok(Self::StatsProcs),
+            Some("stats-addrs") if fields.next().is_none() => Ok(Self::StatsAddrs),
+            Some("stats-ports") if fields.next().is_none() => Ok(Self::StatsPorts),
+            Some("stats-users") if fields.next().is_none() => Ok(Self::StatsUsers),
             _ => Err(ProtocolError::Malformed),
         }
     }
@@ -285,6 +297,12 @@ pub enum Response {
     Subscribed(String),
     Processes(String),
     Network(NetworkStatusBody),
+    StatsSummary(StatsSummaryBody),
+    StatsHosts(String),
+    StatsProcs(String),
+    StatsAddrs(String),
+    StatsPorts(String),
+    StatsUsers(String),
 }
 
 /// Owned nftables table presence for the Network tab / `network-status`.
@@ -391,7 +409,167 @@ impl Response {
                 body.state.as_str(),
                 body.rule,
             ),
+            Self::StatsSummary(body) => format!(
+                "v1 stats-summary connections={} denied={} uptime_secs={} rules={} version={} git={}\n",
+                body.connections, body.denied, body.uptime_secs, body.rules, body.version, body.git,
+            ),
+            Self::StatsHosts(value) => format!("v1 stats-hosts {value}\n"),
+            Self::StatsProcs(value) => format!("v1 stats-procs {value}\n"),
+            Self::StatsAddrs(value) => format!("v1 stats-addrs {value}\n"),
+            Self::StatsPorts(value) => format!("v1 stats-ports {value}\n"),
+            Self::StatsUsers(value) => format!("v1 stats-users {value}\n"),
         }
+    }
+}
+
+/// Encode-side body for `v1 stats-summary`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StatsSummaryBody {
+    pub connections: u64,
+    pub denied: u64,
+    pub uptime_secs: u64,
+    pub rules: u64,
+    pub version: String,
+    pub git: String,
+}
+
+/// Parsed `stats-summary` fields (owned; for clients).
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct StatsSummary {
+    pub connections: u64,
+    pub denied: u64,
+    pub uptime_secs: u64,
+    pub rules: u64,
+    pub version: String,
+    pub git: String,
+}
+
+impl StatsSummary {
+    /// Parse a `v1 stats-summary …` response frame.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ProtocolError`] when the frame is not a well-formed summary line.
+    pub fn parse(frame: &str) -> Result<Self, ProtocolError> {
+        let line = frame.trim_end_matches(['\r', '\n']);
+        let mut fields = line.split_whitespace();
+        match fields.next() {
+            Some("v1") => {}
+            Some(token) if token.starts_with('v') => return Err(ProtocolError::UnsupportedVersion),
+            _ => return Err(ProtocolError::Malformed),
+        }
+        if fields.next() != Some("stats-summary") {
+            return Err(ProtocolError::Malformed);
+        }
+        let mut connections = None;
+        let mut denied = None;
+        let mut uptime_secs = None;
+        let mut rules = None;
+        let mut version = None;
+        let mut git = None;
+        for field in fields {
+            if let Some(value) = field.strip_prefix("connections=") {
+                connections = Some(value.parse().map_err(|_| ProtocolError::Malformed)?);
+            } else if let Some(value) = field.strip_prefix("denied=") {
+                denied = Some(value.parse().map_err(|_| ProtocolError::Malformed)?);
+            } else if let Some(value) = field.strip_prefix("uptime_secs=") {
+                uptime_secs = Some(value.parse().map_err(|_| ProtocolError::Malformed)?);
+            } else if let Some(value) = field.strip_prefix("rules=") {
+                rules = Some(value.parse().map_err(|_| ProtocolError::Malformed)?);
+            } else if let Some(value) = field.strip_prefix("version=") {
+                version = Some(value.to_owned());
+            } else if let Some(value) = field.strip_prefix("git=") {
+                git = Some(value.to_owned());
+            } else if field.contains('=') {
+                // Forward-compatible: ignore unknown keys.
+            } else {
+                return Err(ProtocolError::Malformed);
+            }
+        }
+        Ok(Self {
+            connections: connections.ok_or(ProtocolError::Malformed)?,
+            denied: denied.ok_or(ProtocolError::Malformed)?,
+            uptime_secs: uptime_secs.ok_or(ProtocolError::Malformed)?,
+            rules: rules.ok_or(ProtocolError::Malformed)?,
+            version: version.unwrap_or_default(),
+            git: git.unwrap_or_default(),
+        })
+    }
+}
+
+/// One aggregate stats row (`key|hits|allow|deny|prompt`).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StatsRow {
+    pub key: String,
+    pub hits: u64,
+    pub allow: u64,
+    pub deny: u64,
+    pub prompt: u64,
+}
+
+impl StatsRow {
+    /// Parse a `v1 stats-* …` list frame into rows.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ProtocolError`] when the frame is not a well-formed stats list.
+    pub fn parse_frame(frame: &str, label: &str) -> Result<Vec<Self>, ProtocolError> {
+        let line = frame.trim_end_matches(['\r', '\n']);
+        let mut fields = line.splitn(3, ' ');
+        match fields.next() {
+            Some("v1") => {}
+            Some(token) if token.starts_with('v') => return Err(ProtocolError::UnsupportedVersion),
+            _ => return Err(ProtocolError::Malformed),
+        }
+        if fields.next() != Some(label) {
+            return Err(ProtocolError::Malformed);
+        }
+        let payload = fields.next().unwrap_or("");
+        if payload.is_empty() {
+            return Ok(Vec::new());
+        }
+        payload.split(';').map(Self::parse_row).collect()
+    }
+
+    fn parse_row(row: &str) -> Result<Self, ProtocolError> {
+        let mut parts = row.splitn(5, '|');
+        let key = unescape_field(parts.next().ok_or(ProtocolError::Malformed)?);
+        let hits = parts
+            .next()
+            .and_then(|value| value.parse().ok())
+            .ok_or(ProtocolError::Malformed)?;
+        let allow = parts
+            .next()
+            .and_then(|value| value.parse().ok())
+            .ok_or(ProtocolError::Malformed)?;
+        let deny = parts
+            .next()
+            .and_then(|value| value.parse().ok())
+            .ok_or(ProtocolError::Malformed)?;
+        let prompt = parts
+            .next()
+            .and_then(|value| value.parse().ok())
+            .ok_or(ProtocolError::Malformed)?;
+        Ok(Self {
+            key,
+            hits,
+            allow,
+            deny,
+            prompt,
+        })
+    }
+
+    /// Encode one row for a `v1 stats-*` payload.
+    #[must_use]
+    pub fn encode_row(&self) -> String {
+        format!(
+            "{}|{}|{}|{}|{}",
+            escape_field(&self.key),
+            self.hits,
+            self.allow,
+            self.deny,
+            self.prompt
+        )
     }
 }
 
@@ -1057,6 +1235,15 @@ mod tests {
                 scope: "user".into(),
             })
         );
+        assert_eq!(
+            Request::parse("v1 stats-summary\n"),
+            Ok(Request::StatsSummary)
+        );
+        assert_eq!(Request::parse("v1 stats-hosts\n"), Ok(Request::StatsHosts));
+        assert_eq!(Request::parse("v1 stats-procs\n"), Ok(Request::StatsProcs));
+        assert_eq!(Request::parse("v1 stats-addrs\n"), Ok(Request::StatsAddrs));
+        assert_eq!(Request::parse("v1 stats-ports\n"), Ok(Request::StatsPorts));
+        assert_eq!(Request::parse("v1 stats-users\n"), Ok(Request::StatsUsers));
         let blocked = Response::Status(StatusBody {
             enforcement: "paused",
             observation: "attached",

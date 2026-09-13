@@ -252,12 +252,15 @@ fn handle_event(event: TcpConnectEvent, shared: &Shared) {
             "pending verdict stored"
         );
     }
-    if let Ok(mut audit) = shared.audit.lock() {
-        let outcome = if decision.packet_verdict == nfq::Verdict::Accept {
-            "allow"
+    if let Ok(mut stats) = shared.stats.lock() {
+        if let Some(hit) = decision.stats.as_ref() {
+            stats.record(hit);
         } else {
-            "deny"
-        };
+            stats.record_unattributed_deny();
+        }
+    }
+    if let Ok(mut audit) = shared.audit.lock() {
+        let outcome = decision.stats.as_ref().map_or("deny", |hit| hit.verdict);
         audit.append(format!(
             "connect port={} attributed={} outcome={outcome}",
             decision.key.port, decision.attributed

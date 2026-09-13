@@ -106,7 +106,79 @@ fn dispatch(request: Request, shared: &Shared, stream: &UnixStream) -> Response 
             traffic_mutate(shared, stream, &scope, Some(&direction), false)
         }
         Request::TrafficUnblock { scope } => traffic_mutate(shared, stream, &scope, None, true),
+        Request::StatsSummary => stats_summary(shared),
+        Request::StatsHosts => stats_list(shared, StatsKind::Hosts),
+        Request::StatsProcs => stats_list(shared, StatsKind::Procs),
+        Request::StatsAddrs => stats_list(shared, StatsKind::Addrs),
+        Request::StatsPorts => stats_list(shared, StatsKind::Ports),
+        Request::StatsUsers => stats_list(shared, StatsKind::Users),
     }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum StatsKind {
+    Hosts,
+    Procs,
+    Addrs,
+    Ports,
+    Users,
+}
+
+fn stats_summary(shared: &Shared) -> Response {
+    let Ok(stats) = shared.stats.lock() else {
+        return Response::Error("lock_poisoned");
+    };
+    let rules = shared
+        .rules
+        .lock()
+        .map_or(0, |set| set.rules().len() as u64);
+    let summary = stats.summary(rules);
+    Response::StatsSummary(interfire_proto::StatsSummaryBody {
+        connections: summary.connections,
+        denied: summary.denied,
+        uptime_secs: summary.uptime_secs,
+        rules: summary.rules,
+        version: env!("CARGO_PKG_VERSION").to_owned(),
+        git: option_env!("INTERFIRE_GIT_DESCRIBE")
+            .unwrap_or("unknown")
+            .to_owned(),
+    })
+}
+
+fn stats_list(shared: &Shared, kind: StatsKind) -> Response {
+    let Ok(stats) = shared.stats.lock() else {
+        return Response::Error("lock_poisoned");
+    };
+    let rows: Vec<String> = match kind {
+        StatsKind::Hosts => encode_stats_rows(stats.hosts()),
+        StatsKind::Procs => encode_stats_rows(stats.procs()),
+        StatsKind::Addrs => encode_stats_rows(stats.addrs()),
+        StatsKind::Ports => encode_stats_rows(stats.ports()),
+        StatsKind::Users => encode_stats_rows(stats.users()),
+    };
+    let payload = rows.join(";");
+    match kind {
+        StatsKind::Hosts => Response::StatsHosts(payload),
+        StatsKind::Procs => Response::StatsProcs(payload),
+        StatsKind::Addrs => Response::StatsAddrs(payload),
+        StatsKind::Ports => Response::StatsPorts(payload),
+        StatsKind::Users => Response::StatsUsers(payload),
+    }
+}
+
+fn encode_stats_rows(rows: Vec<(String, crate::stats::StatsCounters)>) -> Vec<String> {
+    rows.into_iter()
+        .map(|(key, counters)| {
+            interfire_proto::StatsRow {
+                key,
+                hits: counters.hits,
+                allow: counters.allow,
+                deny: counters.deny,
+                prompt: counters.prompt,
+            }
+            .encode_row()
+        })
+        .collect()
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

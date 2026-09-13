@@ -6,15 +6,15 @@ use std::os::unix::net::UnixStream;
 use std::time::Duration;
 
 use interfire_proto::{
-    DaemonStatus, MAX_FRAME_BYTES, NetworkStatus, ProcessRow, PromptRow, RuleRow,
-    parse_error_message,
+    DaemonStatus, MAX_FRAME_BYTES, NetworkStatus, ProcessRow, PromptRow, RuleRow, StatsRow,
+    StatsSummary, parse_error_message,
 };
 
 use crate::tray::DaemonLink;
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(1);
 
-/// One poll of daemon status, prompts, and rules.
+/// One poll of daemon status, prompts, rules, and stats.
 #[derive(Clone, Debug)]
 pub struct PollSnapshot {
     pub link: DaemonLink,
@@ -22,9 +22,15 @@ pub struct PollSnapshot {
     pub rules: Vec<RuleRow>,
     pub processes: Vec<ProcessRow>,
     pub network: Option<NetworkStatus>,
+    pub stats_summary: Option<StatsSummary>,
+    pub stats_hosts: Vec<StatsRow>,
+    pub stats_procs: Vec<StatsRow>,
+    pub stats_addrs: Vec<StatsRow>,
+    pub stats_ports: Vec<StatsRow>,
+    pub stats_users: Vec<StatsRow>,
 }
 
-/// Poll daemon status, pending prompts, and rules.
+/// Poll daemon status, pending prompts, rules, and stats aggregates.
 #[must_use]
 #[hotpath::measure]
 pub fn poll_snapshot(socket: &str) -> PollSnapshot {
@@ -34,6 +40,12 @@ pub fn poll_snapshot(socket: &str) -> PollSnapshot {
             let rules = fetch_rules(socket).unwrap_or_default();
             let processes = fetch_processes(socket).unwrap_or_default();
             let network = fetch_network(socket).ok();
+            let stats_summary = fetch_stats_summary(socket).ok();
+            let stats_hosts = fetch_stats_rows(socket, "stats-hosts").unwrap_or_default();
+            let stats_procs = fetch_stats_rows(socket, "stats-procs").unwrap_or_default();
+            let stats_addrs = fetch_stats_rows(socket, "stats-addrs").unwrap_or_default();
+            let stats_ports = fetch_stats_rows(socket, "stats-ports").unwrap_or_default();
+            let stats_users = fetch_stats_rows(socket, "stats-users").unwrap_or_default();
             PollSnapshot {
                 link: DaemonLink::Up {
                     status,
@@ -43,6 +55,12 @@ pub fn poll_snapshot(socket: &str) -> PollSnapshot {
                 rules,
                 processes,
                 network,
+                stats_summary,
+                stats_hosts,
+                stats_procs,
+                stats_addrs,
+                stats_ports,
+                stats_users,
             }
         }
         Err(reason) => PollSnapshot {
@@ -51,6 +69,12 @@ pub fn poll_snapshot(socket: &str) -> PollSnapshot {
             rules: Vec::new(),
             processes: Vec::new(),
             network: None,
+            stats_summary: None,
+            stats_hosts: Vec::new(),
+            stats_procs: Vec::new(),
+            stats_addrs: Vec::new(),
+            stats_ports: Vec::new(),
+            stats_users: Vec::new(),
         },
     }
 }
@@ -179,6 +203,16 @@ fn fetch_rules(socket: &str) -> Result<Vec<RuleRow>, String> {
 fn fetch_processes(socket: &str) -> Result<Vec<ProcessRow>, String> {
     let frame = one_shot(socket, "v1 process-list\n").map_err(|e| e.to_string())?;
     ProcessRow::parse_frame(&frame).map_err(|_| "malformed_processes".to_owned())
+}
+
+fn fetch_stats_summary(socket: &str) -> Result<StatsSummary, String> {
+    let frame = one_shot(socket, "v1 stats-summary\n").map_err(|e| e.to_string())?;
+    StatsSummary::parse(&frame).map_err(|_| "malformed_stats_summary".to_owned())
+}
+
+fn fetch_stats_rows(socket: &str, label: &str) -> Result<Vec<StatsRow>, String> {
+    let frame = one_shot(socket, &format!("v1 {label}\n")).map_err(|e| e.to_string())?;
+    StatsRow::parse_frame(&frame, label).map_err(|_| "malformed_stats".to_owned())
 }
 
 fn one_shot(socket: &str, request: &str) -> io::Result<String> {

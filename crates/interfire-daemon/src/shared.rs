@@ -14,6 +14,7 @@ use crate::pending::PendingTable;
 use crate::process::ProcessCache;
 use crate::prompts::PromptQueue;
 use crate::recent::RecentConnects;
+use crate::stats::StatsStore;
 use crate::traffic_mode::{self, TrafficPreference};
 use interfire_proto::MAX_LOG_RECORDS_PER_SUBSCRIBER;
 use std::path::{Path, PathBuf};
@@ -36,6 +37,7 @@ pub struct Shared {
     pub prompts: Mutex<PromptQueue>,
     pub dns: Mutex<DnsCache>,
     pub audit: Mutex<AuditLog>,
+    pub stats: Mutex<StatsStore>,
     mode_path: PathBuf,
     /// Machine traffic preference file (`traffic.machine`).
     traffic_path: PathBuf,
@@ -84,6 +86,7 @@ impl Shared {
                 DEFAULT_AUDIT_MAX_BYTES,
                 MAX_LOG_RECORDS_PER_SUBSCRIBER,
             )?),
+            stats: Mutex::new(StatsStore::new()),
             mode_path: config.mode_path,
             traffic_path: config.traffic_path,
             paused: AtomicBool::new(mode == EnforcementMode::Paused),

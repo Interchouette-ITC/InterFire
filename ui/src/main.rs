@@ -11,9 +11,9 @@ mod applications_view;
 mod audit_host;
 mod brand;
 mod confirm_queue;
+mod filter;
 mod ipc_poll;
 mod log_buf;
-mod log_view;
 mod network_view;
 mod proc_sample;
 mod rss_probe;
@@ -21,6 +21,8 @@ mod rules;
 mod rules_view;
 mod section;
 mod service;
+mod shell_chrome;
+mod stats_view;
 mod theme;
 mod tray;
 #[cfg(target_os = "linux")]
@@ -208,6 +210,7 @@ fn build_root(
             #[cfg(target_os = "linux")]
             tray,
         );
+        app.attach_filter_input(window, cx);
         if let Some(mode) = probe {
             app.apply_rss_probe(mode);
         }

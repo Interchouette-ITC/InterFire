@@ -5,7 +5,7 @@ use std::collections::VecDeque;
 
 use crossterm::event::KeyCode;
 use interfire_proto::{
-    DaemonStatus, MAX_LOG_RECORDS_PER_SUBSCRIBER, ProcessRow, PromptRow, RuleRow,
+    DaemonStatus, MAX_LOG_RECORDS_PER_SUBSCRIBER, ProcessRow, PromptRow, RuleRow, StatsSummary,
 };
 
 use crate::ipc::{IpcCommand, IpcEvent};
@@ -29,7 +29,7 @@ pub enum Tab {
     Apps,
     Rules,
     Prompts,
-    Log,
+    Events,
     Help,
 }
 
@@ -39,7 +39,7 @@ impl Tab {
         Self::Apps,
         Self::Rules,
         Self::Prompts,
-        Self::Log,
+        Self::Events,
         Self::Help,
     ];
 
@@ -50,7 +50,7 @@ impl Tab {
             Self::Apps => "Apps",
             Self::Rules => "Rules",
             Self::Prompts => "Prompts",
-            Self::Log => "Log",
+            Self::Events => "Events",
             Self::Help => "Help",
         }
     }
@@ -62,7 +62,7 @@ impl Tab {
             Self::Apps => 1,
             Self::Rules => 2,
             Self::Prompts => 3,
-            Self::Log => 4,
+            Self::Events => 4,
             Self::Help => 5,
         }
     }
@@ -74,7 +74,10 @@ impl Tab {
 
     #[must_use]
     pub const fn has_split(self) -> bool {
-        matches!(self, Self::Apps | Self::Rules | Self::Prompts | Self::Log)
+        matches!(
+            self,
+            Self::Apps | Self::Rules | Self::Prompts | Self::Events
+        )
     }
 }
 
@@ -397,6 +400,45 @@ pub enum KeyAction {
     Command(IpcCommand),
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum EventsVerdictFilter {
+    #[default]
+    All,
+    Allow,
+    Deny,
+    Prompt,
+}
+
+impl EventsVerdictFilter {
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::All => "All",
+            Self::Allow => "Allow",
+            Self::Deny => "Deny",
+            Self::Prompt => "Prompt",
+        }
+    }
+
+    const fn next(self) -> Self {
+        match self {
+            Self::All => Self::Allow,
+            Self::Allow => Self::Deny,
+            Self::Deny => Self::Prompt,
+            Self::Prompt => Self::All,
+        }
+    }
+
+    fn matches(self, line: &str) -> bool {
+        match self {
+            Self::All => true,
+            Self::Allow => line.contains("outcome=allow"),
+            Self::Deny => line.contains("outcome=deny"),
+            Self::Prompt => line.contains("outcome=prompt"),
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct App {
     pub socket: String,
@@ -411,6 +453,8 @@ pub struct App {
     pub list_selected: usize,
     pub overlay: Overlay,
     pub status_message: Option<String>,
+    pub stats_summary: Option<StatsSummary>,
+    pub events_filter: EventsVerdictFilter,
 }
 
 impl App {
@@ -429,6 +473,8 @@ impl App {
             list_selected: 0,
             overlay: Overlay::None,
             status_message: None,
+            stats_summary: None,
+            events_filter: EventsVerdictFilter::All,
         }
     }
 
@@ -436,6 +482,9 @@ impl App {
         match event {
             IpcEvent::Status(status) => {
                 self.link = Link::Up(status);
+            }
+            IpcEvent::StatsSummary(summary) => {
+                self.stats_summary = Some(summary);
             }
             IpcEvent::Down(detail) => {
                 self.link = Link::Down { detail };
@@ -662,7 +711,7 @@ impl App {
                 KeyAction::None
             }
             KeyCode::Char('5') => {
-                self.set_tab(Tab::Log);
+                self.set_tab(Tab::Events);
                 KeyAction::None
             }
             KeyCode::Char('6') => {
@@ -720,8 +769,29 @@ impl App {
                     scope: "user".into(),
                 })
             }
+            KeyCode::Char('f' | 'c') if self.tab == Tab::Events => {
+                self.handle_events_filter_key(code)
+            }
             _ => KeyAction::None,
         }
+    }
+
+    fn handle_events_filter_key(&mut self, code: KeyCode) -> KeyAction {
+        match code {
+            KeyCode::Char('f') => {
+                self.events_filter = self.events_filter.next();
+                self.list_selected = 0;
+                self.status_message =
+                    Some(format!("Events filter: {}", self.events_filter.label()));
+            }
+            KeyCode::Char('c') => {
+                self.events_filter = EventsVerdictFilter::All;
+                self.list_selected = 0;
+                self.status_message = Some("Events filter cleared".into());
+            }
+            _ => {}
+        }
+        KeyAction::None
     }
 
     fn open_answer_overlay(&mut self) -> KeyAction {
@@ -786,10 +856,18 @@ impl App {
         }
     }
 
+    fn filtered_audit(&self) -> Vec<String> {
+        self.audit
+            .iter()
+            .filter(|line| self.events_filter.matches(line))
+            .cloned()
+            .collect()
+    }
+
     fn push_audit_line(&mut self, line: String) {
         if self.audit.len() == MAX_AUDIT_LINES {
             self.audit.pop_front();
-            if self.list_selected > 0 && self.tab == Tab::Log {
+            if self.list_selected > 0 && self.tab == Tab::Events {
                 self.list_selected -= 1;
             }
         }
@@ -800,7 +878,7 @@ impl App {
     #[must_use]
     pub fn list_len(&self) -> usize {
         match self.tab {
-            Tab::Log => self.audit.len(),
+            Tab::Events => self.filtered_audit().len(),
             Tab::Apps => self.processes.len(),
             Tab::Rules => self.rules.len(),
             Tab::Prompts => self.prompts.len(),
@@ -808,11 +886,11 @@ impl App {
         }
     }
 
-    /// Visible list window for the given viewport height (virtualized for Log).
+    /// Visible list window for the given viewport height (virtualized for Events).
     #[must_use]
     pub fn visible_list(&self, viewport_rows: usize) -> VisibleList {
         match self.tab {
-            Tab::Log => self.visible_audit_window(viewport_rows),
+            Tab::Events => self.visible_audit_window(viewport_rows),
             Tab::Apps => VisibleList {
                 relative_selected: self.list_selected,
                 items: self.processes.iter().map(ProcessRow::list_label).collect(),
@@ -841,7 +919,8 @@ impl App {
     }
 
     fn visible_audit_window(&self, viewport_rows: usize) -> VisibleList {
-        let total = self.audit.len();
+        let filtered = self.filtered_audit();
+        let total = filtered.len();
         if total == 0 {
             return VisibleList {
                 relative_selected: 0,
@@ -863,13 +942,7 @@ impl App {
         let end = (start + height).min(total);
         VisibleList {
             relative_selected: selected - start,
-            items: self
-                .audit
-                .iter()
-                .skip(start)
-                .take(end - start)
-                .cloned()
-                .collect(),
+            items: filtered.into_iter().skip(start).take(end - start).collect(),
             start,
             total,
         }
@@ -882,7 +955,7 @@ impl App {
             Tab::Apps => self.process_detail_lines(),
             Tab::Rules => self.rule_detail_lines(),
             Tab::Prompts => self.prompt_detail_lines(),
-            Tab::Log => self
+            Tab::Events => self
                 .audit
                 .get(self.list_selected)
                 .cloned()
@@ -1001,10 +1074,10 @@ impl App {
 #[must_use]
 pub fn help_lines() -> Vec<String> {
     vec![
-        "Tabs: Left/Right or 1..6  (Status Apps Rules Prompts Log Help)".into(),
-        "Panes: h list · l detail  (Apps / Rules / Prompts / Log)".into(),
+        "Tabs: Left/Right or 1..6  (Status Apps Rules Prompts Events Help)".into(),
+        "Panes: h list · l detail  (Apps / Rules / Prompts / Events)".into(),
         "List: j/k or Up/Down".into(),
-        "Log: capped 2000 rows, virtualized viewport; reconnect replaces subscribe".into(),
+        "Events: f cycles All/Allow/Deny/Prompt · c clears filter · capped 2000".into(),
         "Apps: observed firewall identities (path, pid+start ticks, ports)".into(),
         "Rules: a add · d delete · r refresh".into(),
         "Prompts: a/Enter answer · r refresh".into(),
@@ -1049,6 +1122,10 @@ pub fn footer_hints(app: &App) -> String {
     }
     if app.tab == Tab::Prompts {
         parts.insert(1, "a/r prompts".into());
+    }
+    if app.tab == Tab::Events {
+        parts.insert(1, "f filter".into());
+        parts.insert(2, "c clear".into());
     }
     if let Some(message) = &app.status_message {
         parts.push(message.clone());
@@ -1383,7 +1460,7 @@ mod tests {
         let mut app = App::new("/tmp/x.sock".into());
         assert_eq!(Tab::from_index(11), Tab::Help);
         assert!(!Tab::Status.has_split());
-        assert!(Tab::Log.has_split());
+        assert!(Tab::Events.has_split());
         app.handle_key(KeyCode::Char('6'));
         assert_eq!(app.tab, Tab::Help);
         app.handle_key(KeyCode::Right);
@@ -1546,7 +1623,7 @@ mod tests {
             (KeyCode::Char('2'), Tab::Apps),
             (KeyCode::Char('3'), Tab::Rules),
             (KeyCode::Char('4'), Tab::Prompts),
-            (KeyCode::Char('5'), Tab::Log),
+            (KeyCode::Char('5'), Tab::Events),
             (KeyCode::Char('6'), Tab::Help),
         ] {
             app.handle_key(key);
@@ -1670,7 +1747,7 @@ mod tests {
         assert_eq!(Tab::Apps.index(), 1);
         assert_eq!(Tab::Rules.index(), 2);
         assert_eq!(Tab::Prompts.index(), 3);
-        assert_eq!(Tab::Log.index(), 4);
+        assert_eq!(Tab::Events.index(), 4);
         assert_eq!(Tab::Help.index(), 5);
         assert_eq!(Tab::Apps.label(), "Apps");
         let mut field = super::AddField::Id;

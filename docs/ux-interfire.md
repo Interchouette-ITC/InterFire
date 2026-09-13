@@ -9,9 +9,9 @@ v0.1 clients share the same Unix IPC:
 
 | Surface | Status | Role |
 | --- | --- | --- |
-| `interfirectl` | Shipped | One-shot commands only (`ping`, `status`, `pause`, `resume`, `traffic status|block|unblock`, rules / prompts / dns / audit / network) |
-| `interfire-tui` | Shipped | Interactive control plane (Status \| Rules \| Prompts \| Log \| Help) |
-| GPUI app under `ui/` | Shipped (`interfire-ui`: tray, alert, Status, Applications, Rules, Log, Network, Profiling, Settings, Traffic, RSS gates) | - |
+| `interfirectl` | Shipped | One-shot commands only (`ping`, `status`, `pause`, `resume`, `traffic status|block|unblock`, rules / prompts / dns / audit / network / stats) |
+| `interfire-tui` | Shipped | Interactive control plane (Events \| Rules \| Prompts \| Help + filter/footer subset) |
+| GPUI app under `ui/` | Shipped (`interfire-ui`: tray, alert, network statistics shell, RSS gates) | - |
 
 The interactive ops client is a **ratatui** terminal UI (`crates/interfire-tui`).
 The desktop client is a **GPUI** native Rust app under `ui/` (`interfire-ui`).
@@ -28,10 +28,10 @@ reports state.
 
 - Classic **personal firewall** tray + connection alert: short decision path
   (program, destination, safe choice). See [`ux-kerio.md`](ux-kerio.md).
-- **WinRoute 6.x Administration Console** chrome: left section tree, right
-  content, dense Traffic Rules tables, status bar, Apply/reconnect. InterFire
-  is not a gateway product: no NAT, DHCP, VPN, content filter, or licensing
-  tree. Private manuals/screenshots stay out of git; shipped text never embeds
+- Network **statistics shell** chrome: top toolbar, horizontal primary tabs,
+  dense tables, shared filter strip, rich footer. InterFire is not a gateway
+  product: no NAT, DHCP, VPN, content filter, licensing tree, or multi-node
+  mesh. Private manuals/screenshots stay out of git; shipped text never embeds
   proprietary bitmaps.
 
 ## Prompt identity (InterFire bar)
@@ -51,10 +51,13 @@ Every prompt and rule decision must make identity unmistakable:
 
 ## Current TUI surfaces
 
-Tabs: Status | Rules | Prompts | Log | Help. Prompt alerts show path,
-destination, port, protocol, and Allow/Deny for once|session|permanent scopes.
-Stale or expired prompts disable answer controls. Log is capped and
-virtualized; reconnect replaces the audit subscription.
+Tabs: Events | Rules | Prompts | Help (plus Status summary on Events/footer).
+Prompt alerts show path, destination, port, protocol, and Allow/Deny for
+once|session|permanent scopes. Stale or expired prompts disable answer
+controls. Events is capped and virtualized; reconnect replaces the audit
+subscription. Filter strip (text + All/Allow/Deny/Prompt + limit + Clear) and
+footer counters (Connections, Denied, Uptime, Rules, Version) match the
+desktop contract at a thinner parity.
 
 ## Desktop contract
 
@@ -75,31 +78,59 @@ virtualized; reconnect replaces the audit subscription.
 - Disable stale prompt controls after another client resolves or expires them.
 - Keep advanced matching fields behind Details; never hide the executable path.
 
-### Main window (rules-first)
+### Main window (network statistics shell)
 
-Left navigation (WinRoute-style chrome, InterFire sections only):
+Top toolbar + horizontal primary tabs (left nav is retired as primary chrome):
 
 ```text
-Status
-Applications
-Rules          ← primary surface
-Log
-Network
-Profiling
-Settings
+Toolbar: App menu | Preferences | Add rule | Rules Active/Paused | Daemon | Traffic
+Tabs:    Events | Daemon | Rules | Hosts | Applications | Addresses | Ports | Users
+         (+ filter strip on list tabs)
+Footer:  Connections | Denied | Uptime | Rules | Version (+ git)
 ```
 
-Rules is the authoritative editable policy view (dense sortable table).
-Applications lists observed firewall identities (full executable path, PID with
-start ticks, cmdline, uid, recent dest:port, effective rule). Click a row for
-detail. Optional "Open in …" actions launch host tools on `PATH` (`htop`, `atop`,
-`btop`, `top`) in a terminal when available; InterFire does not embed a system
-process manager. `htop`/`top` pass `-p <pid>`; `atop`/`btop` open live views
-(their CLI has no PID filter like htop). Log is a capped
-audit stream. Network only shows InterFire-owned
-nftables state. Profiling shows live daemon and `interfire-ui` RSS/CPU
-(`/proc` + status IPC). Settings exposes daemon health, socket path, retention, and
-diagnostics. Desktop prompts are alert-first; the TUI retains a Prompts tab.
+**App menu:** Open / Quit / Preferences / About (crate version + short git
+describe) / Traffic… / Network… / Profiling….
+
+**Preferences:** socket path, tray label, theme, and prompt defaults when the
+daemon exposes them (English labels).
+
+**Verdicts:** `allow` | `deny` | `prompt` only. Filter uses those plus **All**.
+There is no reject verdict.
+
+**Denied (footer):** count of deny verdicts observed since daemon start (not an
+invented TCP abandon counter).
+
+**Daemon tab:** one local daemon row (socket, version, uptime, enforcement,
+traffic, rules). No remote node mesh.
+
+**Events:** capped audit / connect stream (formerly Log).
+
+**Rules:** authoritative editable policy view (dense table); Add rule from the
+toolbar.
+
+**Hosts / Applications / Addresses / Ports / Users:** bounded in-memory
+aggregates from the daemon (hit counts keyed by host, executable, dest IP,
+dest port, UID), updated on each verdicted connect, via read-only stats IPC.
+
+**Applications** also keeps process identity detail (full path, PID + start
+ticks, cmdline, uid, recent dest:port). Optional "Open in …" launches host
+tools on `PATH` (`htop`, `atop`, `btop`, `top`) when available.
+
+**Traffic / Network / Profiling:** secondary surfaces from the app menu (not
+eight more primary tabs). Network shows InterFire-owned nftables state.
+Profiling shows live daemon and `interfire-ui` RSS/CPU.
+
+Desktop prompts stay alert-first; the TUI retains a Prompts tab.
+
+### Filter strip (list tabs)
+
+- Text filter (path, host, IP, port, user).
+- Verdict filter: **All | Allow | Deny | Prompt** (not Reject).
+- Result limit: **50 | 100 | 200 | 300 | All | Custom** (All/Custom hard-capped,
+  e.g. 2000, matching audit subscriber limits).
+- **Clear** resets filter and limit to defaults.
+- Show `shown / total` result counts.
 
 ### Operator controls (header and tray)
 
@@ -111,7 +142,7 @@ Three orthogonal controls in the header (summary chips only):
 | Rules | Active / Paused | `v1 pause` / `v1 resume` (group `interfire`) |
 | Traffic | Open / User… / Machine… | Opens the Traffic panel (detail below) |
 
-**Traffic panel** (GPUI **Traffic** tab; tray **Traffic…**): choose scope (**This user** or **Entire machine**) and direction (**Outbound** / **Inbound** / **All**), then Block or Unblock. Machine actions confirm and run `pkexec interfirectl …`. Stored machine and user preferences persist independently; machine block outranks user without clearing the user preference. Effective filter when both open follows Rules (queue or absent). User inbound only affects sockets owned by that UID. Loopback is never queued or dropped; established/related are accepted; new TCP only.
+**Traffic panel** (GPUI **Traffic…** from app menu; tray **Traffic…**): choose scope (**This user** or **Entire machine**) and direction (**Outbound** / **Inbound** / **All**), then Block or Unblock. Machine actions confirm and run `pkexec interfirectl …`. Stored machine and user preferences persist independently; machine block outranks user without clearing the user preference. Effective filter when both open follows Rules (queue or absent). User inbound only affects sockets owned by that UID. Loopback is never queued or dropped; established/related are accepted; new TCP only.
 
 **CLI:**
 

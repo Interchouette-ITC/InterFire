@@ -115,6 +115,7 @@ mod tests {
 
     #[test]
     fn sample_self_reads_positive_rss() {
+        let _guard = SAMPLE_TEST_LOCK.lock().expect("sample test lock");
         let metrics = sample_self().expect("/proc/self");
         assert_eq!(metrics.pid, std::process::id());
         assert!(metrics.rss_kib > 0);
