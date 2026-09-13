@@ -365,8 +365,8 @@ mod tests {
 
     use super::{
         AUDIT_SUBSCRIBER_ID, IpcCommand, IpcEvent, fetch_processes, fetch_prompts, fetch_rules,
-        fetch_status, handle_command, lists_poll_loop, one_shot, spawn, status_loop,
-        subscribe_session,
+        fetch_stats_summary, fetch_status, handle_command, lists_poll_loop, one_shot, spawn,
+        status_loop, subscribe_session,
     };
 
     #[test]
@@ -390,6 +390,47 @@ mod tests {
 
         let processes = fetch_processes(&daemon.path).await.expect("processes");
         assert_eq!(processes[0].pid, 100);
+
+        let summary = fetch_stats_summary(&daemon.path).await.expect("stats");
+        assert_eq!(summary.connections, 5);
+        assert_eq!(summary.denied, 1);
+    }
+
+    #[tokio::test]
+    async fn status_loop_sends_stats_summary_and_stops_when_dropped_mid_tick() {
+        let daemon = FakeDaemon::start();
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let task = tokio::spawn(status_loop(daemon.path.clone(), tx));
+        let status = time::timeout(Duration::from_secs(3), async {
+            loop {
+                match rx.recv().await.expect("event") {
+                    IpcEvent::Status(status) => break status,
+                    IpcEvent::StatsSummary(_) => {}
+                    other => panic!("unexpected {other:?}"),
+                }
+            }
+        })
+        .await
+        .expect("status timeout");
+        assert_eq!(status.pid, Some(42));
+        let summary = time::timeout(Duration::from_secs(3), async {
+            loop {
+                match rx.recv().await.expect("event") {
+                    IpcEvent::StatsSummary(summary) => break summary,
+                    IpcEvent::Status(_) => {}
+                    other => panic!("unexpected {other:?}"),
+                }
+            }
+        })
+        .await
+        .expect("stats timeout");
+        assert_eq!(summary.connections, 5);
+        drop(rx);
+        time::timeout(Duration::from_secs(3), task)
+            .await
+            .expect("status_loop exit")
+            .expect("join");
+        daemon.shutdown().await;
     }
 
     #[tokio::test]
@@ -1119,6 +1160,17 @@ mod tests {
                 } else {
                     Response::Pong.encode()
                 }
+            }
+            line if line.starts_with("v1 stats-summary") => {
+                Response::StatsSummary(interfire_proto::StatsSummaryBody {
+                    connections: 5,
+                    denied: 1,
+                    uptime_secs: 90,
+                    rules: 2,
+                    version: "0.1.0".into(),
+                    git: "test".into(),
+                })
+                .encode()
             }
             _ => Response::Error("unknown").encode(),
         };

@@ -42,7 +42,7 @@ fn stats_footer_line(app: &App) -> String {
     app.stats_summary.as_ref().map_or_else(
         || {
             format!(
-                "Connections —  ·  Denied —  ·  Uptime —  ·  Rules —  ·  Version —  ·  filter {filter}"
+                "Connections -  ·  Denied -  ·  Uptime -  ·  Rules -  ·  Version -  ·  filter {filter}"
             )
         },
         |summary| {
@@ -367,6 +367,27 @@ mod tests {
         let backend = TestBackend::new(120, 40);
         let mut terminal = Terminal::new(backend).expect("terminal");
         terminal.draw(|frame| draw(frame, app)).expect("draw frame");
+    }
+
+    #[test]
+    fn stats_footer_covers_placeholder_and_summary() {
+        let mut app = App::new("/tmp/interfire-tui-footer.sock".into());
+        assert!(super::stats_footer_line(&app).contains("Connections -"));
+        assert!(super::stats_footer_line(&app).contains("filter All"));
+        app.apply(crate::ipc::IpcEvent::StatsSummary(
+            interfire_proto::StatsSummary {
+                connections: 9,
+                denied: 2,
+                uptime_secs: 60,
+                rules: 3,
+                version: "0.1.0".into(),
+                git: "deadbeef".into(),
+            },
+        ));
+        let line = super::stats_footer_line(&app);
+        assert!(line.contains("Connections 9"));
+        assert!(line.contains("Denied 2"));
+        assert!(line.contains("Version 0.1.0+deadbeef"));
     }
 
     fn sample_app(mode: Mode) -> App {

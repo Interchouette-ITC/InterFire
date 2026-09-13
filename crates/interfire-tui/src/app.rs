@@ -1135,9 +1135,9 @@ pub fn footer_hints(app: &App) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{App, IpcEvent, KeyAction, Link, Overlay, Pane, Tab};
+    use super::{App, EventsVerdictFilter, IpcEvent, KeyAction, Link, Overlay, Pane, Tab};
     use crossterm::event::KeyCode;
-    use interfire_proto::{DaemonStatus, ProcessRow, PromptRow, RuleRow};
+    use interfire_proto::{DaemonStatus, ProcessRow, PromptRow, RuleRow, StatsSummary};
 
     use crate::ipc::IpcCommand;
 
@@ -1964,5 +1964,58 @@ mod tests {
         app.handle_key(KeyCode::Char('\0'));
         app.handle_key(KeyCode::F(1));
         assert!(matches!(app.overlay, Overlay::AddRule(_)));
+    }
+
+    #[test]
+    fn events_filter_cycles_and_clears() {
+        let mut app = App::new("/tmp/x.sock".into());
+        app.apply(IpcEvent::Audit(interfire_proto::AuditStreamRecord {
+            sequence: 1,
+            message: "connect outcome=allow".into(),
+        }));
+        app.apply(IpcEvent::Audit(interfire_proto::AuditStreamRecord {
+            sequence: 2,
+            message: "connect outcome=deny".into(),
+        }));
+        app.apply(IpcEvent::Audit(interfire_proto::AuditStreamRecord {
+            sequence: 3,
+            message: "connect outcome=prompt".into(),
+        }));
+        app.handle_key(KeyCode::Char('5'));
+        assert_eq!(app.tab, Tab::Events);
+        assert_eq!(app.visible_list(10).total, 3);
+
+        assert_eq!(app.handle_key(KeyCode::Char('f')), KeyAction::None);
+        assert_eq!(app.events_filter, EventsVerdictFilter::Allow);
+        assert_eq!(app.visible_list(10).total, 1);
+        assert!(app.visible_list(10).items[0].contains("outcome=allow"));
+
+        app.handle_key(KeyCode::Char('f'));
+        assert_eq!(app.events_filter, EventsVerdictFilter::Deny);
+        assert_eq!(app.visible_list(10).total, 1);
+
+        app.handle_key(KeyCode::Char('f'));
+        assert_eq!(app.events_filter, EventsVerdictFilter::Prompt);
+        assert_eq!(app.visible_list(10).total, 1);
+
+        app.handle_key(KeyCode::Char('f'));
+        assert_eq!(app.events_filter, EventsVerdictFilter::All);
+        assert_eq!(app.visible_list(10).total, 3);
+
+        app.handle_key(KeyCode::Char('f'));
+        assert_eq!(app.events_filter, EventsVerdictFilter::Allow);
+        assert_eq!(app.handle_key(KeyCode::Char('c')), KeyAction::None);
+        assert_eq!(app.events_filter, EventsVerdictFilter::All);
+        assert_eq!(app.status_message.as_deref(), Some("Events filter cleared"));
+
+        app.apply(IpcEvent::StatsSummary(StatsSummary {
+            connections: 4,
+            denied: 1,
+            uptime_secs: 12,
+            rules: 2,
+            version: "0.1.0".into(),
+            git: "test".into(),
+        }));
+        assert_eq!(app.stats_summary.as_ref().map(|s| s.connections), Some(4));
     }
 }

@@ -340,6 +340,7 @@ mod tests {
         Recent,
         Pending,
         Audit,
+        Stats,
     }
 
     fn poison(shared: &Arc<Shared>, target: PoisonTarget) {
@@ -371,6 +372,10 @@ mod tests {
             }
             PoisonTarget::Audit => {
                 let _guard = shared.audit.lock().expect("audit lock");
+                panic!("poison mutex");
+            }
+            PoisonTarget::Stats => {
+                let _guard = shared.stats.lock().expect("stats lock");
                 panic!("poison mutex");
             }
         });
@@ -422,6 +427,9 @@ mod tests {
                 .any(|record| record.message.contains("outcome=allow"))
         );
         drop(audit);
+        let summary = shared.stats.lock().expect("stats").summary(0);
+        assert_eq!(summary.connections, 1);
+        assert_eq!(summary.denied, 0);
         let _ = fs::remove_file(audit_path);
     }
 
@@ -452,6 +460,10 @@ mod tests {
                 .any(|record| record.message.contains("outcome=deny"))
         );
         drop(audit);
+        let summary = shared.stats.lock().expect("stats").summary(0);
+        assert_eq!(summary.connections, 1);
+        assert_eq!(summary.denied, 1);
+        assert!(shared.stats.lock().expect("stats").hosts().is_empty());
         let _ = fs::remove_file(audit_path);
     }
 
@@ -470,6 +482,7 @@ mod tests {
             PoisonTarget::Prompts,
             PoisonTarget::Dns,
             PoisonTarget::Recent,
+            PoisonTarget::Stats,
         ] {
             let (shared, audit_path) = test_shared();
             poison(&shared, target);

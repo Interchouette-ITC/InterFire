@@ -305,4 +305,58 @@ mod tests {
         assert_eq!(store.summary(0).denied, 1);
         assert!(store.hosts().is_empty());
     }
+
+    #[test]
+    fn default_store_and_unknown_verdict_still_count_hits() {
+        let mut store = StatsStore::default();
+        store.record(&ConnectStats {
+            executable: "/bin/x".into(),
+            host: "h".into(),
+            ipv4: "1.2.3.4".into(),
+            port: 80,
+            uid: 0,
+            verdict: "other",
+        });
+        store.record(&ConnectStats {
+            executable: "/bin/x".into(),
+            host: "h".into(),
+            ipv4: "1.2.3.4".into(),
+            port: 80,
+            uid: 0,
+            verdict: "prompt",
+        });
+        let counters = &store.hosts()[0].1;
+        assert_eq!(counters.hits, 2);
+        assert_eq!(counters.allow, 0);
+        assert_eq!(counters.deny, 0);
+        assert_eq!(counters.prompt, 1);
+        assert_eq!(store.summary(0).denied, 0);
+    }
+
+    #[test]
+    fn evicts_oldest_keys_per_dimension_at_cap() {
+        let mut store = StatsStore::new();
+        for index in 0..=MAX_STATS_KEYS {
+            store.record(&ConnectStats {
+                executable: format!("/bin/p{index}"),
+                host: format!("host{index}"),
+                ipv4: format!("10.0.0.{index}"),
+                port: u16::try_from(index % 60_000).unwrap_or(1).saturating_add(1),
+                uid: u32::try_from(index).unwrap_or(0),
+                verdict: "allow",
+            });
+        }
+        assert_eq!(store.hosts().len(), MAX_STATS_KEYS);
+        assert_eq!(store.procs().len(), MAX_STATS_KEYS);
+        assert_eq!(store.addrs().len(), MAX_STATS_KEYS);
+        assert_eq!(store.ports().len(), MAX_STATS_KEYS);
+        assert_eq!(store.users().len(), MAX_STATS_KEYS);
+        assert!(!store.hosts().iter().any(|(key, _)| key == "host0"));
+        assert!(
+            store
+                .hosts()
+                .iter()
+                .any(|(key, _)| key == &format!("host{MAX_STATS_KEYS}"))
+        );
+    }
 }

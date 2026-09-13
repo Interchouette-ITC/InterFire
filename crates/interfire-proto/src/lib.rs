@@ -1718,4 +1718,124 @@ mod tests {
             Err(ProtocolError::Malformed)
         );
     }
+
+    #[test]
+    fn stats_summary_parse_and_encode() {
+        let summary_frame = Response::StatsSummary(StatsSummaryBody {
+            connections: 3,
+            denied: 1,
+            uptime_secs: 42,
+            rules: 7,
+            version: "0.1.0".into(),
+            git: "abc".into(),
+        })
+        .encode();
+        assert_eq!(
+            summary_frame,
+            "v1 stats-summary connections=3 denied=1 uptime_secs=42 rules=7 version=0.1.0 git=abc\n"
+        );
+        assert_eq!(
+            StatsSummary::parse(&summary_frame),
+            Ok(StatsSummary {
+                connections: 3,
+                denied: 1,
+                uptime_secs: 42,
+                rules: 7,
+                version: "0.1.0".into(),
+                git: "abc".into(),
+            })
+        );
+        assert_eq!(
+            StatsSummary::parse(
+                "v1 stats-summary connections=1 denied=0 uptime_secs=0 rules=0 future=x\n"
+            ),
+            Ok(StatsSummary {
+                connections: 1,
+                denied: 0,
+                uptime_secs: 0,
+                rules: 0,
+                version: String::new(),
+                git: String::new(),
+            })
+        );
+        assert_eq!(
+            StatsSummary::parse("v9 stats-summary connections=1 denied=0 uptime_secs=0 rules=0\n"),
+            Err(ProtocolError::UnsupportedVersion)
+        );
+        assert_eq!(
+            StatsSummary::parse("stats-summary connections=1 denied=0 uptime_secs=0 rules=0\n"),
+            Err(ProtocolError::Malformed)
+        );
+        assert_eq!(
+            StatsSummary::parse("v1 status connections=1 denied=0 uptime_secs=0 rules=0\n"),
+            Err(ProtocolError::Malformed)
+        );
+        assert_eq!(
+            StatsSummary::parse("v1 stats-summary connections=x denied=0 uptime_secs=0 rules=0\n"),
+            Err(ProtocolError::Malformed)
+        );
+        assert_eq!(
+            StatsSummary::parse(
+                "v1 stats-summary connections=1 denied=0 uptime_secs=0 rules=0 bare\n"
+            ),
+            Err(ProtocolError::Malformed)
+        );
+        assert_eq!(
+            StatsSummary::parse("v1 stats-summary connections=1 denied=0 uptime_secs=0\n"),
+            Err(ProtocolError::Malformed)
+        );
+        assert!(Request::parse("v1 stats-summary extra\n").is_err());
+    }
+
+    #[test]
+    fn stats_row_parse_and_encode() {
+        let row = StatsRow {
+            key: "a|b".into(),
+            hits: 4,
+            allow: 2,
+            deny: 1,
+            prompt: 1,
+        };
+        let encoded = row.encode_row();
+        assert_eq!(encoded, "a%7Cb|4|2|1|1");
+        for (response, label) in [
+            (Response::StatsHosts(encoded.clone()), "stats-hosts"),
+            (Response::StatsProcs(encoded.clone()), "stats-procs"),
+            (Response::StatsAddrs(encoded.clone()), "stats-addrs"),
+            (Response::StatsPorts(encoded.clone()), "stats-ports"),
+            (Response::StatsUsers(encoded), "stats-users"),
+        ] {
+            let frame = response.encode();
+            assert_eq!(
+                StatsRow::parse_frame(&frame, label),
+                Ok(vec![StatsRow {
+                    key: "a|b".into(),
+                    hits: 4,
+                    allow: 2,
+                    deny: 1,
+                    prompt: 1,
+                }])
+            );
+        }
+        assert_eq!(
+            StatsRow::parse_frame("v1 stats-hosts\n", "stats-hosts"),
+            Ok(vec![])
+        );
+        assert_eq!(
+            StatsRow::parse_frame("v2 stats-hosts x|1|0|0|0\n", "stats-hosts"),
+            Err(ProtocolError::UnsupportedVersion)
+        );
+        assert_eq!(
+            StatsRow::parse_frame("v1 stats-procs x|1|0|0|0\n", "stats-hosts"),
+            Err(ProtocolError::Malformed)
+        );
+        assert_eq!(
+            StatsRow::parse_frame("v1 stats-hosts badrow\n", "stats-hosts"),
+            Err(ProtocolError::Malformed)
+        );
+        assert_eq!(
+            StatsRow::parse_frame("hosts x|1|0|0|0\n", "stats-hosts"),
+            Err(ProtocolError::Malformed)
+        );
+    }
 }
