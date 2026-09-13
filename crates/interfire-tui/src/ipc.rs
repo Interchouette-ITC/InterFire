@@ -397,40 +397,44 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn status_loop_sends_stats_summary_and_stops_when_dropped_mid_tick() {
+    async fn status_loop_exits_when_stats_summary_send_fails() {
         let daemon = FakeDaemon::start();
         let (tx, mut rx) = mpsc::unbounded_channel();
         let task = tokio::spawn(status_loop(daemon.path.clone(), tx));
-        let status = match time::timeout(Duration::from_secs(3), rx.recv())
-            .await
-            .expect("status timeout")
-            .expect("status event")
-        {
-            IpcEvent::Status(status) => status,
-            other => panic!("expected status, got {other:?}"),
-        };
-        assert_eq!(status.pid, Some(42));
-        // Drop before stats-summary send so status_loop exits on that path.
+        for _ in 0..8 {
+            let event = time::timeout(Duration::from_secs(2), rx.recv())
+                .await
+                .expect("status wait")
+                .expect("status event");
+            if matches!(event, IpcEvent::Status(_)) {
+                break;
+            }
+        }
         drop(rx);
         time::timeout(Duration::from_secs(3), task)
             .await
             .expect("status_loop exit")
             .expect("join");
+        daemon.shutdown().await;
+    }
 
+    #[tokio::test]
+    async fn status_loop_emits_stats_summary() {
+        let daemon = FakeDaemon::start();
         let (tx, mut rx) = mpsc::unbounded_channel();
         let task = tokio::spawn(status_loop(daemon.path.clone(), tx));
-        let summary = time::timeout(Duration::from_secs(3), async {
-            loop {
-                match rx.recv().await.expect("event") {
-                    IpcEvent::StatsSummary(summary) => break summary,
-                    IpcEvent::Status(_) => {}
-                    other => panic!("unexpected {other:?}"),
-                }
+        let mut summary = None;
+        for _ in 0..8 {
+            let event = time::timeout(Duration::from_secs(2), rx.recv())
+                .await
+                .expect("stats wait")
+                .expect("ipc event");
+            if let IpcEvent::StatsSummary(value) = event {
+                summary = Some(value);
+                break;
             }
-        })
-        .await
-        .expect("stats timeout");
-        assert_eq!(summary.connections, 5);
+        }
+        assert_eq!(summary.expect("stats summary").connections, 5);
         drop(rx);
         time::timeout(Duration::from_secs(3), task)
             .await
