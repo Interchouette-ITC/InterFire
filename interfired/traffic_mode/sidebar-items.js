@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"constant":["DEFAULT_TRAFFIC_PATH"],"enum":["TrafficMode"],"fn":["ensure_parent","load","path_from_env","resolve_traffic_path","store"],"static":["STORE_TMP_SEQ"]};
+window.SIDEBAR_ITEMS = {"constant":["DEFAULT_MACHINE_PATH"],"enum":["EffectiveTraffic","TrafficPreference"],"fn":["any_block_active","effective","ensure_parent","load","load_user_blocks","path_from_env","resolve_machine_path","state_dir","store","user_path"],"static":["STORE_TMP_SEQ"]};

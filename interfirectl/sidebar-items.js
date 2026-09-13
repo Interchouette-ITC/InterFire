@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"fn":["main","usage"]};
+window.SIDEBAR_ITEMS = {"fn":["main","parse_command","parse_traffic_command","usage"]};
