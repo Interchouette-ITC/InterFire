@@ -75,7 +75,7 @@ On each primary image:
 4. `sudo dpkg --purge interfire` removes `/etc/interfire` conffiles and
    `/var/lib/interfire` (postrm purge).
 
-## Safe enforcement dogfood (Phase S)
+## Safe enforcement dogfood
 
 On each primary image after install:
 

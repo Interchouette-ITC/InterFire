@@ -13,6 +13,9 @@ use crate::filter::{ListFilter, ResultLimit, VerdictFilter};
 use crate::section::Section;
 use crate::tray::DaemonLink;
 
+/// ASCII placeholder when a stats cell or chrome label has no value yet.
+pub const EMPTY_CELL: &str = "-";
+
 /// Filter strip for list tabs (text, verdict, limit, clear, shown/total).
 pub fn filter_strip(
     filter: &ListFilter,
@@ -227,21 +230,21 @@ pub fn daemon_body(
             (DaemonLink::Up { status, .. }, None) => (
                 status.enforcement.as_str(),
                 status.traffic_effective.as_str(),
-                "—",
-                "—",
-                "—".into(),
-                "—".into(),
-                "—".into(),
-                "—".into(),
+                EMPTY_CELL,
+                EMPTY_CELL,
+                EMPTY_CELL.into(),
+                EMPTY_CELL.into(),
+                EMPTY_CELL.into(),
+                EMPTY_CELL.into(),
             ),
             (DaemonLink::Down { reason }, _) => (
                 "stopped",
-                "—",
-                "—",
-                "—",
-                "—".into(),
-                "—".into(),
-                "—".into(),
+                EMPTY_CELL,
+                EMPTY_CELL,
+                EMPTY_CELL,
+                EMPTY_CELL.into(),
+                EMPTY_CELL.into(),
+                EMPTY_CELL.into(),
                 reason.clone(),
             ),
         };
@@ -352,9 +355,9 @@ pub fn stats_footer(
     let (connections, denied, uptime, rules, version) = summary.map_or_else(
         || {
             (
-                "—".into(),
-                "—".into(),
-                "—".into(),
+                EMPTY_CELL.into(),
+                EMPTY_CELL.into(),
+                EMPTY_CELL.into(),
                 rules_fallback.to_string(),
                 format!(
                     "{}+{}",

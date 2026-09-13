@@ -38,7 +38,7 @@ Do not mutate `assets/`. Do not pad a small master into a larger empty canvas.
 ## Suggested defaults
 
 - README header: `logo-banner-readme.png` (single hero; ~640px wide in `docs/README.md`)
-- Compact lockup (before Thanks): `logo-horizontal-readme-on-white.png` (white plate, Serenade-style)
+- Compact lockup (before Thanks): `logo-horizontal-readme-on-white.png` (white plate)
 - Footer seal (theme-aware): white disk on GitHub dark, dark disk on GitHub light
 - Desktop header: `logo-banner-desktop.png`
 - Mobile header: `logo-banner-mobile.png` or `icon-app-phoenix-128.png`

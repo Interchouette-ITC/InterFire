@@ -351,10 +351,12 @@ mod tests {
     fn temp_audit(name: &str) -> PathBuf {
         static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let n = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        std::env::temp_dir().join(format!(
+        let dir = std::env::temp_dir().join(format!(
             "interfire-shared-{}-{n}-{name}",
             std::process::id()
-        ))
+        ));
+        let _ = fs::create_dir_all(&dir);
+        dir.join("audit.log")
     }
 
     fn shared_for(audit_path: &Path, mode: EnforcementMode) -> Shared {
@@ -363,6 +365,19 @@ mod tests {
         let _ = fs::remove_file(audit_path);
         let _ = fs::remove_file(&mode_path);
         let _ = fs::remove_file(&traffic_path);
+        if let Some(dir) = audit_path.parent() {
+            if let Ok(entries) = fs::read_dir(dir) {
+                for entry in entries.flatten() {
+                    let name = entry.file_name();
+                    if name
+                        .to_str()
+                        .is_some_and(|n| n.starts_with("traffic.user."))
+                    {
+                        let _ = fs::remove_file(entry.path());
+                    }
+                }
+            }
+        }
         enforcement_mode::store(&mode_path, mode).expect("mode");
         let store = RulesStore::new(audit_path.with_extension("rules.toml"));
         Shared::new(SharedConfig {

@@ -27,12 +27,12 @@ reports state.
 ## Design references (structure only)
 
 - Classic **personal firewall** tray + connection alert: short decision path
-  (program, destination, safe choice). See [`ux-kerio.md`](ux-kerio.md).
+  (program, destination, safe choice).
 - Network **statistics shell** chrome: top toolbar, horizontal primary tabs,
   dense tables, shared filter strip, rich footer. InterFire is not a gateway
   product: no NAT, DHCP, VPN, content filter, licensing tree, or multi-node
-  mesh. Private manuals/screenshots stay out of git; shipped text never embeds
-  proprietary bitmaps.
+  mesh. Private manuals/screenshots stay out of the application tree; shipped
+  text never embeds proprietary bitmaps.
 
 ## Prompt identity (InterFire bar)
 

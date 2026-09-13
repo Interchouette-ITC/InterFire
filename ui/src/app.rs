@@ -28,7 +28,7 @@ use crate::section::Section;
 use crate::service;
 use crate::shell_chrome::{about_overlay, menu_row, tabs_row, toolbar_row};
 use crate::stats_view::{
-    applications_stats_note, daemon_body, events_body, stats_footer, stats_table_body,
+    EMPTY_CELL, applications_stats_note, daemon_body, events_body, stats_footer, stats_table_body,
 };
 use crate::theme::{self, ChromeMode, ChromePreference};
 use crate::tray::{DaemonLink, TrayState};
@@ -1218,7 +1218,7 @@ fn traffic_body(content: &ShellContent<'_>, cx: &Context<App>) -> Div {
             status.traffic_user.as_str(),
             status.traffic_effective.as_str(),
         ),
-        DaemonLink::Down { .. } => ("—", "—", "—"),
+        DaemonLink::Down { .. } => (EMPTY_CELL, EMPTY_CELL, EMPTY_CELL),
     };
     let scope_machine = content.traffic_scope_machine;
     let direction = content.traffic_direction;
