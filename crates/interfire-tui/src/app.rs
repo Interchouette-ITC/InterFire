@@ -2017,5 +2017,9 @@ mod tests {
             git: "test".into(),
         }));
         assert_eq!(app.stats_summary.as_ref().map(|s| s.connections), Some(4));
+        assert_eq!(
+            app.handle_events_filter_key(KeyCode::Char('x')),
+            KeyAction::None
+        );
     }
 }

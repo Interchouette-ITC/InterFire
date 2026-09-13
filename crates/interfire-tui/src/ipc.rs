@@ -401,18 +401,24 @@ mod tests {
         let daemon = FakeDaemon::start();
         let (tx, mut rx) = mpsc::unbounded_channel();
         let task = tokio::spawn(status_loop(daemon.path.clone(), tx));
-        let status = time::timeout(Duration::from_secs(3), async {
-            loop {
-                match rx.recv().await.expect("event") {
-                    IpcEvent::Status(status) => break status,
-                    IpcEvent::StatsSummary(_) => {}
-                    other => panic!("unexpected {other:?}"),
-                }
-            }
-        })
-        .await
-        .expect("status timeout");
+        let status = match time::timeout(Duration::from_secs(3), rx.recv())
+            .await
+            .expect("status timeout")
+            .expect("status event")
+        {
+            IpcEvent::Status(status) => status,
+            other => panic!("expected status, got {other:?}"),
+        };
         assert_eq!(status.pid, Some(42));
+        // Drop before stats-summary send so status_loop exits on that path.
+        drop(rx);
+        time::timeout(Duration::from_secs(3), task)
+            .await
+            .expect("status_loop exit")
+            .expect("join");
+
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let task = tokio::spawn(status_loop(daemon.path.clone(), tx));
         let summary = time::timeout(Duration::from_secs(3), async {
             loop {
                 match rx.recv().await.expect("event") {
@@ -428,7 +434,7 @@ mod tests {
         drop(rx);
         time::timeout(Duration::from_secs(3), task)
             .await
-            .expect("status_loop exit")
+            .expect("status_loop exit after stats")
             .expect("join");
         daemon.shutdown().await;
     }

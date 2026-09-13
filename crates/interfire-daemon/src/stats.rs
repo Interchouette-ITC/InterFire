@@ -265,6 +265,21 @@ fn snapshot_string(
 }
 
 #[cfg(test)]
+impl StatsStore {
+    /// Insert map entries without order keys so eviction hits the clear path.
+    fn fill_orphan_keys_for_test(&mut self) {
+        for index in 0..MAX_STATS_KEYS {
+            self.hosts
+                .insert(format!("orphan-host-{index}"), StatsCounters::default());
+            self.ports
+                .insert(u16::try_from(index).unwrap_or(0), StatsCounters::default());
+            self.users
+                .insert(u32::try_from(index).unwrap_or(0), StatsCounters::default());
+        }
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -358,5 +373,22 @@ mod tests {
                 .iter()
                 .any(|(key, _)| key == &format!("host{MAX_STATS_KEYS}"))
         );
+    }
+
+    #[test]
+    fn clears_maps_when_order_empty_but_full() {
+        let mut store = StatsStore::new();
+        store.fill_orphan_keys_for_test();
+        store.record(&ConnectStats {
+            executable: "/bin/new".into(),
+            host: "newhost".into(),
+            ipv4: "9.9.9.9".into(),
+            port: 9999,
+            uid: 42_000,
+            verdict: "allow",
+        });
+        assert!(store.hosts().iter().any(|(key, _)| key == "newhost"));
+        assert!(store.ports().iter().any(|(key, _)| key == "9999"));
+        assert!(store.users().iter().any(|(key, _)| key == "42000"));
     }
 }
