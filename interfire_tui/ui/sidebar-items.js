@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"fn":["centered_rect","detail_widget","draw","draw_add_rule","draw_answer_prompt","draw_body","draw_notice","draw_traffic","field_line","list_widget","tabs_bar"]};
+window.SIDEBAR_ITEMS = {"fn":["centered_rect","detail_widget","draw","draw_add_rule","draw_answer_prompt","draw_body","draw_notice","draw_traffic","field_line","list_widget","stats_footer_line","tabs_bar"]};

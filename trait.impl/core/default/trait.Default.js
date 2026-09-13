@@ -1,9 +1,9 @@
 (function() {
-    const implementors = Object.fromEntries([["interfire_rules",[["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/1.98.1/core/default/trait.Default.html\" title=\"trait core::default::Default\">Default</a> for <a class=\"struct\" href=\"interfire_rules/struct.RuleSet.html\" title=\"struct interfire_rules::RuleSet\">RuleSet</a>",0]]]]);
+    const implementors = Object.fromEntries([["interfire_proto",[["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/1.98.1/core/default/trait.Default.html\" title=\"trait core::default::Default\">Default</a> for <a class=\"struct\" href=\"interfire_proto/struct.StatsSummary.html\" title=\"struct interfire_proto::StatsSummary\">StatsSummary</a>",0]]],["interfire_rules",[["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/1.98.1/core/default/trait.Default.html\" title=\"trait core::default::Default\">Default</a> for <a class=\"struct\" href=\"interfire_rules/struct.RuleSet.html\" title=\"struct interfire_rules::RuleSet\">RuleSet</a>",0]]],["interfire_tui",[["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/1.98.1/core/default/trait.Default.html\" title=\"trait core::default::Default\">Default</a> for <a class=\"enum\" href=\"interfire_tui/app/enum.EventsVerdictFilter.html\" title=\"enum interfire_tui::app::EventsVerdictFilter\">EventsVerdictFilter</a>",0]]],["interfired",[["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/1.98.1/core/default/trait.Default.html\" title=\"trait core::default::Default\">Default</a> for <a class=\"struct\" href=\"interfired/stats/struct.StatsCounters.html\" title=\"struct interfired::stats::StatsCounters\">StatsCounters</a>",0],["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/1.98.1/core/default/trait.Default.html\" title=\"trait core::default::Default\">Default</a> for <a class=\"struct\" href=\"interfired/stats/struct.StatsStore.html\" title=\"struct interfired::stats::StatsStore\">StatsStore</a>",0]]]]);
     if (window.register_implementors) {
         window.register_implementors(implementors);
     } else {
         window.pending_implementors = implementors;
     }
 })()
-//{"start":59,"fragment_lengths":[299]}
+//{"start":59,"fragment_lengths":[314,300,333,606]}
