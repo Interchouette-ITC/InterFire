@@ -401,15 +401,11 @@ mod tests {
         let daemon = FakeDaemon::start();
         let (tx, mut rx) = mpsc::unbounded_channel();
         let task = tokio::spawn(status_loop(daemon.path.clone(), tx));
-        for _ in 0..8 {
-            let event = time::timeout(Duration::from_secs(2), rx.recv())
-                .await
-                .expect("status wait")
-                .expect("status event");
-            if matches!(event, IpcEvent::Status(_)) {
-                break;
-            }
-        }
+        // First frame is status; drop before the following stats-summary send.
+        let _ = time::timeout(Duration::from_secs(3), rx.recv())
+            .await
+            .expect("status wait")
+            .expect("status event");
         drop(rx);
         time::timeout(Duration::from_secs(3), task)
             .await
