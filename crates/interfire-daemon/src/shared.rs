@@ -67,7 +67,6 @@ impl Shared {
     /// Returns I/O failures while opening the audit log.
     pub fn new(config: SharedConfig) -> std::io::Result<Self> {
         let mode = enforcement_mode::load(&config.mode_path);
-        traffic_mode::migrate_legacy(&config.traffic_path);
         let machine = traffic_mode::load(&config.traffic_path);
         Ok(Self {
             rules: Mutex::new(config.rules),
