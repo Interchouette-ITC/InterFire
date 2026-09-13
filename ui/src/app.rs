@@ -1,4 +1,4 @@
-//! `InterFire` desktop shell: left navigation, tray, alert, Rules, and Log.
+//! `InterFire` desktop shell: network statistics chrome, tray, alert, rules.
 #![allow(clippy::wildcard_imports)]
 #![forbid(unsafe_code)]
 
@@ -8,7 +8,7 @@ use gpui_kit::component::input::InputState;
 use gpui_kit::component::*;
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
-use interfire_proto::{NetworkStatus, ProcessRow, PromptRow, RuleRow};
+use interfire_proto::{NetworkStatus, ProcessRow, PromptRow, RuleRow, StatsRow, StatsSummary};
 
 use crate::alert::{AlertScope, AlertVerdict, ConnectionAlert};
 use crate::alert_view::alert_overlay;
@@ -16,9 +16,9 @@ use crate::applications_view::{ProcessViewer, applications_body, try_open_viewer
 use crate::audit_host::{AuditEvent, AuditHost};
 use crate::brand;
 use crate::confirm_queue::ConfirmKind;
+use crate::filter::{ListFilter, ResultLimit, VerdictFilter};
 use crate::ipc_poll;
 use crate::log_buf::LogBuffer;
-use crate::log_view::log_body;
 use crate::network_view::network_body;
 use crate::proc_sample::{CpuTracker, ProcSample};
 use crate::rss_probe::{RssProbeMode, prompt_load_fixture};
@@ -26,6 +26,10 @@ use crate::rules::{RuleVerdict, next_rule_id, validate_new_rule};
 use crate::rules_view::{add_rule_overlay, rules_body};
 use crate::section::Section;
 use crate::service;
+use crate::shell_chrome::{about_overlay, menu_row, tabs_row, toolbar_row};
+use crate::stats_view::{
+    applications_stats_note, daemon_body, events_body, stats_footer, stats_table_body,
+};
 use crate::theme::{self, ChromeMode, ChromePreference};
 use crate::tray::{DaemonLink, TrayState};
 #[cfg(target_os = "linux")]
@@ -64,6 +68,14 @@ struct ShellContent<'a> {
     chrome_mode: ChromeMode,
     traffic_scope_machine: bool,
     traffic_direction: &'static str,
+    filter: &'a ListFilter,
+    filter_input: Option<&'a Entity<InputState>>,
+    stats_summary: Option<&'a StatsSummary>,
+    stats_hosts: &'a [StatsRow],
+    stats_procs: &'a [StatsRow],
+    stats_addrs: &'a [StatsRow],
+    stats_ports: &'a [StatsRow],
+    stats_users: &'a [StatsRow],
 }
 
 /// Active add-rule form backed by GPUI input states.
@@ -105,6 +117,16 @@ pub struct App {
     traffic_direction: &'static str,
     /// Pending operator confirmation (header or tray).
     fw_confirm: Option<ConfirmKind>,
+    filter: ListFilter,
+    filter_input: Option<Entity<InputState>>,
+    menu_open: bool,
+    about_open: bool,
+    stats_summary: Option<StatsSummary>,
+    stats_hosts: Vec<StatsRow>,
+    stats_procs: Vec<StatsRow>,
+    stats_addrs: Vec<StatsRow>,
+    stats_ports: Vec<StatsRow>,
+    stats_users: Vec<StatsRow>,
     #[cfg(target_os = "linux")]
     tray: Option<TrayHost>,
 }
@@ -119,7 +141,7 @@ impl App {
         let tray_state = TrayState::from_link(&link);
         let audit = AuditHost::spawn(socket.clone());
         let mut app = Self {
-            section: Section::Rules,
+            section: Section::Events,
             socket,
             link,
             tray_state,
@@ -144,6 +166,16 @@ impl App {
             traffic_scope_machine: false,
             traffic_direction: "out",
             fw_confirm: None,
+            filter: ListFilter::default(),
+            filter_input: None,
+            menu_open: false,
+            about_open: false,
+            stats_summary: None,
+            stats_hosts: Vec::new(),
+            stats_procs: Vec::new(),
+            stats_addrs: Vec::new(),
+            stats_ports: Vec::new(),
+            stats_users: Vec::new(),
             #[cfg(target_os = "linux")]
             tray,
         };
@@ -219,6 +251,12 @@ impl App {
             self.rules = snapshot.rules;
             self.processes = snapshot.processes;
             self.network = snapshot.network;
+            self.stats_summary = snapshot.stats_summary;
+            self.stats_hosts = snapshot.stats_hosts;
+            self.stats_procs = snapshot.stats_procs;
+            self.stats_addrs = snapshot.stats_addrs;
+            self.stats_ports = snapshot.stats_ports;
+            self.stats_users = snapshot.stats_users;
             if let Some(id) = self.selected_rule
                 && !self.rules.iter().any(|row| row.id == id)
             {
@@ -279,7 +317,130 @@ impl App {
 
     pub(crate) fn select(&mut self, section: Section, cx: &mut Context<Self>) {
         self.section = section;
+        self.menu_open = false;
         cx.notify();
+    }
+
+    /// Create the shared filter input once the window exists.
+    pub fn attach_filter_input(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.filter_input.is_some() {
+            return;
+        }
+        self.filter_input = Some(cx.new(|cx| InputState::new(window, cx)));
+    }
+
+    pub(crate) fn toggle_app_menu(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        self.menu_open = !self.menu_open;
+        cx.notify();
+    }
+
+    pub(crate) fn open_preferences(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        self.section = Section::Preferences;
+        self.menu_open = false;
+        cx.notify();
+    }
+
+    pub(crate) fn open_about(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        self.about_open = true;
+        self.menu_open = false;
+        cx.notify();
+    }
+
+    pub(crate) fn close_about(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        self.about_open = false;
+        cx.notify();
+    }
+
+    pub(crate) fn quit_app(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        self.menu_open = false;
+        cx.quit();
+    }
+
+    pub(crate) fn open_network(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        self.section = Section::Network;
+        self.menu_open = false;
+        cx.notify();
+    }
+
+    pub(crate) fn open_profiling(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        self.section = Section::Profiling;
+        self.menu_open = false;
+        cx.notify();
+    }
+
+    pub(crate) fn set_filter_verdict_all(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        self.filter.verdict = VerdictFilter::All;
+        cx.notify();
+    }
+
+    pub(crate) fn set_filter_verdict_allow(
+        &mut self,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.filter.verdict = VerdictFilter::Allow;
+        cx.notify();
+    }
+
+    pub(crate) fn set_filter_verdict_deny(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        self.filter.verdict = VerdictFilter::Deny;
+        cx.notify();
+    }
+
+    pub(crate) fn set_filter_verdict_prompt(
+        &mut self,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.filter.verdict = VerdictFilter::Prompt;
+        cx.notify();
+    }
+
+    pub(crate) fn set_filter_limit_50(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        self.filter.limit = ResultLimit::Preset(50);
+        cx.notify();
+    }
+
+    pub(crate) fn set_filter_limit_100(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        self.filter.limit = ResultLimit::Preset(100);
+        cx.notify();
+    }
+
+    pub(crate) fn set_filter_limit_200(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        self.filter.limit = ResultLimit::Preset(200);
+        cx.notify();
+    }
+
+    pub(crate) fn set_filter_limit_300(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        self.filter.limit = ResultLimit::Preset(300);
+        cx.notify();
+    }
+
+    pub(crate) fn set_filter_limit_all(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        self.filter.limit = ResultLimit::All;
+        cx.notify();
+    }
+
+    pub(crate) fn set_filter_limit_custom(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        self.filter.limit = ResultLimit::Custom(2_000);
+        cx.notify();
+    }
+
+    pub(crate) fn clear_list_filter(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.filter.clear();
+        if let Some(input) = &self.filter_input {
+            input.update(cx, |state, cx| {
+                state.set_value("", window, cx);
+            });
+        }
+        cx.notify();
+    }
+
+    fn filter_text_from_input(&self, cx: &Context<Self>) -> String {
+        self.filter_input
+            .as_ref()
+            .map(|input| input.read(cx).value().to_string())
+            .unwrap_or_default()
     }
 
     pub(crate) fn set_chrome_preference(
@@ -721,68 +882,168 @@ impl App {
 impl Render for App {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let selected = self.section;
-        let socket = self.socket.clone();
-        let tray_state = self.tray_state;
-        let link = self.link.clone();
-        let alert = self.alert.clone();
-        let rules = self.rules.clone();
-        let selected_rule = self.selected_rule;
-        let rules_message = self.rules_message.clone();
-        let adding = self.add_form.is_some();
-        let processes = self.processes.clone();
-        let selected_process = self.selected_process;
-        let viewer_message = self.viewer_message.clone();
-        let network = self.network.clone();
-        let network_message = self.network_message.clone();
-        let log = self.log.clone();
-        let profiling = self.profiling.clone();
-        let chrome_pref = self.chrome_pref;
-        let chrome_mode = chrome_pref.resolve(window.appearance());
-
+        let chrome_mode = self.chrome_pref.resolve(window.appearance());
+        let menu_open = self.menu_open;
+        let about_open = self.about_open;
+        let snapshot = RenderSnapshot::capture(self, window, cx);
+        let content = snapshot.content(self.traffic_scope_machine, self.traffic_direction);
         let mut shell = div()
             .id("interfire-shell")
             .relative()
             .flex()
+            .flex_col()
             .size_full()
             .bg(cx.theme().background)
             .text_color(cx.theme().foreground)
-            .child(nav_column(selected, chrome_mode, cx))
-            .child(content_column(
-                &ShellContent {
-                    section: selected,
-                    socket: &socket,
-                    tray_state,
-                    link: &link,
-                    rules: &rules,
-                    selected_rule,
-                    rules_message: rules_message.as_deref(),
-                    adding,
-                    processes: &processes,
-                    selected_process,
-                    viewer_message: viewer_message.as_deref(),
-                    network: network.as_ref(),
-                    network_message: network_message.as_deref(),
-                    log: &log,
-                    profiling: &profiling,
-                    chrome_pref,
-                    chrome_mode,
-                    traffic_scope_machine: self.traffic_scope_machine,
-                    traffic_direction: self.traffic_direction,
-                },
+            .p_3()
+            .gap_2()
+            .child(toolbar_row(
+                snapshot.tray_state,
+                &snapshot.link,
+                chrome_mode,
+                menu_open,
                 cx,
             ));
-
+        if menu_open {
+            shell = shell.child(menu_row(cx));
+        }
+        shell = shell
+            .child(tabs_row(selected, cx))
+            .child(content_panel(&content, cx))
+            .child(stats_footer(
+                snapshot.stats_summary.as_ref(),
+                snapshot.rules.len(),
+                cx,
+            ));
         if let Some(form) = &self.add_form {
             shell = shell.child(add_rule_overlay(form, cx));
         }
-        if let Some(alert) = alert {
+        if let Some(alert) = snapshot.alert {
             shell = shell.child(alert_overlay(&alert, cx));
         }
         if let Some(kind) = self.fw_confirm {
             shell = shell.child(fw_confirm_overlay(kind, cx));
         }
+        if about_open {
+            shell = shell.child(about_overlay(cx));
+        }
         shell
     }
+}
+
+struct RenderSnapshot {
+    socket: String,
+    tray_state: TrayState,
+    link: DaemonLink,
+    alert: Option<ConnectionAlert>,
+    rules: Vec<RuleRow>,
+    selected_rule: Option<u64>,
+    rules_message: Option<String>,
+    adding: bool,
+    processes: Vec<ProcessRow>,
+    selected_process: Option<(u32, u64)>,
+    viewer_message: Option<String>,
+    network: Option<NetworkStatus>,
+    network_message: Option<String>,
+    log: LogBuffer,
+    profiling: ProfilingSnapshot,
+    chrome_pref: ChromePreference,
+    chrome_mode: ChromeMode,
+    filter: ListFilter,
+    filter_input: Option<Entity<InputState>>,
+    stats_summary: Option<StatsSummary>,
+    stats_hosts: Vec<StatsRow>,
+    stats_procs: Vec<StatsRow>,
+    stats_addrs: Vec<StatsRow>,
+    stats_ports: Vec<StatsRow>,
+    stats_users: Vec<StatsRow>,
+    section: Section,
+}
+
+impl RenderSnapshot {
+    fn capture(app: &App, window: &Window, cx: &Context<App>) -> Self {
+        let mut filter = app.filter.clone();
+        filter.text = app.filter_text_from_input(cx);
+        let chrome_mode = app.chrome_pref.resolve(window.appearance());
+        Self {
+            socket: app.socket.clone(),
+            tray_state: app.tray_state,
+            link: app.link.clone(),
+            alert: app.alert.clone(),
+            rules: app.rules.clone(),
+            selected_rule: app.selected_rule,
+            rules_message: app.rules_message.clone(),
+            adding: app.add_form.is_some(),
+            processes: app.processes.clone(),
+            selected_process: app.selected_process,
+            viewer_message: app.viewer_message.clone(),
+            network: app.network.clone(),
+            network_message: app.network_message.clone(),
+            log: app.log.clone(),
+            profiling: app.profiling.clone(),
+            chrome_pref: app.chrome_pref,
+            chrome_mode,
+            filter,
+            filter_input: app.filter_input.clone(),
+            stats_summary: app.stats_summary.clone(),
+            stats_hosts: app.stats_hosts.clone(),
+            stats_procs: app.stats_procs.clone(),
+            stats_addrs: app.stats_addrs.clone(),
+            stats_ports: app.stats_ports.clone(),
+            stats_users: app.stats_users.clone(),
+            section: app.section,
+        }
+    }
+
+    fn content<'a>(
+        &'a self,
+        traffic_scope_machine: bool,
+        traffic_direction: &'static str,
+    ) -> ShellContent<'a> {
+        ShellContent {
+            section: self.section,
+            socket: &self.socket,
+            tray_state: self.tray_state,
+            link: &self.link,
+            rules: &self.rules,
+            selected_rule: self.selected_rule,
+            rules_message: self.rules_message.as_deref(),
+            adding: self.adding,
+            processes: &self.processes,
+            selected_process: self.selected_process,
+            viewer_message: self.viewer_message.as_deref(),
+            network: self.network.as_ref(),
+            network_message: self.network_message.as_deref(),
+            log: &self.log,
+            profiling: &self.profiling,
+            chrome_pref: self.chrome_pref,
+            chrome_mode: self.chrome_mode,
+            traffic_scope_machine,
+            traffic_direction,
+            filter: &self.filter,
+            filter_input: self.filter_input.as_ref(),
+            stats_summary: self.stats_summary.as_ref(),
+            stats_hosts: &self.stats_hosts,
+            stats_procs: &self.stats_procs,
+            stats_addrs: &self.stats_addrs,
+            stats_ports: &self.stats_ports,
+            stats_users: &self.stats_users,
+        }
+    }
+}
+
+fn content_panel(content: &ShellContent<'_>, cx: &Context<App>) -> impl IntoElement {
+    div()
+        .id("content-panel")
+        .flex_1()
+        .v_flex()
+        .gap_3()
+        .p_3()
+        .rounded_lg()
+        .border_1()
+        .border_color(cx.theme().border)
+        .bg(cx.theme().group_box)
+        .child(section_body(content, cx))
 }
 
 fn fw_confirm_overlay(kind: ConfirmKind, cx: &Context<App>) -> impl IntoElement {
@@ -869,298 +1130,24 @@ fn fw_confirm_overlay(kind: ConfirmKind, cx: &Context<App>) -> impl IntoElement 
         )
 }
 
-fn nav_column(selected: Section, chrome_mode: ChromeMode, cx: &Context<App>) -> impl IntoElement {
-    let mut column = div()
-        .id("nav")
-        .w(px(196.))
-        .h_full()
-        .flex()
-        .flex_col()
-        .gap_1()
-        .px_3()
-        .py_3()
-        .bg(cx.theme().sidebar)
-        .border_r_1()
-        .border_color(cx.theme().sidebar_border)
-        .child(nav_brand(chrome_mode, cx));
-
-    for section in Section::ALL {
-        let is_selected = section == selected;
-        column = column.child(nav_button(section, is_selected, cx));
-    }
-
-    column.child(nav_footer(cx))
-}
-
-fn nav_brand(chrome_mode: ChromeMode, cx: &Context<App>) -> impl IntoElement {
-    div()
-        .id("nav-brand")
-        .flex()
-        .items_center()
-        .gap_2()
-        .mb_3()
-        .px_1()
-        .child(
-            img(brand::nav_mark_source(chrome_mode))
-                .id("nav-mark")
-                .w(px(36.))
-                .h(px(36.))
-                .rounded_md()
-                .object_fit(ObjectFit::Contain),
-        )
-        .child(
-            div()
-                .v_flex()
-                .gap_0()
-                .child(
-                    div()
-                        .text_sm()
-                        .font_semibold()
-                        .text_color(cx.theme().sidebar_foreground)
-                        .child("InterFire"),
-                )
-                .child(
-                    div()
-                        .text_xs()
-                        .text_color(cx.theme().muted_foreground)
-                        .child("FIREWALL"),
-                ),
-        )
-}
-
-fn nav_footer(cx: &Context<App>) -> impl IntoElement {
-    div()
-        .id("nav-footer")
-        .mt_auto()
-        .pt_3()
-        .border_t_1()
-        .border_color(cx.theme().sidebar_border)
-        .text_xs()
-        .text_color(cx.theme().muted_foreground)
-        .child("SECURE · CONTROL")
-}
-
-fn nav_button(section: Section, selected: bool, cx: &Context<App>) -> impl IntoElement {
-    let label = section.label();
-    div()
-        .id(ElementId::Name(label.into()))
-        .px_3()
-        .py_2()
-        .rounded_md()
-        .cursor_pointer()
-        .text_sm()
-        .when(selected, |this| {
-            this.bg(cx.theme().sidebar_accent)
-                .text_color(cx.theme().sidebar_accent_foreground)
-                .font_semibold()
-        })
-        .when(!selected, |this| {
-            this.text_color(cx.theme().sidebar_foreground)
-                .hover(|style| {
-                    style
-                        .bg(cx.theme().sidebar_accent.opacity(0.18))
-                        .text_color(cx.theme().foreground)
-                })
-        })
-        .on_click(cx.listener(move |app, _, _, cx| app.select(section, cx)))
-        .child(label)
-}
-
-fn content_column(content: &ShellContent<'_>, cx: &Context<App>) -> impl IntoElement {
-    div()
-        .id("content")
-        .flex_1()
-        .h_full()
-        .flex()
-        .flex_col()
-        .bg(cx.theme().background)
-        .p_4()
-        .gap_3()
-        .child(content_header(content, cx))
-        .child(
-            div()
-                .id("content-panel")
-                .flex_1()
-                .v_flex()
-                .gap_3()
-                .p_3()
-                .rounded_lg()
-                .border_1()
-                .border_color(cx.theme().border)
-                .bg(cx.theme().group_box)
-                .child(section_body(content, cx)),
-        )
-        .child(status_bar(content, cx))
-}
-
-fn content_header(content: &ShellContent<'_>, cx: &Context<App>) -> impl IntoElement {
-    let daemon_up = !matches!(content.tray_state, TrayState::Unavailable);
-    let rules_paused = match content.link {
-        DaemonLink::Up { status, .. } => status.enforcement == "paused",
-        DaemonLink::Down { .. } => true,
-    };
-    let daemon_label = if daemon_up {
-        "Daemon: Running"
-    } else {
-        "Daemon: Stopped"
-    };
-    let rules_label = if !daemon_up {
-        "Rules: —"
-    } else if rules_paused {
-        "Rules: Paused"
-    } else {
-        "Rules: Active"
-    };
-    let traffic_label = if daemon_up {
-        match content.link {
-            DaemonLink::Up { status, .. } => {
-                if status.traffic_machine != "open" {
-                    "Traffic: Machine"
-                } else if status.traffic_user != "open" {
-                    "Traffic: User"
-                } else {
-                    "Traffic: Open"
-                }
-            }
-            DaemonLink::Down { .. } => "Traffic: —",
-        }
-    } else {
-        "Traffic: —"
-    };
-    let traffic_accent = matches!(
-        content.link,
-        DaemonLink::Up { status, .. } if status.traffic == "blocked"
-    );
-    div()
-        .id("content-header")
-        .flex()
-        .items_center()
-        .justify_between()
-        .gap_2()
-        .child(
-            div()
-                .text_lg()
-                .font_semibold()
-                .text_color(cx.theme().foreground)
-                .child(content.section.label()),
-        )
-        .child(
-            div()
-                .flex()
-                .items_center()
-                .gap_2()
-                .child(control_chip(
-                    "daemon-btn",
-                    daemon_label,
-                    if daemon_up { "Stop" } else { "Start" },
-                    true,
-                    !daemon_up,
-                    cx,
-                    if daemon_up {
-                        App::request_daemon_stop_click
-                    } else {
-                        App::request_daemon_start_click
-                    },
-                ))
-                .child(control_chip(
-                    "rules-btn",
-                    rules_label,
-                    if rules_paused { "Start" } else { "Pause" },
-                    daemon_up,
-                    rules_paused,
-                    cx,
-                    if rules_paused {
-                        App::request_resume_confirm_click
-                    } else {
-                        App::request_pause_confirm_click
-                    },
-                ))
-                .child(control_chip(
-                    "traffic-btn",
-                    traffic_label,
-                    "Open",
-                    daemon_up,
-                    traffic_accent,
-                    cx,
-                    App::open_traffic_tab,
-                ))
-                .child(tray_chip(content.tray_state, cx)),
-        )
-}
-
-fn control_chip(
-    id: &'static str,
-    label: &'static str,
-    action: &'static str,
-    enabled: bool,
-    warning: bool,
-    cx: &Context<App>,
-    on_click: fn(&mut App, &mut Window, &mut Context<App>),
-) -> impl IntoElement {
-    div()
-        .id(id)
-        .flex()
-        .items_center()
-        .gap_1()
-        .child(
-            div()
-                .text_xs()
-                .font_semibold()
-                .text_color(if warning {
-                    cx.theme().warning
-                } else if enabled {
-                    cx.theme().success
-                } else {
-                    cx.theme().muted_foreground
-                })
-                .child(label),
-        )
-        .child(crate::rules_view::action_chip(
-            id, action, enabled, warning, cx, on_click,
-        ))
-}
-
-fn tray_chip(state: TrayState, cx: &Context<App>) -> impl IntoElement {
-    let (fill, label_color) = match state {
-        TrayState::Protected => (cx.theme().success.opacity(0.2), cx.theme().success),
-        TrayState::Prompting => (cx.theme().accent.opacity(0.25), cx.theme().accent),
-        TrayState::Degraded => (cx.theme().warning.opacity(0.22), cx.theme().warning),
-        TrayState::Paused => (cx.theme().warning.opacity(0.18), cx.theme().warning),
-        TrayState::Blocked => (cx.theme().danger.opacity(0.18), cx.theme().danger),
-        TrayState::Unavailable => (cx.theme().danger.opacity(0.22), cx.theme().danger),
-    };
-    div()
-        .id("tray-chip")
-        .px_2()
-        .py_1()
-        .rounded_md()
-        .bg(fill)
-        .text_xs()
-        .font_semibold()
-        .text_color(label_color)
-        .child(state.label().to_uppercase())
-}
-
-fn status_bar(content: &ShellContent<'_>, cx: &Context<App>) -> impl IntoElement {
-    div()
-        .id("status-bar")
-        .mt_auto()
-        .pt_2()
-        .border_t_1()
-        .border_color(cx.theme().border)
-        .text_xs()
-        .text_color(cx.theme().muted_foreground)
-        .child(format!(
-            "{}  ·  tray {}  ·  {}",
-            content.section.label(),
-            content.tray_state.label(),
-            content.socket
-        ))
-}
-
 fn section_body(content: &ShellContent<'_>, cx: &Context<App>) -> Div {
     let muted = cx.theme().muted_foreground;
+    let filter_input = content.filter_input;
     match content.section {
+        Section::Events => filter_input.map_or_else(
+            || div().child(div().text_color(muted).child("filter input unavailable")),
+            |input| {
+                events_body(
+                    &content.log.lines(),
+                    content.log.selected_index(),
+                    content.log.subscribed(),
+                    content.filter,
+                    input,
+                    cx,
+                )
+            },
+        ),
+        Section::Daemon => daemon_body(content.socket, content.link, content.stats_summary, cx),
         Section::Rules => rules_body(
             content.rules,
             content.selected_rule,
@@ -1168,20 +1155,35 @@ fn section_body(content: &ShellContent<'_>, cx: &Context<App>) -> Div {
             content.adding,
             cx,
         ),
-        Section::Status => status_body(content.socket, content.tray_state, content.link, muted, cx),
-        Section::Applications => applications_body(
-            content.processes,
-            content.selected_process,
-            content.viewer_message,
-            cx,
-        ),
-        Section::Log => log_body(content.log, cx),
+        Section::Hosts => stats_section(Section::Hosts, content, cx),
+        Section::Applications => {
+            let mut body = applications_body(
+                content.processes,
+                content.selected_process,
+                content.viewer_message,
+                cx,
+            );
+            body = body.child(applications_stats_note(content.stats_procs, muted));
+            if let Some(input) = filter_input {
+                body = body.child(stats_table_body(
+                    Section::Applications,
+                    content.stats_procs,
+                    content.filter,
+                    input,
+                    cx,
+                ));
+            }
+            body
+        }
+        Section::Addresses => stats_section(Section::Addresses, content, cx),
+        Section::Ports => stats_section(Section::Ports, content, cx),
+        Section::Users => stats_section(Section::Users, content, cx),
         Section::Network => {
             network_body(content.link, content.network, content.network_message, cx)
         }
         Section::Traffic => traffic_body(content, cx),
         Section::Profiling => profiling_body(content.profiling, muted),
-        Section::Settings => settings_body(
+        Section::Preferences => settings_body(
             content.socket,
             content.tray_state,
             content.chrome_pref,
@@ -1190,6 +1192,22 @@ fn section_body(content: &ShellContent<'_>, cx: &Context<App>) -> Div {
             cx,
         ),
     }
+}
+
+fn stats_section(section: Section, content: &ShellContent<'_>, cx: &Context<App>) -> Div {
+    let muted = cx.theme().muted_foreground;
+    let Some(input) = content.filter_input else {
+        return div().child(div().text_color(muted).child("filter input unavailable"));
+    };
+    let rows = match section {
+        Section::Hosts => content.stats_hosts,
+        Section::Addresses => content.stats_addrs,
+        Section::Ports => content.stats_ports,
+        Section::Users => content.stats_users,
+        Section::Applications => content.stats_procs,
+        _ => &[],
+    };
+    stats_table_body(section, rows, content.filter, input, cx)
 }
 
 fn traffic_body(content: &ShellContent<'_>, cx: &Context<App>) -> Div {
@@ -1447,48 +1465,4 @@ fn profiling_body(snap: &ProfilingSnapshot, muted: Hsla) -> Div {
 
 fn format_mib(kib: u64) -> String {
     format!("{} MiB ({} KiB)", kib / 1024, kib)
-}
-
-fn status_body(
-    socket: &str,
-    tray_state: TrayState,
-    link: &DaemonLink,
-    muted: Hsla,
-    cx: &Context<App>,
-) -> Div {
-    let body = div()
-        .v_flex()
-        .gap_3()
-        .child(
-            div()
-                .font_semibold()
-                .child(format!("Tray: {}", tray_state.label())),
-        )
-        .child(div().text_color(muted).child(tray_state.guidance()))
-        .child(div().text_color(muted).child(format!("socket = {socket}")));
-
-    match link {
-        DaemonLink::Down { reason } => body.child(
-            div()
-                .px_3()
-                .py_2()
-                .rounded_md()
-                .bg(cx.theme().danger.opacity(0.18))
-                .text_color(cx.theme().danger)
-                .child(format!("last error: {reason}")),
-        ),
-        DaemonLink::Up {
-            status,
-            pending_prompts,
-        } => body
-            .child(div().text_color(muted).child(format!(
-                "enforcement={}  traffic={}  observation={}  ipc={}",
-                status.enforcement, status.traffic, status.observation, status.ipc_version
-            )))
-            .child(
-                div()
-                    .text_color(muted)
-                    .child(format!("pending prompts: {pending_prompts}")),
-            ),
-    }
 }

@@ -9,9 +9,11 @@ use interfire_proto::MAX_LOG_RECORDS_PER_SUBSCRIBER;
 pub const MAX_AUDIT_LINES: usize = MAX_LOG_RECORDS_PER_SUBSCRIBER;
 
 /// Default Log pane viewport height in rows.
+#[cfg(test)]
 pub const DEFAULT_VIEWPORT_ROWS: usize = 24;
 
 /// One visible window into the capped audit buffer.
+#[cfg(test)]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct VisibleLog {
     pub relative_selected: usize,
@@ -63,6 +65,28 @@ impl LogBuffer {
         self.selected = index.min(self.lines.len() - 1);
     }
 
+    /// All buffered lines as `(sequence, message)` pairs (oldest first).
+    #[must_use]
+    pub fn lines(&self) -> Vec<(u64, String)> {
+        self.lines
+            .iter()
+            .filter_map(|line| {
+                let (seq, message) = line.split_once('|')?;
+                let sequence = seq.parse().ok()?;
+                Some((sequence, message.to_owned()))
+            })
+            .collect()
+    }
+
+    #[must_use]
+    pub fn selected_index(&self) -> Option<usize> {
+        if self.lines.is_empty() {
+            None
+        } else {
+            Some(self.selected)
+        }
+    }
+
     fn clamp_selection(&mut self) {
         if self.lines.is_empty() {
             self.selected = 0;
@@ -72,6 +96,7 @@ impl LogBuffer {
     }
 
     /// Visible slice around the selection for the given viewport height.
+    #[cfg(test)]
     #[must_use]
     pub fn visible_window(&self, viewport_rows: usize) -> VisibleLog {
         let total = self.lines.len();
@@ -109,6 +134,7 @@ impl LogBuffer {
     }
 
     /// Selected line for the detail pane, if any.
+    #[cfg(test)]
     #[must_use]
     pub fn selected_line(&self) -> Option<&str> {
         self.lines.get(self.selected).map(String::as_str)

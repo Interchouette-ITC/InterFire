@@ -60,7 +60,7 @@ pub fn prompt_load_fixture() -> PromptLoadFixture {
         prompts,
         alert,
         log,
-        section: Section::Log,
+        section: Section::Events,
         tray_state: TrayState::Prompting,
     }
 }
@@ -89,6 +89,6 @@ mod tests {
         );
         assert!(fixture.alert.can_submit());
         assert_eq!(fixture.tray_state, TrayState::Prompting);
-        assert_eq!(fixture.section, Section::Log);
+        assert_eq!(fixture.section, Section::Events);
     }
 }

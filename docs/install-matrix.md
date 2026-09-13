@@ -31,11 +31,16 @@ On each primary image:
    `nfqueue` / `degraded` after Start; never silent allow while Active).
 7. **Without sudo:** `interfirectl ping` succeeds against
    `/run/interfire/interfired.sock`.
-8. **Without sudo:** `interfire-tui` opens and shows Status (daemon up).
+8. **Without sudo:** `interfire-tui` opens and shows Status (daemon up). Events
+   tab supports `f`/`c` filter; footer shows Connections / Denied / Uptime /
+   Rules / Version when the daemon exposes stats.
 9. Under a graphical session, launch `interfire-ui` (menu or CLI) **without
-   sudo**. Confirm the window opens. Header shows **Daemon / Rules / Traffic**
-   chips (Rules: Paused after install). Tray: StatusNotifierItem visible, **or**
-   Status chrome reports honest degrade when the shell has no SNI.
+   sudo**. Confirm the window opens with the **network statistics shell**:
+   toolbar (Menu / Preferences / Add rule) + horizontal tabs (Events, Daemon,
+   Rules, Hosts, …) + footer counters. Header still shows **Daemon / Rules /
+   Traffic** chips (Rules: Paused after install). Tray: StatusNotifierItem
+   visible, **or** Status chrome reports honest degrade when the shell has no
+   SNI.
 10. With tray present: close the main window; tray remains. Tray **Open
     InterFire** reopens the window; **Quit InterFire UI** exits the process.
 11. Start rules (UI confirm or `interfirectl resume`); confirm

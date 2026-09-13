@@ -20,6 +20,7 @@ mod process;
 mod prompts;
 mod recent;
 mod shared;
+mod stats;
 mod traffic_mode;
 
 #[cfg(test)]

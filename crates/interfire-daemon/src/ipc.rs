@@ -106,7 +106,79 @@ fn dispatch(request: Request, shared: &Shared, stream: &UnixStream) -> Response 
             traffic_mutate(shared, stream, &scope, Some(&direction), false)
         }
         Request::TrafficUnblock { scope } => traffic_mutate(shared, stream, &scope, None, true),
+        Request::StatsSummary => stats_summary(shared),
+        Request::StatsHosts => stats_list(shared, StatsKind::Hosts),
+        Request::StatsProcs => stats_list(shared, StatsKind::Procs),
+        Request::StatsAddrs => stats_list(shared, StatsKind::Addrs),
+        Request::StatsPorts => stats_list(shared, StatsKind::Ports),
+        Request::StatsUsers => stats_list(shared, StatsKind::Users),
     }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum StatsKind {
+    Hosts,
+    Procs,
+    Addrs,
+    Ports,
+    Users,
+}
+
+fn stats_summary(shared: &Shared) -> Response {
+    let Ok(stats) = shared.stats.lock() else {
+        return Response::Error("lock_poisoned");
+    };
+    let rules = shared
+        .rules
+        .lock()
+        .map_or(0, |set| set.rules().len() as u64);
+    let summary = stats.summary(rules);
+    Response::StatsSummary(interfire_proto::StatsSummaryBody {
+        connections: summary.connections,
+        denied: summary.denied,
+        uptime_secs: summary.uptime_secs,
+        rules: summary.rules,
+        version: env!("CARGO_PKG_VERSION").to_owned(),
+        git: option_env!("INTERFIRE_GIT_DESCRIBE")
+            .unwrap_or("unknown")
+            .to_owned(),
+    })
+}
+
+fn stats_list(shared: &Shared, kind: StatsKind) -> Response {
+    let Ok(stats) = shared.stats.lock() else {
+        return Response::Error("lock_poisoned");
+    };
+    let rows: Vec<String> = match kind {
+        StatsKind::Hosts => encode_stats_rows(stats.hosts()),
+        StatsKind::Procs => encode_stats_rows(stats.procs()),
+        StatsKind::Addrs => encode_stats_rows(stats.addrs()),
+        StatsKind::Ports => encode_stats_rows(stats.ports()),
+        StatsKind::Users => encode_stats_rows(stats.users()),
+    };
+    let payload = rows.join(";");
+    match kind {
+        StatsKind::Hosts => Response::StatsHosts(payload),
+        StatsKind::Procs => Response::StatsProcs(payload),
+        StatsKind::Addrs => Response::StatsAddrs(payload),
+        StatsKind::Ports => Response::StatsPorts(payload),
+        StatsKind::Users => Response::StatsUsers(payload),
+    }
+}
+
+fn encode_stats_rows(rows: Vec<(String, crate::stats::StatsCounters)>) -> Vec<String> {
+    rows.into_iter()
+        .map(|(key, counters)| {
+            interfire_proto::StatsRow {
+                key,
+                hits: counters.hits,
+                allow: counters.allow,
+                deny: counters.deny,
+                prompt: counters.prompt,
+            }
+            .encode_row()
+        })
+        .collect()
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -773,6 +845,7 @@ mod tests {
         Audit,
         ProcessCache,
         Recent,
+        Stats,
     }
 
     fn poison(shared: &Arc<Shared>, target: PoisonTarget) {
@@ -800,6 +873,10 @@ mod tests {
             }
             PoisonTarget::Recent => {
                 let _guard = shared.recent.lock().expect("recent lock");
+                panic!("poison mutex");
+            }
+            PoisonTarget::Stats => {
+                let _guard = shared.stats.lock().expect("stats lock");
                 panic!("poison mutex");
             }
         });
@@ -1632,6 +1709,29 @@ mod tests {
     }
 
     #[test]
+    fn stats_lock_poisoned_and_rules_fallback() {
+        let _suite = suite_lock();
+        let (shared, audit_path, rules_path) = test_shared("stats-lock");
+        poison(&shared, PoisonTarget::Stats);
+        assert_eq!(
+            error_code(&exchange("v1 stats-summary\n", &shared)),
+            "lock_poisoned"
+        );
+        assert_eq!(
+            error_code(&exchange("v1 stats-hosts\n", &shared)),
+            "lock_poisoned"
+        );
+        cleanup_paths(&audit_path, &rules_path);
+
+        let (shared, audit_path, rules_path) = test_shared("stats-rules-fallback");
+        poison(&shared, PoisonTarget::Rules);
+        let summary = exchange("v1 stats-summary\n", &shared);
+        assert!(summary.starts_with("v1 stats-summary "));
+        assert!(summary.contains("rules=0"));
+        cleanup_paths(&audit_path, &rules_path);
+    }
+
+    #[test]
     fn persist_answered_rule_accepts_once_scope() {
         let _suite = suite_lock();
         let (shared, audit_path, rules_path) = test_shared("persist-once");
@@ -1647,6 +1747,50 @@ mod tests {
             duplicate: false,
         };
         assert!(persist_answered_rule(&shared, &answered).is_ok());
+        cleanup_paths(&audit_path, &rules_path);
+    }
+
+    #[test]
+    fn stats_summary_and_list_frames() {
+        let _suite = suite_lock();
+        let (shared, audit_path, rules_path) = test_shared("stats-ipc");
+        {
+            let mut stats = shared.stats.lock().expect("stats");
+            stats.record(&crate::stats::ConnectStats {
+                executable: "/usr/bin/curl".into(),
+                host: "example.com".into(),
+                ipv4: "93.184.216.34".into(),
+                port: 443,
+                uid: 1000,
+                verdict: "deny",
+            });
+            stats.record(&crate::stats::ConnectStats {
+                executable: "/usr/bin/curl".into(),
+                host: "example.com".into(),
+                ipv4: "93.184.216.34".into(),
+                port: 443,
+                uid: 1000,
+                verdict: "allow",
+            });
+        }
+        let summary = exchange("v1 stats-summary\n", &shared);
+        assert!(summary.starts_with("v1 stats-summary "));
+        assert!(summary.contains("connections=2"));
+        assert!(summary.contains("denied=1"));
+        assert!(summary.contains("version="));
+        assert!(summary.contains("git="));
+
+        let hosts = exchange("v1 stats-hosts\n", &shared);
+        assert!(hosts.starts_with("v1 stats-hosts "));
+        assert!(hosts.contains("example.com|2|1|1|0"));
+        let procs = exchange("v1 stats-procs\n", &shared);
+        assert!(procs.contains("/usr/bin/curl|2|1|1|0"));
+        let addrs = exchange("v1 stats-addrs\n", &shared);
+        assert!(addrs.contains("93.184.216.34|2|1|1|0"));
+        let ports = exchange("v1 stats-ports\n", &shared);
+        assert!(ports.contains("443|2|1|1|0"));
+        let users = exchange("v1 stats-users\n", &shared);
+        assert!(users.contains("1000|2|1|1|0"));
         cleanup_paths(&audit_path, &rules_path);
     }
 

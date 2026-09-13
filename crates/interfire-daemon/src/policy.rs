@@ -13,6 +13,7 @@ use crate::pending::DestKey;
 use crate::process::{self, AttributionError, ProcessCache, ProcessIdentity};
 use crate::prompts::{EnqueueOutcome, PromptKey, PromptQueue};
 use crate::recent::{RecentConnects, RecentDest};
+use crate::stats::ConnectStats;
 
 /// Outcome of attributing and deciding a connect event.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -21,6 +22,8 @@ pub struct Decision {
     pub packet_verdict: Verdict,
     pub attributed: bool,
     pub prompt_id: Option<u64>,
+    /// Present when the connect was attributed (for stats aggregates).
+    pub stats: Option<ConnectStats>,
 }
 
 /// Attribute via `/proc`, match rules / once-tokens / prompts, and map to a packet verdict.
@@ -58,6 +61,7 @@ pub fn decide(
                 packet_verdict: Verdict::Drop,
                 attributed: false,
                 prompt_id: None,
+                stats: None,
             }
         }
     }
@@ -96,6 +100,7 @@ fn decide_attributed(ctx: AttributedDecide<'_>) -> Decision {
             packet_verdict: Verdict::Accept,
             attributed: true,
             prompt_id: None,
+            stats: Some(connect_stats(identity, event, dns, "allow")),
         };
     }
     if prompts.consume_once_deny(&prompt_key) {
@@ -106,6 +111,7 @@ fn decide_attributed(ctx: AttributedDecide<'_>) -> Decision {
             packet_verdict: Verdict::Drop,
             attributed: true,
             prompt_id: None,
+            stats: Some(connect_stats(identity, event, dns, "deny")),
         };
     }
     let connection = connection_from(identity, event, dns);
@@ -137,6 +143,34 @@ fn decide_attributed(ctx: AttributedDecide<'_>) -> Decision {
         packet_verdict,
         attributed: true,
         prompt_id,
+        stats: Some(ConnectStats {
+            executable,
+            host: connection
+                .hostname
+                .unwrap_or_else(|| Ipv4Addr::from(event.destination_octets()).to_string()),
+            ipv4: Ipv4Addr::from(event.destination_octets()).to_string(),
+            port: event.destination_port,
+            uid: identity.uid,
+            verdict: label,
+        }),
+    }
+}
+
+fn connect_stats(
+    identity: &ProcessIdentity,
+    event: TcpConnectEvent,
+    dns: &mut DnsCache,
+    verdict: &'static str,
+) -> ConnectStats {
+    let connection = connection_from(identity, event, dns);
+    let ipv4 = Ipv4Addr::from(event.destination_octets());
+    ConnectStats {
+        executable: identity.executable.display().to_string(),
+        host: connection.hostname.unwrap_or_else(|| ipv4.to_string()),
+        ipv4: ipv4.to_string(),
+        port: event.destination_port,
+        uid: identity.uid,
+        verdict,
     }
 }
 

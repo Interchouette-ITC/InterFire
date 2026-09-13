@@ -16,13 +16,16 @@ pub fn draw(frame: &mut Frame<'_>, app: &App) {
     let chunks = Layout::vertical([
         Constraint::Length(3),
         Constraint::Min(3),
-        Constraint::Length(1),
+        Constraint::Length(2),
     ])
     .split(frame.area());
     frame.render_widget(tabs_bar(app), chunks[0]);
     draw_body(frame, app, chunks[1]);
     frame.render_widget(
-        Paragraph::new(crate::app::footer_hints(app)).style(palette::muted()),
+        Paragraph::new(vec![
+            Line::from(stats_footer_line(app)),
+            Line::from(crate::app::footer_hints(app)).style(palette::muted()),
+        ]),
         chunks[2],
     );
     match &app.overlay {
@@ -32,6 +35,28 @@ pub fn draw(frame: &mut Frame<'_>, app: &App) {
         Overlay::AnswerPrompt(form) => draw_answer_prompt(frame, form),
         Overlay::Traffic(form) => draw_traffic(frame, *form),
     }
+}
+
+fn stats_footer_line(app: &App) -> String {
+    let filter = app.events_filter.label();
+    app.stats_summary.as_ref().map_or_else(
+        || {
+            format!(
+                "Connections -  ·  Denied -  ·  Uptime -  ·  Rules -  ·  Version -  ·  filter {filter}"
+            )
+        },
+        |summary| {
+            format!(
+                "Connections {}  ·  Denied {}  ·  Uptime {}s  ·  Rules {}  ·  Version {}+{}  ·  filter {filter}",
+                summary.connections,
+                summary.denied,
+                summary.uptime_secs,
+                summary.rules,
+                summary.version,
+                summary.git,
+            )
+        },
+    )
 }
 
 fn tabs_bar(app: &App) -> Paragraph<'static> {
@@ -90,11 +115,11 @@ fn list_widget(app: &App, visible: &crate::app::VisibleList) -> List<'static> {
     } else {
         ""
     };
-    let title = if app.tab == Tab::Log && visible.total > 0 {
+    let title = if app.tab == Tab::Events && visible.total > 0 {
         let shown = visible.start.saturating_add(1);
         let end = visible.start.saturating_add(visible.items.len());
         format!(
-            "Log list{focus}  {shown}-{end}/{total}",
+            "Events list{focus}  {shown}-{end}/{total}",
             total = visible.total
         )
     } else {
@@ -344,6 +369,27 @@ mod tests {
         terminal.draw(|frame| draw(frame, app)).expect("draw frame");
     }
 
+    #[test]
+    fn stats_footer_covers_placeholder_and_summary() {
+        let mut app = App::new("/tmp/interfire-tui-footer.sock".into());
+        assert!(super::stats_footer_line(&app).contains("Connections -"));
+        assert!(super::stats_footer_line(&app).contains("filter All"));
+        app.apply(crate::ipc::IpcEvent::StatsSummary(
+            interfire_proto::StatsSummary {
+                connections: 9,
+                denied: 2,
+                uptime_secs: 60,
+                rules: 3,
+                version: "0.1.0".into(),
+                git: "deadbeef".into(),
+            },
+        ));
+        let line = super::stats_footer_line(&app);
+        assert!(line.contains("Connections 9"));
+        assert!(line.contains("Denied 2"));
+        assert!(line.contains("Version 0.1.0+deadbeef"));
+    }
+
     fn sample_app(mode: Mode) -> App {
         palette::set_mode(mode);
         let mut app = App::new("/tmp/interfire-tui-draw.sock".into());
@@ -412,7 +458,7 @@ mod tests {
     #[test]
     fn draws_list_focus_and_log_window_titles() {
         let mut app = sample_app(Mode::Dark);
-        app.tab = Tab::Log;
+        app.tab = Tab::Events;
         app.pane = Pane::List;
         app.list_selected = 20;
         draw_app(&app);

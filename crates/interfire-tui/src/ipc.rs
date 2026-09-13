@@ -5,7 +5,7 @@ use std::io;
 use std::time::Duration;
 
 use interfire_proto::{
-    AuditStreamRecord, DaemonStatus, MAX_FRAME_BYTES, ProcessRow, PromptRow, RuleRow,
+    AuditStreamRecord, DaemonStatus, MAX_FRAME_BYTES, ProcessRow, PromptRow, RuleRow, StatsSummary,
     parse_error_message,
 };
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -24,6 +24,7 @@ const RECONNECT_BACKOFF: Duration = Duration::from_millis(500);
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum IpcEvent {
     Status(DaemonStatus),
+    StatsSummary(StatsSummary),
     Down(String),
     Audit(AuditStreamRecord),
     SubscriptionReady,
@@ -99,6 +100,11 @@ async fn status_loop(socket: String, tx: mpsc::UnboundedSender<IpcEvent>) {
                     return;
                 }
             }
+        }
+        if let Ok(summary) = fetch_stats_summary(&socket).await
+            && tx.send(IpcEvent::StatsSummary(summary)).is_err()
+        {
+            return;
         }
     }
 }
@@ -260,6 +266,12 @@ async fn fetch_status(socket: &str) -> io::Result<DaemonStatus> {
         .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "malformed_status"))
 }
 
+async fn fetch_stats_summary(socket: &str) -> io::Result<StatsSummary> {
+    let frame = one_shot(socket, "v1 stats-summary\n").await?;
+    StatsSummary::parse(&frame)
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "malformed_stats_summary"))
+}
+
 async fn fetch_rules(socket: &str) -> io::Result<Vec<RuleRow>> {
     let frame = one_shot(socket, "v1 rule-list\n").await?;
     RuleRow::parse_frame(&frame)
@@ -353,8 +365,8 @@ mod tests {
 
     use super::{
         AUDIT_SUBSCRIBER_ID, IpcCommand, IpcEvent, fetch_processes, fetch_prompts, fetch_rules,
-        fetch_status, handle_command, lists_poll_loop, one_shot, spawn, status_loop,
-        subscribe_session,
+        fetch_stats_summary, fetch_status, handle_command, lists_poll_loop, one_shot, spawn,
+        status_loop, subscribe_session,
     };
 
     #[test]
@@ -378,6 +390,53 @@ mod tests {
 
         let processes = fetch_processes(&daemon.path).await.expect("processes");
         assert_eq!(processes[0].pid, 100);
+
+        let summary = fetch_stats_summary(&daemon.path).await.expect("stats");
+        assert_eq!(summary.connections, 5);
+        assert_eq!(summary.denied, 1);
+    }
+
+    #[tokio::test]
+    async fn status_loop_exits_when_stats_summary_send_fails() {
+        let daemon = FakeDaemon::start();
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let task = tokio::spawn(status_loop(daemon.path.clone(), tx));
+        // First frame is status; drop before the following stats-summary send.
+        let _ = time::timeout(Duration::from_secs(3), rx.recv())
+            .await
+            .expect("status wait")
+            .expect("status event");
+        drop(rx);
+        time::timeout(Duration::from_secs(3), task)
+            .await
+            .expect("status_loop exit")
+            .expect("join");
+        daemon.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn status_loop_emits_stats_summary() {
+        let daemon = FakeDaemon::start();
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let task = tokio::spawn(status_loop(daemon.path.clone(), tx));
+        let mut summary = None;
+        for _ in 0..8 {
+            let event = time::timeout(Duration::from_secs(2), rx.recv())
+                .await
+                .expect("stats wait")
+                .expect("ipc event");
+            if let IpcEvent::StatsSummary(value) = event {
+                summary = Some(value);
+                break;
+            }
+        }
+        assert_eq!(summary.expect("stats summary").connections, 5);
+        drop(rx);
+        time::timeout(Duration::from_secs(3), task)
+            .await
+            .expect("status_loop exit after stats")
+            .expect("join");
+        daemon.shutdown().await;
     }
 
     #[tokio::test]
@@ -1107,6 +1166,17 @@ mod tests {
                 } else {
                     Response::Pong.encode()
                 }
+            }
+            line if line.starts_with("v1 stats-summary") => {
+                Response::StatsSummary(interfire_proto::StatsSummaryBody {
+                    connections: 5,
+                    denied: 1,
+                    uptime_secs: 90,
+                    rules: 2,
+                    version: "0.1.0".into(),
+                    git: "test".into(),
+                })
+                .encode()
             }
             _ => Response::Error("unknown").encode(),
         };
