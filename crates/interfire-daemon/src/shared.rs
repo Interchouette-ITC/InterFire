@@ -272,7 +272,7 @@ impl Shared {
         self.bind_label()
     }
 
-    /// Effective traffic label for status (`open` or `machine:…` / `user:…`).
+    /// Effective traffic label for status (`open` or `machine:...` / `user:...`).
     #[must_use]
     pub fn traffic_effective(&self, uid: u32) -> String {
         traffic_mode::effective(self.machine_preference(), self.user_preference(uid), uid).label()
@@ -365,19 +365,6 @@ mod tests {
         let _ = fs::remove_file(audit_path);
         let _ = fs::remove_file(&mode_path);
         let _ = fs::remove_file(&traffic_path);
-        if let Some(dir) = audit_path.parent() {
-            if let Ok(entries) = fs::read_dir(dir) {
-                for entry in entries.flatten() {
-                    let name = entry.file_name();
-                    if name
-                        .to_str()
-                        .is_some_and(|n| n.starts_with("traffic.user."))
-                    {
-                        let _ = fs::remove_file(entry.path());
-                    }
-                }
-            }
-        }
         enforcement_mode::store(&mode_path, mode).expect("mode");
         let store = RulesStore::new(audit_path.with_extension("rules.toml"));
         Shared::new(SharedConfig {
