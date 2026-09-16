@@ -23,9 +23,9 @@ ConfigurationDirectory=interfire
 ConfigurationDirectoryMode=0750
 ReadWritePaths=/run/interfire /var/lib/interfire /etc/interfire
 
-# Bound capabilities for eBPF attach + NFQUEUE (root still required for netfilter)
-CapabilityBoundingSet=CAP_BPF CAP_PERFMON CAP_NET_ADMIN CAP_NET_RAW CAP_SYS_ADMIN
-AmbientCapabilities=CAP_BPF CAP_PERFMON CAP_NET_ADMIN CAP_NET_RAW CAP_SYS_ADMIN
+# Bound capabilities for eBPF attach + NFQUEUE + socket group chown (root still required)
+CapabilityBoundingSet=CAP_BPF CAP_PERFMON CAP_NET_ADMIN CAP_NET_RAW CAP_SYS_ADMIN CAP_CHOWN
+AmbientCapabilities=CAP_BPF CAP_PERFMON CAP_NET_ADMIN CAP_NET_RAW CAP_SYS_ADMIN CAP_CHOWN
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
