@@ -61,9 +61,10 @@ migration notes: [`install-matrix.md`](install-matrix.md).
 ## Capabilities
 
 `interfired.service` bounds ambient capabilities to BPF / perfmon / net admin /
-net raw / sys admin. The process still runs as root so NFQUEUE and eBPF attach
-can work on primary Debian and Pop!\_OS kernels. Missing caps show as
-`observation=degraded` or `enforcement=degraded` on `status`.
+net raw / sys admin / chown. `CAP_CHOWN` is required so the daemon can open the
+IPC socket to group `interfire` after bind. The process still runs as root so
+NFQUEUE and eBPF attach can work on primary Debian and Pop!\_OS kernels. Missing
+caps show as `observation=degraded` or `enforcement=degraded` on `status`.
 
 ## Operator group (unprivileged clients)
 
