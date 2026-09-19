@@ -122,16 +122,31 @@ deny:
 	$(CARGO) deny check
 
 ## rustdoc → `docs/api-rust/` (gitignored except README).
+DOC_CRATE ?= interfired
+
 doc:
 	RUSTDOCFLAGS='-D warnings' $(CARGO) doc --workspace --no-deps --exclude interfire-ui
-	@test -d "$(DOC_OUT)" || (echo "missing $(DOC_OUT)"; exit 1)
+	@test -d "$(DOC_OUT)/$(DOC_CRATE)" || (echo "missing $(DOC_OUT)/$(DOC_CRATE)"; exit 1)
 	@rm -rf docs/api-rust
 	@mkdir -p docs/api-rust
 	@cp -a "$(DOC_OUT)/." docs/api-rust/
 	@printf '%s\n' \
+		'<!DOCTYPE html>' \
+		'<html lang="en">' \
+		'<head>' \
+		'<meta charset="utf-8">' \
+		'<meta http-equiv="refresh" content="0; url=$(DOC_CRATE)/index.html">' \
+		'<title>InterFire - Rust API docs</title>' \
+		'<link rel="canonical" href="$(DOC_CRATE)/index.html">' \
+		'<script>location.replace("$(DOC_CRATE)/index.html");</script>' \
+		'</head>' \
+		'<body><p><a href="$(DOC_CRATE)/index.html">InterFire API documentation</a></p></body>' \
+		'</html>' \
+		> docs/api-rust/index.html
+	@printf '%s\n' \
 		'# Rust API documentation (rustdoc)' \
 		'' \
-		'Generate with `make doc`, then open [`index.html`](index.html).' \
+		'Open [`$(DOC_CRATE)/index.html`]($(DOC_CRATE)/index.html) (root [`index.html`](index.html) redirects there).' \
 		'' \
 		'Workspace crates include `interfire-rules`, `interfire-proto`, `interfire-daemon`' \
 		'(`interfired`), `interfirectl`, `interfire-tui`, and `interfire-ebpf` (loader). The BPF program' \
@@ -139,6 +154,7 @@ doc:
 		'not rustdoc).' \
 		> docs/api-rust/README.md
 	@touch docs/api-rust/.nojekyll
+	@echo "docs/api-rust/ updated - open docs/api-rust/index.html"
 
 doc-open: doc
 	xdg-open docs/api-rust/index.html >/dev/null 2>&1 || open docs/api-rust/index.html >/dev/null 2>&1 || true
