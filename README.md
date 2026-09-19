@@ -1,6 +1,6 @@
 # Rust API documentation (rustdoc)
 
-Generate with `make doc`, then open [`index.html`](index.html).
+Open [`interfired/index.html`](interfired/index.html) (root [`index.html`](index.html) redirects there).
 
 Workspace crates include `interfire-rules`, `interfire-proto`, `interfire-daemon`
 (`interfired`), `interfirectl`, `interfire-tui`, and `interfire-ebpf` (loader). The BPF program
