@@ -714,6 +714,8 @@ mod tests {
                         ReadLineStep::Retry
                     }
                 }
+                // Parallel test suites often interrupt blocking reads with SIGCHLD.
+                Err(error) if error.kind() == io::ErrorKind::Interrupted => ReadLineStep::Retry,
                 Err(error) => {
                     classify_read_line(Err(error), String::new(), Instant::now() >= deadline)
                 }
@@ -779,12 +781,18 @@ mod tests {
 
     #[test]
     fn read_line_within_times_out_when_peer_silent() {
-        let (mut reader, _keeper) = StdUnixStream::pair().expect("pair");
-        let error = read_line_within(&mut reader, Duration::from_millis(120)).expect_err("timeout");
-        assert!(matches!(
-            error.kind(),
-            io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
-        ));
+        let (mut reader, writer) = StdUnixStream::pair().expect("pair");
+        let error = read_line_within(&mut reader, Duration::from_millis(200)).expect_err("timeout");
+        // Keep the peer half open until after the wait (avoid early-drop of `_` bindings).
+        drop(writer);
+        assert!(
+            matches!(
+                error.kind(),
+                io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
+            ),
+            "unexpected {:?}: {error}",
+            error.kind()
+        );
     }
 
     #[test]
