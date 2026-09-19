@@ -89,7 +89,9 @@ impl TrayState {
         match self {
             Self::Protected => crate::brand::icon_protected_png(),
             Self::Prompting => crate::brand::icon_prompting_png(),
-            Self::Degraded | Self::Paused | Self::Blocked => crate::brand::icon_degraded_png(),
+            Self::Degraded => crate::brand::icon_degraded_png(),
+            Self::Paused => crate::brand::icon_paused_png(),
+            Self::Blocked => crate::brand::icon_blocked_png(),
             Self::Unavailable => crate::brand::icon_unavailable_png(),
         }
     }

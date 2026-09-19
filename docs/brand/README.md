@@ -43,8 +43,16 @@ Do not mutate `assets/`. Do not pad a small master into a larger empty canvas.
 - Desktop header: `logo-banner-desktop.png`
 - Mobile header: `logo-banner-mobile.png` or `icon-app-phoenix-128.png`
 - Favicon: `favicon-32.png` (from `icon-app-phoenix`)
-- Tray unavailable: `icon-tray-unavailable-64.png` (muted orange; dark-panel readable)
-- Desktop menu (`Icon=interfire`): hicolor installs of `icon-app-phoenix-*` / favicons
+- Tray protected: `icon-app-phoenix-64.png` (orange / on)
+- Tray prompting: `icon-app-phoenix-gradient-64.png`
+- Tray paused: `icon-tray-paused-64.png` (grey / off)
+- Tray degraded: `icon-tray-degraded-64.png` (muted warning)
+- Tray blocked: `icon-tray-blocked-64.png` (danger cue)
+- Tray unavailable: `icon-tray-unavailable-64.png` (muted; dark-panel readable)
+- Desktop menu (`Icon=interfire`): hicolor installs of transparent
+  `icon-app-phoenix-{16,32,48,64,128,256}.png` (no black square surround)
+
+Regenerate with `scripts/regen-brand-icons.py` (Pillow) after master edits.
 
 Tagline: **FIREWALL · SECURE · CONTROL** (Linux-first Rust application firewall).
 

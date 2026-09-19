@@ -66,19 +66,21 @@ impl Section {
         }
     }
 
-    /// Whether the shared filter strip applies to this section.
-    #[cfg(test)]
+    /// Whether the shared bottom filter bar applies to this section.
     #[must_use]
     pub const fn uses_filter(self) -> bool {
         matches!(
             self,
-            Self::Events
-                | Self::Rules
-                | Self::Hosts
-                | Self::Applications
-                | Self::Addresses
-                | Self::Ports
-                | Self::Users
+            Self::Events | Self::Rules | Self::Hosts | Self::Addresses | Self::Ports | Self::Users
+        )
+    }
+
+    /// Whether this section is a secondary (app-menu) surface.
+    #[must_use]
+    pub const fn is_secondary(self) -> bool {
+        matches!(
+            self,
+            Self::Traffic | Self::Network | Self::Profiling | Self::Preferences
         )
     }
 }
@@ -95,7 +97,10 @@ mod tests {
         assert_eq!(Section::Events.label(), "Events");
         assert_eq!(Section::Preferences.label(), "Preferences");
         assert!(Section::Events.uses_filter());
+        assert!(Section::Rules.uses_filter());
         assert!(!Section::Daemon.uses_filter());
+        assert!(!Section::Applications.uses_filter());
+        assert!(Section::Traffic.is_secondary());
         assert_eq!(Section::ALL.len(), 12);
     }
 }

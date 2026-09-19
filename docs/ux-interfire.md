@@ -24,12 +24,16 @@ Primary desktop targets: Debian (stable) with GNOME, and Pop!_OS. Tray uses
 StatusNotifierItem; when the shell does not expose SNI, Status chrome still
 reports state.
 
+GPUI does not provide an OS menubar (GNOME/GTK). The desktop app uses
+**in-window** dropdown menus and selects from the GPUI component kit. The Linux
+tray keeps a real StatusNotifierItem context menu.
+
 ## Design references (structure only)
 
 - Classic **personal firewall** tray + connection alert: short decision path
   (program, destination, safe choice).
 - Network **statistics shell** chrome: top toolbar, horizontal primary tabs,
-  dense tables, shared filter strip, rich footer. InterFire is not a gateway
+  dense tables, shared filter bar, rich footer. InterFire is not a gateway
   product: no NAT, DHCP, VPN, content filter, licensing tree, or multi-node
   mesh. Private manuals/screenshots stay out of the application tree; shipped
   text never embeds proprietary bitmaps.
@@ -61,15 +65,28 @@ desktop contract at a thinner parity.
 
 ## Desktop contract
 
-### Tray states
+### Color and control semantics
+
+- **On / active / protected / running / rules active:** phoenix orange accent.
+- **Off / paused / inactive:** muted grey (not bright orange).
+- **Unavailable / deny / blocked warning:** danger red status pill (not a
+  primary action button).
+- Daemon and Rules header actions use **play** (start/resume) and **pause**
+  (stop/pause) icon buttons plus a short label.
+
+### Tray states and icons
 
 | State | Tray | Main window | Enforcement |
 | --- | --- | --- | --- |
-| Protected | enabled | normal status | rules and prompt policy active |
-| Prompting | attention state | pending alert count | bounded prompt queue active |
-| Degraded | warning state | reason and recovery action | queue or observation degraded |
-| Paused | warning state | Firewall: Paused + Start | owned table absent; network unfiltered |
-| Daemon unavailable | muted orange tray warning | reconnect guidance | UI makes no policy claim |
+| Protected | orange / on phoenix | normal status | rules and prompt policy active |
+| Prompting | attention / gradient | pending alert count | bounded prompt queue active |
+| Degraded | muted warning phoenix | reason and recovery action | queue or observation degraded |
+| Paused | grey / muted phoenix | Rules: Paused + play | owned table absent; network unfiltered |
+| Blocked | distinct blocked cue | Traffic panel guidance | traffic kill-switch active |
+| Daemon unavailable | muted grey/orange warning | reconnect guidance | UI makes no policy claim |
+
+GNOME / hicolor launcher icons use a **transparent** canvas (no black square
+surround around the phoenix).
 
 ### Connection alert
 
@@ -80,20 +97,23 @@ desktop contract at a thinner parity.
 
 ### Main window (network statistics shell)
 
-Top toolbar + horizontal primary tabs (left nav is retired as primary chrome):
+Top toolbar + horizontal primary tabs; filter bar sits **below** content on list
+tabs (above the footer):
 
 ```text
-Toolbar: App menu | Preferences | Add rule | Rules Active/Paused | Daemon | Traffic
+Toolbar: App menu ▾ | Add rule | Daemon ▶/❚❚ | Rules ▶/❚❚ | Traffic | state pill
 Tabs:    Events | Daemon | Rules | Hosts | Applications | Addresses | Ports | Users
-         (+ filter strip on list tabs)
+Content: section body
+Filter:  search | verdict Select | limit Select | Clear | shown/total   (list tabs)
 Footer:  Connections | Denied | Uptime | Rules | Version (+ git)
 ```
 
-**App menu:** Open / Quit / Preferences / About (crate version + short git
-describe) / Traffic… / Network… / Profiling….
+**App menu** (in-window dropdown): Open / Preferences / Traffic… / Network… /
+Profiling… / About (crate version + short git describe) / Quit.
 
-**Preferences:** socket path, tray label, theme, and prompt defaults when the
-daemon exposes them (English labels).
+There is **no** duplicate Preferences chip in the toolbar; Preferences opens a
+**modal** (theme now; socket path, tray label, and prompt defaults when the
+daemon exposes them). English labels only.
 
 **Verdicts:** `allow` | `deny` | `prompt` only. Filter uses those plus **All**.
 There is no reject verdict.
@@ -107,42 +127,54 @@ traffic, rules). No remote node mesh.
 **Events:** capped audit / connect stream (formerly Log).
 
 **Rules:** authoritative editable policy view (dense table); Add rule from the
-toolbar.
+toolbar. List filter bar applies on Rules like other list tabs.
 
-**Hosts / Applications / Addresses / Ports / Users:** bounded in-memory
-aggregates from the daemon (hit counts keyed by host, executable, dest IP,
-dest port, UID), updated on each verdicted connect, via read-only stats IPC.
+**Hosts / Addresses / Ports / Users:** bounded in-memory aggregates from the
+daemon (hit counts), via read-only stats IPC, with the shared bottom filter bar.
 
-**Applications** also keeps process identity detail (full path, PID + start
-ticks, cmdline, uid, recent dest:port). Optional "Open in …" launches host
-tools on `PATH` (`htop`, `atop`, `btop`, `top`) when available.
+**Applications:** process identity detail (full path, PID + start ticks, cmdline,
+uid, recent dest:port). Optional "Open in …" launches host tools on `PATH`
+(`htop`, `atop`, `btop`, `top`) when available. Hit-count aggregates for
+executables live under Hosts-class stats surfaces, not a second stacked filter
+table on the same tab.
 
 **Traffic / Network / Profiling:** secondary surfaces from the app menu (not
-eight more primary tabs). Network shows InterFire-owned nftables state.
-Profiling shows live daemon and `interfire-ui` RSS/CPU.
+eight more primary tabs). Opening them shows a clear secondary title in content
+with **no** false primary-tab selection. Network shows InterFire-owned nftables
+state. Profiling shows live daemon and `interfire-ui` RSS/CPU.
 
 Desktop prompts stay alert-first; the TUI retains a Prompts tab.
 
-### Filter strip (list tabs)
+### Filter bar (list tabs)
+
+Placed at the **bottom** of the shell (above the footer), not above the table:
 
 - Text filter (path, host, IP, port, user).
-- Verdict filter: **All | Allow | Deny | Prompt** (not Reject).
-- Result limit: **50 | 100 | 200 | 300 | All | Custom** (All/Custom hard-capped,
-  e.g. 2000, matching audit subscriber limits).
+- Verdict filter as a **Select**: All | Allow | Deny | Prompt (not Reject).
+- Result limit as a **Select**: 50 | 100 | 200 | 300 | All | Custom (All/Custom
+  hard-capped, e.g. 2000, matching audit subscriber limits). Custom opens a
+  numeric entry (not a silent hardcode).
 - **Clear** resets filter and limit to defaults.
 - Show `shown / total` result counts.
 
 ### Operator controls (header and tray)
 
-Three orthogonal controls in the header (summary chips only):
+Three orthogonal controls in the header (summary + play/pause or open):
 
 | Control | Summary states | Action |
 | --- | --- | --- |
-| Daemon | Running / Stopped | Stop/Start via `pkexec systemctl` (polkit) |
-| Rules | Active / Paused | `v1 pause` / `v1 resume` (group `interfire`) |
-| Traffic | Open / User… / Machine… | Opens the Traffic panel (detail below) |
+| Daemon | Running / Stopped | Pause icon stops / Play icon starts via `pkexec systemctl` (polkit) |
+| Rules | Active / Paused | Pause / Play map to `v1 pause` / `v1 resume` (group `interfire`) |
+| Traffic | Open / User… / Machine… | Opens the Traffic panel |
 
-**Traffic panel** (GPUI **Traffic…** from app menu; tray **Traffic…**): choose scope (**This user** or **Entire machine**) and direction (**Outbound** / **Inbound** / **All**), then Block or Unblock. Machine actions confirm and run `pkexec interfirectl …`. Stored machine and user preferences persist independently; machine block outranks user without clearing the user preference. Effective filter when both open follows Rules (queue or absent). User inbound only affects sockets owned by that UID. Loopback is never queued or dropped; established/related are accepted; new TCP only.
+**Traffic panel** (GPUI **Traffic…** from app menu; tray **Traffic…**): choose
+scope (**This user** or **Entire machine**) and direction (**Outbound** /
+**Inbound** / **All**), then Block or Unblock. Machine actions confirm and run
+`pkexec interfirectl …`. Stored machine and user preferences persist
+independently; machine block outranks user without clearing the user
+preference. Effective filter when both open follows Rules (queue or absent).
+User inbound only affects sockets owned by that UID. Loopback is never queued or
+dropped; established/related are accepted; new TCP only.
 
 **CLI:**
 

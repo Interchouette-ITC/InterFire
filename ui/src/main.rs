@@ -10,6 +10,7 @@ mod app;
 mod applications_view;
 mod audit_host;
 mod brand;
+mod chrome;
 mod confirm_queue;
 mod filter;
 mod ipc_poll;
