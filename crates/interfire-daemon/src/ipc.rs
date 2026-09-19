@@ -674,6 +674,7 @@ mod tests {
                 "socket closed before line",
             ))),
             Ok(_) => ReadLineStep::Done(Ok(line)),
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => ReadLineStep::Retry,
             Err(error)
                 if matches!(
                     error.kind(),
@@ -702,10 +703,7 @@ mod tests {
         let mut byte = [0_u8; 1];
         loop {
             let step = match stream.read(&mut byte) {
-                Ok(0) => ReadLineStep::Done(Err(io::Error::new(
-                    io::ErrorKind::UnexpectedEof,
-                    "socket closed before line",
-                ))),
+                Ok(0) => classify_read_line(Ok(0), String::new(), Instant::now() >= deadline),
                 Ok(_) => {
                     line.push(byte[0]);
                     if byte[0] == b'\n' {
@@ -714,8 +712,6 @@ mod tests {
                         ReadLineStep::Retry
                     }
                 }
-                // Parallel test suites often interrupt blocking reads with SIGCHLD.
-                Err(error) if error.kind() == io::ErrorKind::Interrupted => ReadLineStep::Retry,
                 Err(error) => {
                     classify_read_line(Err(error), String::new(), Instant::now() >= deadline)
                 }
@@ -746,6 +742,23 @@ mod tests {
                 Err(io::Error::new(io::ErrorKind::WouldBlock, "wait")),
                 String::new(),
                 false,
+            ),
+            ReadLineStep::Retry
+        ));
+
+        assert!(matches!(
+            classify_read_line(
+                Err(io::Error::new(io::ErrorKind::Interrupted, "sigchld")),
+                String::new(),
+                false,
+            ),
+            ReadLineStep::Retry
+        ));
+        assert!(matches!(
+            classify_read_line(
+                Err(io::Error::new(io::ErrorKind::Interrupted, "sigchld")),
+                String::new(),
+                true,
             ),
             ReadLineStep::Retry
         ));
@@ -785,14 +798,10 @@ mod tests {
         let error = read_line_within(&mut reader, Duration::from_millis(200)).expect_err("timeout");
         // Keep the peer half open until after the wait (avoid early-drop of `_` bindings).
         drop(writer);
-        assert!(
-            matches!(
-                error.kind(),
-                io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
-            ),
-            "unexpected {:?}: {error}",
-            error.kind()
-        );
+        assert!(matches!(
+            error.kind(),
+            io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
+        ));
     }
 
     #[test]
