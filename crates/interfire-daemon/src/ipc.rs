@@ -630,7 +630,7 @@ pub fn peer_may_mutate(stream: &UnixStream) -> bool {
 #[cfg(test)]
 mod tests {
     use std::fs;
-    use std::io::{BufRead, BufReader, Write};
+    use std::io::{BufRead, BufReader, Read, Write};
     use std::net::Ipv4Addr;
     use std::os::unix::net::UnixStream as StdUnixStream;
     use std::path::PathBuf;
@@ -674,6 +674,7 @@ mod tests {
                 "socket closed before line",
             ))),
             Ok(_) => ReadLineStep::Done(Ok(line)),
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => ReadLineStep::Retry,
             Err(error)
                 if matches!(
                     error.kind(),
@@ -692,17 +693,29 @@ mod tests {
 
     /// Read one line, retrying `WouldBlock` / `TimedOut` until `budget` elapses.
     ///
+    /// Reads one byte at a time so a disposable [`BufReader`] cannot consume (and
+    /// then drop) a pipelined second line that already sat in the socket buffer.
     /// Audit subscribe backlog is written on a helper thread after `v1 subscribed`.
     fn read_line_within(stream: &mut StdUnixStream, budget: Duration) -> io::Result<String> {
         let deadline = Instant::now() + budget;
         stream.set_read_timeout(Some(Duration::from_millis(50)))?;
+        let mut line = Vec::new();
+        let mut byte = [0_u8; 1];
         loop {
-            let mut line = String::new();
-            let step = classify_read_line(
-                BufReader::new(&mut *stream).read_line(&mut line),
-                line,
-                Instant::now() >= deadline,
-            );
+            let step = match stream.read(&mut byte) {
+                Ok(0) => classify_read_line(Ok(0), String::new(), Instant::now() >= deadline),
+                Ok(_) => {
+                    line.push(byte[0]);
+                    if byte[0] == b'\n' {
+                        ReadLineStep::Done(Ok(String::from_utf8_lossy(&line).into_owned()))
+                    } else {
+                        ReadLineStep::Retry
+                    }
+                }
+                Err(error) => {
+                    classify_read_line(Err(error), String::new(), Instant::now() >= deadline)
+                }
+            };
             match step {
                 ReadLineStep::Done(result) => return result,
                 ReadLineStep::Retry => {}
@@ -729,6 +742,23 @@ mod tests {
                 Err(io::Error::new(io::ErrorKind::WouldBlock, "wait")),
                 String::new(),
                 false,
+            ),
+            ReadLineStep::Retry
+        ));
+
+        assert!(matches!(
+            classify_read_line(
+                Err(io::Error::new(io::ErrorKind::Interrupted, "sigchld")),
+                String::new(),
+                false,
+            ),
+            ReadLineStep::Retry
+        ));
+        assert!(matches!(
+            classify_read_line(
+                Err(io::Error::new(io::ErrorKind::Interrupted, "sigchld")),
+                String::new(),
+                true,
             ),
             ReadLineStep::Retry
         ));
@@ -764,12 +794,31 @@ mod tests {
 
     #[test]
     fn read_line_within_times_out_when_peer_silent() {
-        let (mut reader, _keeper) = StdUnixStream::pair().expect("pair");
-        let error = read_line_within(&mut reader, Duration::from_millis(120)).expect_err("timeout");
+        let (mut reader, writer) = StdUnixStream::pair().expect("pair");
+        let error = read_line_within(&mut reader, Duration::from_millis(200)).expect_err("timeout");
+        // Keep the peer half open until after the wait (avoid early-drop of `_` bindings).
+        drop(writer);
         assert!(matches!(
             error.kind(),
             io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
         ));
+    }
+
+    #[test]
+    fn read_line_within_keeps_pipelined_second_line() {
+        let (mut reader, mut writer) = StdUnixStream::pair().expect("pair");
+        writer
+            .write_all(b"first\nsecond\n")
+            .expect("write both lines");
+        drop(writer);
+        assert_eq!(
+            read_line_within(&mut reader, Duration::from_secs(1)).expect("first"),
+            "first\n"
+        );
+        assert_eq!(
+            read_line_within(&mut reader, Duration::from_secs(1)).expect("second"),
+            "second\n"
+        );
     }
 
     fn temp_paths(tag: &str) -> (PathBuf, PathBuf) {
@@ -1302,10 +1351,9 @@ mod tests {
             .write_all(b"v1 audit-subscribe ui since=2\n")
             .expect("write");
         handle(server, &shared).expect("handle");
-        let mut line = String::new();
-        BufReader::new(&mut client)
-            .read_line(&mut line)
-            .expect("subscribed");
+        // Do not use a one-shot BufReader here: subscribed + backlog often arrive
+        // together; dropping the buffer would lose the backlog frame.
+        let mut line = read_line_within(&mut client, Duration::from_secs(2)).expect("subscribed");
         assert_eq!(line.trim(), "v1 subscribed ui");
         line = read_line_within(&mut client, Duration::from_secs(2)).expect("backlog");
         assert!(line.contains("before"), "backlog frame: {line:?}");

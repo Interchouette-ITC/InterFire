@@ -1,4 +1,4 @@
-//! Aggregate stats tables and shared filter strip chrome.
+//! Aggregate stats tables and shared bottom filter bar chrome.
 #![allow(clippy::wildcard_imports)]
 #![forbid(unsafe_code)]
 
@@ -9,120 +9,113 @@ use gpui_kit::*;
 use interfire_proto::{StatsRow, StatsSummary};
 
 use crate::app::App;
-use crate::filter::{ListFilter, ResultLimit, VerdictFilter};
+use crate::chrome;
+use crate::filter::{ListFilter, ResultLimit};
 use crate::section::Section;
 use crate::tray::DaemonLink;
 
 /// ASCII placeholder when a stats cell or chrome label has no value yet.
 pub const EMPTY_CELL: &str = "-";
 
-/// Filter strip for list tabs (text, verdict, limit, clear, shown/total).
-pub fn filter_strip(
-    filter: &ListFilter,
-    filter_input: &Entity<gpui_kit::component::input::InputState>,
-    shown: usize,
-    total: usize,
-    cx: &Context<App>,
-) -> impl IntoElement {
+/// Inputs for the shared bottom filter bar.
+pub struct FilterBarView<'a> {
+    pub filter: &'a ListFilter,
+    pub filter_input: &'a Entity<gpui_kit::component::input::InputState>,
+    pub shown: usize,
+    pub total: usize,
+    pub verdict_open: bool,
+    pub limit_open: bool,
+    pub custom_limit_input: Option<&'a Entity<gpui_kit::component::input::InputState>>,
+}
+
+/// Bottom filter bar for list tabs (search, selects, clear, counts).
+pub fn filter_bar(view: &FilterBarView<'_>, cx: &Context<App>) -> impl IntoElement {
     let muted = cx.theme().muted_foreground;
     let mut row = div()
-        .id("filter-strip")
+        .id("filter-bar")
         .flex()
         .flex_wrap()
-        .items_center()
+        .items_end()
         .gap_2()
-        .child(div().w(px(220.)).child(Input::new(filter_input)));
-    for verdict in VerdictFilter::ALL {
-        let selected = filter.verdict == verdict;
-        row = row.child(crate::rules_view::action_chip(
-            match verdict {
-                VerdictFilter::All => "filter-verdict-all",
-                VerdictFilter::Allow => "filter-verdict-allow",
-                VerdictFilter::Deny => "filter-verdict-deny",
-                VerdictFilter::Prompt => "filter-verdict-prompt",
-            },
-            verdict.label(),
-            true,
-            selected,
+        .pt_2()
+        .border_t_1()
+        .border_color(cx.theme().border)
+        .child(div().w(px(220.)).child(Input::new(view.filter_input)))
+        .child(chrome::verdict_select(
+            view.filter.verdict,
+            view.verdict_open,
             cx,
-            match verdict {
-                VerdictFilter::All => App::set_filter_verdict_all,
-                VerdictFilter::Allow => App::set_filter_verdict_allow,
-                VerdictFilter::Deny => App::set_filter_verdict_deny,
-                VerdictFilter::Prompt => App::set_filter_verdict_prompt,
-            },
-        ));
+        ))
+        .child(chrome::limit_select(view.filter.limit, view.limit_open, cx));
+    if matches!(view.filter.limit, ResultLimit::Custom(_))
+        && let Some(input) = view.custom_limit_input
+    {
+        row = row
+            .child(div().w(px(88.)).child(Input::new(input)))
+            .child(chrome::secondary_btn(
+                "filter-apply-custom",
+                "Apply",
+                true,
+                cx,
+                App::apply_custom_limit,
+            ));
     }
-    for preset in ResultLimit::PRESETS {
-        let selected = matches!(filter.limit, ResultLimit::Preset(n) if n == preset);
-        row = row.child(limit_chip(preset, selected, cx));
-    }
-    row = row
-        .child(crate::rules_view::action_chip(
-            "filter-limit-all",
-            "All",
-            true,
-            matches!(filter.limit, ResultLimit::All),
-            cx,
-            App::set_filter_limit_all,
-        ))
-        .child(crate::rules_view::action_chip(
-            "filter-limit-custom",
-            "Custom",
-            true,
-            matches!(filter.limit, ResultLimit::Custom(_)),
-            cx,
-            App::set_filter_limit_custom,
-        ))
-        .child(crate::rules_view::action_chip(
-            "filter-clear",
-            "Clear",
-            true,
-            false,
-            cx,
-            App::clear_list_filter,
-        ))
-        .child(div().text_xs().text_color(muted).child(format!(
-            "{shown} / {total} · limit {}",
-            filter.limit.label()
-        )));
-    row
+    row.child(chrome::ghost_btn(
+        "filter-clear",
+        "Clear",
+        true,
+        cx,
+        App::clear_list_filter,
+    ))
+    .child(div().text_xs().text_color(muted).child(format!(
+        "{} / {} · limit {}",
+        view.shown,
+        view.total,
+        view.filter.limit.label()
+    )))
 }
 
-fn limit_chip(preset: usize, selected: bool, cx: &Context<App>) -> impl IntoElement {
-    let id: &'static str = match preset {
-        50 => "filter-limit-50",
-        100 => "filter-limit-100",
-        200 => "filter-limit-200",
-        300 => "filter-limit-300",
-        _ => "filter-limit-custom",
-    };
-    let label: &'static str = match preset {
-        50 => "50",
-        100 => "100",
-        200 => "200",
-        300 => "300",
-        _ => "?",
-    };
-    let handler: fn(&mut App, &mut Window, &mut Context<App>) = if preset == 50 {
-        App::set_filter_limit_50
-    } else if preset == 200 {
-        App::set_filter_limit_200
-    } else if preset == 300 {
-        App::set_filter_limit_300
-    } else {
-        App::set_filter_limit_100
-    };
-    crate::rules_view::action_chip(id, label, true, selected, cx, handler)
+/// Shown/total for Events after filter.
+#[must_use]
+pub fn events_filter_counts(lines: &[(u64, String)], filter: &ListFilter) -> (usize, usize) {
+    let (shown, total) = filter.apply_rows(lines.to_vec(), |(_seq, message)| {
+        let verdict = extract_outcome(message).unwrap_or("");
+        (message.clone(), verdict.to_owned())
+    });
+    (shown.len(), total)
 }
 
-/// Events table (filtered audit stream).
+/// Shown/total for stats rows after filter.
+#[must_use]
+pub fn stats_filter_counts(rows: &[StatsRow], filter: &ListFilter) -> (usize, usize) {
+    let (shown, total) = filter.apply_rows(rows.to_vec(), |row| {
+        let verdict = dominant_verdict(row);
+        (row.key.clone(), verdict)
+    });
+    (shown.len(), total)
+}
+
+/// Shown/total for rules after filter.
+#[must_use]
+pub fn rules_filter_counts(
+    rules: &[interfire_proto::RuleRow],
+    filter: &ListFilter,
+) -> (usize, usize) {
+    let (shown, total) = filter.apply_rows(rules.to_vec(), |rule| {
+        (
+            format!("{} {} {}", rule.executable, rule.port, rule.verdict),
+            rule.verdict.clone(),
+        )
+    });
+    (shown.len(), total)
+}
+
+/// Events table (filtered audit stream; filter bar is shell-owned).
 pub fn events_body(
     lines: &[(u64, String)],
     selected: Option<usize>,
     subscribed: bool,
     filter: &ListFilter,
-    filter_input: &Entity<gpui_kit::component::input::InputState>,
     cx: &Context<App>,
 ) -> Div {
     let muted = cx.theme().muted_foreground;
@@ -146,7 +139,6 @@ pub fn events_body(
     let body = div()
         .v_flex()
         .gap_2()
-        .child(filter_strip(filter, filter_input, shown.len(), total, cx))
         .child(div().text_xs().text_color(muted).child(status))
         .child(
             div()
@@ -255,7 +247,9 @@ pub fn daemon_body(
             div()
                 .text_xs()
                 .text_color(muted)
-                .child("socket  version  git  uptime  enforcement  traffic  connections  denied  rules"),
+                .child(
+                    "socket  version  git  uptime  enforcement  traffic  connections  denied  rules",
+                ),
         )
         .child(
             div()
@@ -267,12 +261,11 @@ pub fn daemon_body(
         )
 }
 
-/// Aggregate stats table for Hosts / Addresses / Ports / Users (and Applications hits).
+/// Aggregate stats table for Hosts / Addresses / Ports / Users.
 pub fn stats_table_body(
     section: Section,
     rows: &[StatsRow],
     filter: &ListFilter,
-    filter_input: &Entity<gpui_kit::component::input::InputState>,
     cx: &Context<App>,
 ) -> Div {
     let muted = cx.theme().muted_foreground;
@@ -291,13 +284,11 @@ pub fn stats_table_body(
     let body = div()
         .v_flex()
         .gap_2()
-        .child(filter_strip(filter, filter_input, shown.len(), total, cx))
-        .child(
-            div()
-                .text_xs()
-                .text_color(muted)
-                .child(format!("{key_label}  hits  allow  deny  prompt")),
-        );
+        .child(div().text_xs().text_color(muted).child(format!(
+            "{key_label}  hits  allow  deny  prompt  ·  {0} of {1}",
+            shown.len(),
+            total
+        )));
     if shown.is_empty() {
         return body.child(div().text_color(muted).child("no rows match filter"));
     }
@@ -317,14 +308,6 @@ pub fn stats_table_body(
         );
     }
     body.child(table)
-}
-
-/// Applications: process list note plus aggregate executable hits.
-pub fn applications_stats_note(rows: &[StatsRow], muted: Hsla) -> impl IntoElement {
-    div().text_xs().text_color(muted).child(format!(
-        "aggregate executables observed: {} (same stats store as Hosts/Ports)",
-        rows.len()
-    ))
 }
 
 fn dominant_verdict(row: &StatsRow) -> String {

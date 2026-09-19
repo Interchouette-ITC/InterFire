@@ -60,18 +60,11 @@ mkdir -p "${stage}/etc/xdg/autostart"
 install -m 0644 packaging/debian/interfire-autostart.desktop \
   "${stage}/etc/xdg/autostart/interfire.desktop"
 
-# Brand icons for the applications menu (same family as Protected tray).
+# Brand icons for the applications menu (transparent canvas phoenix).
 for size in 16 32 48 64 128 256; do
   icon_dir="${stage}/usr/share/icons/hicolor/${size}x${size}/apps"
   mkdir -p "${icon_dir}"
-  if [ "${size}" = "16" ]; then
-    src="docs/brand/favicon-16.png"
-  elif [ "${size}" = "32" ]; then
-    src="docs/brand/favicon-32.png"
-  else
-    src="docs/brand/icon-app-phoenix-${size}.png"
-  fi
-  install -m 0644 "${src}" "${icon_dir}/interfire.png"
+  install -m 0644 "docs/brand/icon-app-phoenix-${size}.png" "${icon_dir}/interfire.png"
 done
 
 {

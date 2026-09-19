@@ -9,6 +9,8 @@ use gpui_kit::*;
 use interfire_proto::RuleRow;
 
 use crate::app::{AddRuleFormState, App};
+use crate::chrome;
+use crate::filter::ListFilter;
 use crate::rules::RuleVerdict;
 
 pub fn rules_body(
@@ -16,9 +18,16 @@ pub fn rules_body(
     selected_id: Option<u64>,
     message: Option<&str>,
     adding: bool,
+    filter: &ListFilter,
     cx: &Context<App>,
 ) -> Div {
     let muted = cx.theme().muted_foreground;
+    let (shown, total) = filter.apply_rows(rules.to_vec(), |rule| {
+        (
+            format!("{} {} {}", rule.executable, rule.port, rule.verdict),
+            rule.verdict.clone(),
+        )
+    });
     let mut body = div()
         .v_flex()
         .gap_2()
@@ -26,30 +35,27 @@ pub fn rules_body(
             div()
                 .flex()
                 .gap_2()
-                .child(action_chip(
+                .child(chrome::primary_btn(
                     "add-rule",
                     "Add rule",
                     !adding,
-                    true,
                     cx,
                     App::begin_add_rule,
                 ))
-                .child(action_chip(
+                .child(chrome::secondary_btn(
                     "delete-rule",
                     "Delete selected",
                     selected_id.is_some() && !adding,
-                    false,
                     cx,
                     App::delete_selected_rule,
                 )),
         )
-        .child(
-            div()
-                .text_xs()
-                .text_color(muted)
-                .child("id  path  verdict  port"),
-        )
-        .child(rules_table(rules, selected_id, cx));
+        .child(div().text_xs().text_color(muted).child(format!(
+            "id  path  verdict  port  ·  {} of {}",
+            shown.len(),
+            total
+        )))
+        .child(rules_table(&shown, selected_id, cx));
 
     if let Some(id) = selected_id
         && let Some(rule) = rules.iter().find(|row| row.id == id)

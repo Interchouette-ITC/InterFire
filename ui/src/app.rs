@@ -14,7 +14,7 @@ use crate::alert::{AlertScope, AlertVerdict, ConnectionAlert};
 use crate::alert_view::alert_overlay;
 use crate::applications_view::{ProcessViewer, applications_body, try_open_viewer};
 use crate::audit_host::{AuditEvent, AuditHost};
-use crate::brand;
+use crate::chrome;
 use crate::confirm_queue::ConfirmKind;
 use crate::filter::{ListFilter, ResultLimit, VerdictFilter};
 use crate::ipc_poll;
@@ -26,9 +26,12 @@ use crate::rules::{RuleVerdict, next_rule_id, validate_new_rule};
 use crate::rules_view::{add_rule_overlay, rules_body};
 use crate::section::Section;
 use crate::service;
-use crate::shell_chrome::{about_overlay, menu_row, tabs_row, toolbar_row};
+use crate::shell_chrome::{
+    about_overlay, preferences_overlay, secondary_banner, tabs_row, toolbar_row,
+};
 use crate::stats_view::{
-    EMPTY_CELL, applications_stats_note, daemon_body, events_body, stats_footer, stats_table_body,
+    EMPTY_CELL, FilterBarView, daemon_body, events_body, events_filter_counts, filter_bar,
+    rules_filter_counts, stats_filter_counts, stats_footer, stats_table_body,
 };
 use crate::theme::{self, ChromeMode, ChromePreference};
 use crate::tray::{DaemonLink, TrayState};
@@ -51,6 +54,7 @@ pub struct ProfilingSnapshot {
 struct ShellContent<'a> {
     section: Section,
     socket: &'a str,
+    #[allow(dead_code)]
     tray_state: TrayState,
     link: &'a DaemonLink,
     rules: &'a [RuleRow],
@@ -64,11 +68,14 @@ struct ShellContent<'a> {
     network_message: Option<&'a str>,
     log: &'a LogBuffer,
     profiling: &'a ProfilingSnapshot,
+    #[allow(dead_code)]
     chrome_pref: ChromePreference,
+    #[allow(dead_code)]
     chrome_mode: ChromeMode,
     traffic_scope_machine: bool,
     traffic_direction: &'static str,
     filter: &'a ListFilter,
+    #[allow(dead_code)]
     filter_input: Option<&'a Entity<InputState>>,
     stats_summary: Option<&'a StatsSummary>,
     stats_hosts: &'a [StatsRow],
@@ -88,6 +95,7 @@ pub struct AddRuleFormState {
 }
 
 /// Root application view for the main window.
+#[allow(clippy::struct_excessive_bools)]
 pub struct App {
     section: Section,
     socket: String,
@@ -119,8 +127,12 @@ pub struct App {
     fw_confirm: Option<ConfirmKind>,
     filter: ListFilter,
     filter_input: Option<Entity<InputState>>,
+    custom_limit_input: Option<Entity<InputState>>,
     menu_open: bool,
     about_open: bool,
+    preferences_open: bool,
+    verdict_select_open: bool,
+    limit_select_open: bool,
     stats_summary: Option<StatsSummary>,
     stats_hosts: Vec<StatsRow>,
     stats_procs: Vec<StatsRow>,
@@ -168,8 +180,12 @@ impl App {
             fw_confirm: None,
             filter: ListFilter::default(),
             filter_input: None,
+            custom_limit_input: None,
             menu_open: false,
             about_open: false,
+            preferences_open: false,
+            verdict_select_open: false,
+            limit_select_open: false,
             stats_summary: None,
             stats_hosts: Vec::new(),
             stats_procs: Vec::new(),
@@ -318,25 +334,47 @@ impl App {
     pub(crate) fn select(&mut self, section: Section, cx: &mut Context<Self>) {
         self.section = section;
         self.menu_open = false;
+        self.verdict_select_open = false;
+        self.limit_select_open = false;
         cx.notify();
     }
 
     /// Create the shared filter input once the window exists.
     pub fn attach_filter_input(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.filter_input.is_some() {
-            return;
+        if self.filter_input.is_none() {
+            self.filter_input = Some(cx.new(|cx| InputState::new(window, cx)));
         }
-        self.filter_input = Some(cx.new(|cx| InputState::new(window, cx)));
+        if self.custom_limit_input.is_none() {
+            self.custom_limit_input = Some(cx.new(|cx| InputState::new(window, cx)));
+        }
     }
 
     pub(crate) fn toggle_app_menu(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         self.menu_open = !self.menu_open;
+        self.verdict_select_open = false;
+        self.limit_select_open = false;
+        cx.notify();
+    }
+
+    pub(crate) fn focus_main_window(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        self.section = Section::Events;
+        self.menu_open = false;
+        self.preferences_open = false;
         cx.notify();
     }
 
     pub(crate) fn open_preferences(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        self.preferences_open = true;
         self.section = Section::Preferences;
         self.menu_open = false;
+        cx.notify();
+    }
+
+    pub(crate) fn close_preferences(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        self.preferences_open = false;
+        if self.section == Section::Preferences {
+            self.section = Section::Events;
+        }
         cx.notify();
     }
 
@@ -368,8 +406,23 @@ impl App {
         cx.notify();
     }
 
+    pub(crate) fn toggle_verdict_select(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        self.verdict_select_open = !self.verdict_select_open;
+        self.limit_select_open = false;
+        self.menu_open = false;
+        cx.notify();
+    }
+
+    pub(crate) fn toggle_limit_select(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        self.limit_select_open = !self.limit_select_open;
+        self.verdict_select_open = false;
+        self.menu_open = false;
+        cx.notify();
+    }
+
     pub(crate) fn set_filter_verdict_all(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         self.filter.verdict = VerdictFilter::All;
+        self.verdict_select_open = false;
         cx.notify();
     }
 
@@ -379,11 +432,13 @@ impl App {
         cx: &mut Context<Self>,
     ) {
         self.filter.verdict = VerdictFilter::Allow;
+        self.verdict_select_open = false;
         cx.notify();
     }
 
     pub(crate) fn set_filter_verdict_deny(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         self.filter.verdict = VerdictFilter::Deny;
+        self.verdict_select_open = false;
         cx.notify();
     }
 
@@ -393,41 +448,67 @@ impl App {
         cx: &mut Context<Self>,
     ) {
         self.filter.verdict = VerdictFilter::Prompt;
+        self.verdict_select_open = false;
         cx.notify();
     }
 
     pub(crate) fn set_filter_limit_50(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         self.filter.limit = ResultLimit::Preset(50);
+        self.limit_select_open = false;
         cx.notify();
     }
 
     pub(crate) fn set_filter_limit_100(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         self.filter.limit = ResultLimit::Preset(100);
+        self.limit_select_open = false;
         cx.notify();
     }
 
     pub(crate) fn set_filter_limit_200(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         self.filter.limit = ResultLimit::Preset(200);
+        self.limit_select_open = false;
         cx.notify();
     }
 
     pub(crate) fn set_filter_limit_300(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         self.filter.limit = ResultLimit::Preset(300);
+        self.limit_select_open = false;
         cx.notify();
     }
 
     pub(crate) fn set_filter_limit_all(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         self.filter.limit = ResultLimit::All;
+        self.limit_select_open = false;
         cx.notify();
     }
 
-    pub(crate) fn set_filter_limit_custom(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
-        self.filter.limit = ResultLimit::Custom(2_000);
+    pub(crate) fn set_filter_limit_custom(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.filter.limit = ResultLimit::Custom(self.filter.limit.effective());
+        self.limit_select_open = false;
+        if let Some(input) = &self.custom_limit_input {
+            let value = self.filter.limit.effective().to_string();
+            input.update(cx, |state, cx| {
+                state.set_value(&value, window, cx);
+            });
+        }
+        cx.notify();
+    }
+
+    pub(crate) fn apply_custom_limit(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        let raw = self
+            .custom_limit_input
+            .as_ref()
+            .map(|input| input.read(cx).value().to_string())
+            .unwrap_or_default();
+        let parsed = raw.trim().parse::<usize>().unwrap_or(100).clamp(1, 2_000);
+        self.filter.limit = ResultLimit::Custom(parsed);
         cx.notify();
     }
 
     pub(crate) fn clear_list_filter(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.filter.clear();
+        self.verdict_select_open = false;
+        self.limit_select_open = false;
         if let Some(input) = &self.filter_input {
             input.update(cx, |state, cx| {
                 state.set_value("", window, cx);
@@ -885,8 +966,10 @@ impl Render for App {
         let chrome_mode = self.chrome_pref.resolve(window.appearance());
         let menu_open = self.menu_open;
         let about_open = self.about_open;
+        let preferences_open = self.preferences_open;
         let snapshot = RenderSnapshot::capture(self, window, cx);
         let content = snapshot.content(self.traffic_scope_machine, self.traffic_direction);
+        let (filter_shown, filter_total) = filter_counts_for(&content);
         let mut shell = div()
             .id("interfire-shell")
             .relative()
@@ -903,18 +986,30 @@ impl Render for App {
                 chrome_mode,
                 menu_open,
                 cx,
-            ));
-        if menu_open {
-            shell = shell.child(menu_row(cx));
-        }
-        shell = shell
+            ))
             .child(tabs_row(selected, cx))
-            .child(content_panel(&content, cx))
-            .child(stats_footer(
-                snapshot.stats_summary.as_ref(),
-                snapshot.rules.len(),
+            .child(content_panel(&content, cx));
+        if selected.uses_filter()
+            && let Some(input) = snapshot.filter_input.as_ref()
+        {
+            shell = shell.child(filter_bar(
+                &FilterBarView {
+                    filter: &snapshot.filter,
+                    filter_input: input,
+                    shown: filter_shown,
+                    total: filter_total,
+                    verdict_open: snapshot.verdict_select_open,
+                    limit_open: snapshot.limit_select_open,
+                    custom_limit_input: snapshot.custom_limit_input.as_ref(),
+                },
                 cx,
             ));
+        }
+        shell = shell.child(stats_footer(
+            snapshot.stats_summary.as_ref(),
+            snapshot.rules.len(),
+            cx,
+        ));
         if let Some(form) = &self.add_form {
             shell = shell.child(add_rule_overlay(form, cx));
         }
@@ -926,6 +1021,15 @@ impl Render for App {
         }
         if about_open {
             shell = shell.child(about_overlay(cx));
+        }
+        if preferences_open {
+            shell = shell.child(preferences_overlay(
+                &snapshot.socket,
+                snapshot.tray_state,
+                snapshot.chrome_pref,
+                chrome_mode,
+                cx,
+            ));
         }
         shell
     }
@@ -951,6 +1055,9 @@ struct RenderSnapshot {
     chrome_mode: ChromeMode,
     filter: ListFilter,
     filter_input: Option<Entity<InputState>>,
+    custom_limit_input: Option<Entity<InputState>>,
+    verdict_select_open: bool,
+    limit_select_open: bool,
     stats_summary: Option<StatsSummary>,
     stats_hosts: Vec<StatsRow>,
     stats_procs: Vec<StatsRow>,
@@ -985,6 +1092,9 @@ impl RenderSnapshot {
             chrome_mode,
             filter,
             filter_input: app.filter_input.clone(),
+            custom_limit_input: app.custom_limit_input.clone(),
+            verdict_select_open: app.verdict_select_open,
+            limit_select_open: app.limit_select_open,
             stats_summary: app.stats_summary.clone(),
             stats_hosts: app.stats_hosts.clone(),
             stats_procs: app.stats_procs.clone(),
@@ -1110,18 +1220,16 @@ fn fw_confirm_overlay(kind: ConfirmKind, cx: &Context<App>) -> impl IntoElement 
                         .flex()
                         .gap_2()
                         .justify_end()
-                        .child(crate::rules_view::action_chip(
+                        .child(chrome::secondary_btn(
                             "fw-confirm-cancel",
                             "Cancel",
                             true,
-                            false,
                             cx,
                             App::cancel_fw_confirm,
                         ))
-                        .child(crate::rules_view::action_chip(
+                        .child(chrome::primary_btn(
                             "fw-confirm-ok",
                             ok,
-                            true,
                             true,
                             cx,
                             App::confirm_fw_action,
@@ -1130,22 +1238,27 @@ fn fw_confirm_overlay(kind: ConfirmKind, cx: &Context<App>) -> impl IntoElement 
         )
 }
 
+fn filter_counts_for(content: &ShellContent<'_>) -> (usize, usize) {
+    match content.section {
+        Section::Events => events_filter_counts(&content.log.lines(), content.filter),
+        Section::Rules => rules_filter_counts(content.rules, content.filter),
+        Section::Hosts => stats_filter_counts(content.stats_hosts, content.filter),
+        Section::Addresses => stats_filter_counts(content.stats_addrs, content.filter),
+        Section::Ports => stats_filter_counts(content.stats_ports, content.filter),
+        Section::Users => stats_filter_counts(content.stats_users, content.filter),
+        _ => (0, 0),
+    }
+}
+
 fn section_body(content: &ShellContent<'_>, cx: &Context<App>) -> Div {
     let muted = cx.theme().muted_foreground;
-    let filter_input = content.filter_input;
-    match content.section {
-        Section::Events => filter_input.map_or_else(
-            || div().child(div().text_color(muted).child("filter input unavailable")),
-            |input| {
-                events_body(
-                    &content.log.lines(),
-                    content.log.selected_index(),
-                    content.log.subscribed(),
-                    content.filter,
-                    input,
-                    cx,
-                )
-            },
+    let inner = match content.section {
+        Section::Events => events_body(
+            &content.log.lines(),
+            content.log.selected_index(),
+            content.log.subscribed(),
+            content.filter,
+            cx,
         ),
         Section::Daemon => daemon_body(content.socket, content.link, content.stats_summary, cx),
         Section::Rules => rules_body(
@@ -1153,28 +1266,16 @@ fn section_body(content: &ShellContent<'_>, cx: &Context<App>) -> Div {
             content.selected_rule,
             content.rules_message,
             content.adding,
+            content.filter,
             cx,
         ),
         Section::Hosts => stats_section(Section::Hosts, content, cx),
-        Section::Applications => {
-            let mut body = applications_body(
-                content.processes,
-                content.selected_process,
-                content.viewer_message,
-                cx,
-            );
-            body = body.child(applications_stats_note(content.stats_procs, muted));
-            if let Some(input) = filter_input {
-                body = body.child(stats_table_body(
-                    Section::Applications,
-                    content.stats_procs,
-                    content.filter,
-                    input,
-                    cx,
-                ));
-            }
-            body
-        }
+        Section::Applications => applications_body(
+            content.processes,
+            content.selected_process,
+            content.viewer_message,
+            cx,
+        ),
         Section::Addresses => stats_section(Section::Addresses, content, cx),
         Section::Ports => stats_section(Section::Ports, content, cx),
         Section::Users => stats_section(Section::Users, content, cx),
@@ -1183,22 +1284,24 @@ fn section_body(content: &ShellContent<'_>, cx: &Context<App>) -> Div {
         }
         Section::Traffic => traffic_body(content, cx),
         Section::Profiling => profiling_body(content.profiling, muted),
-        Section::Preferences => settings_body(
-            content.socket,
-            content.tray_state,
-            content.chrome_pref,
-            content.chrome_mode,
-            muted,
-            cx,
-        ),
+        Section::Preferences => div()
+            .text_sm()
+            .text_color(muted)
+            .child("Preferences open from the App menu."),
+    };
+    if content.section.is_secondary() {
+        div()
+            .v_flex()
+            .gap_2()
+            .child(secondary_banner(content.section.label(), cx))
+            .child(inner)
+    } else {
+        inner
     }
 }
 
 fn stats_section(section: Section, content: &ShellContent<'_>, cx: &Context<App>) -> Div {
     let muted = cx.theme().muted_foreground;
-    let Some(input) = content.filter_input else {
-        return div().child(div().text_color(muted).child("filter input unavailable"));
-    };
     let rows = match section {
         Section::Hosts => content.stats_hosts,
         Section::Addresses => content.stats_addrs,
@@ -1207,7 +1310,10 @@ fn stats_section(section: Section, content: &ShellContent<'_>, cx: &Context<App>
         Section::Applications => content.stats_procs,
         _ => &[],
     };
-    stats_table_body(section, rows, content.filter, input, cx)
+    if rows.is_empty() {
+        return div().child(div().text_color(muted).child("no stats yet"));
+    }
+    stats_table_body(section, rows, content.filter, cx)
 }
 
 fn traffic_body(content: &ShellContent<'_>, cx: &Context<App>) -> Div {
@@ -1320,101 +1426,6 @@ fn traffic_toggle(
     handler: fn(&mut App, &mut Window, &mut Context<App>),
 ) -> impl IntoElement {
     crate::rules_view::action_chip(id, label, true, selected, cx, handler)
-}
-
-fn settings_body(
-    socket: &str,
-    tray_state: TrayState,
-    chrome_pref: ChromePreference,
-    chrome_mode: ChromeMode,
-    muted: Hsla,
-    cx: &Context<App>,
-) -> Div {
-    div()
-        .v_flex()
-        .gap_3()
-        .child(
-            img(brand::logo_horizontal_source())
-                .id("settings-logo")
-                .w(px(220.))
-                .h(px(82.))
-                .object_fit(ObjectFit::Contain),
-        )
-        .child(
-            div()
-                .text_xs()
-                .text_color(muted)
-                .child("FIREWALL · SECURE · CONTROL"),
-        )
-        .child(settings_row("Socket", socket, muted, cx))
-        .child(settings_row("Tray", tray_state.label(), muted, cx))
-        .child(
-            div()
-                .v_flex()
-                .gap_2()
-                .px_3()
-                .py_2()
-                .rounded_md()
-                .border_1()
-                .border_color(cx.theme().border)
-                .bg(cx.theme().popover)
-                .child(div().text_sm().font_semibold().child("Theme"))
-                .child(div().text_xs().text_color(muted).child(format!(
-                    "Appearance: {} (phoenix orange brand)",
-                    chrome_mode.label()
-                )))
-                .child(theme_switcher(chrome_pref, cx)),
-        )
-        .child(div().text_color(muted).text_xs().child(
-            "Diagnostics and reconnect live on Status. Packaging lands with the install slice.",
-        ))
-}
-
-fn theme_switcher(selected: ChromePreference, cx: &Context<App>) -> impl IntoElement {
-    let mut row = div().id("theme-switcher").flex().gap_2();
-    for preference in ChromePreference::ALL {
-        let is_selected = preference == selected;
-        let label = preference.label();
-        row = row.child(
-            div()
-                .id(ElementId::Name(format!("theme-{label}").into()))
-                .px_3()
-                .py_1()
-                .rounded_md()
-                .border_1()
-                .cursor_pointer()
-                .when(is_selected, |this| {
-                    this.bg(cx.theme().accent)
-                        .text_color(cx.theme().accent_foreground)
-                        .border_color(cx.theme().accent)
-                        .font_semibold()
-                })
-                .when(!is_selected, |this| {
-                    this.border_color(cx.theme().border)
-                        .hover(|style| style.bg(cx.theme().accent.opacity(0.15)))
-                })
-                .on_click(cx.listener(move |app, _, window, cx| {
-                    app.set_chrome_preference(preference, window, cx);
-                }))
-                .child(label),
-        );
-    }
-    row
-}
-
-fn settings_row(label: &str, value: &str, muted: Hsla, cx: &Context<App>) -> Div {
-    div()
-        .flex()
-        .items_center()
-        .justify_between()
-        .px_3()
-        .py_2()
-        .rounded_md()
-        .border_1()
-        .border_color(cx.theme().border)
-        .bg(cx.theme().popover)
-        .child(div().text_sm().font_semibold().child(label.to_owned()))
-        .child(div().text_sm().text_color(muted).child(value.to_owned()))
 }
 
 fn profiling_body(snap: &ProfilingSnapshot, muted: Hsla) -> Div {

@@ -53,6 +53,7 @@ impl Default for ResultLimit {
 }
 
 impl ResultLimit {
+    /// Preset limit values offered in the filter Select.
     pub const PRESETS: [usize; 4] = [50, 100, 200, 300];
 
     #[must_use]
@@ -143,6 +144,7 @@ mod tests {
         assert_eq!(ResultLimit::Custom(500).effective(), 500);
         assert_eq!(ResultLimit::Custom(9_999).effective(), FILTER_HARD_CAP);
         assert_eq!(ResultLimit::Preset(100).label(), "100");
+        assert_eq!(ResultLimit::PRESETS, [50, 100, 200, 300]);
         assert!(VerdictFilter::Deny.matches("deny"));
         assert!(!VerdictFilter::Prompt.matches("deny"));
     }
