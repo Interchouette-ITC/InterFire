@@ -141,7 +141,7 @@ mod tests {
 
     #[test]
     fn embedded_bytecode_is_non_empty() {
-        assert!(!embedded_bytecode().is_empty());
+        assert_ne!(embedded_bytecode(), []);
     }
 
     #[test]

@@ -385,7 +385,7 @@ mod tests {
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0].message, "b");
         assert_eq!(rows[1].message, "c");
-        assert!(log.tail(0).is_empty());
+        assert_eq!(log.tail(0).len(), 0);
         let _ = fs::remove_file(path);
     }
 

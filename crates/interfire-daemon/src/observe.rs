@@ -463,7 +463,7 @@ mod tests {
         let summary = shared.stats.lock().expect("stats").summary(0);
         assert_eq!(summary.connections, 1);
         assert_eq!(summary.denied, 1);
-        assert!(shared.stats.lock().expect("stats").hosts().is_empty());
+        assert_eq!(shared.stats.lock().expect("stats").hosts().len(), 0);
         let _ = fs::remove_file(audit_path);
     }
 

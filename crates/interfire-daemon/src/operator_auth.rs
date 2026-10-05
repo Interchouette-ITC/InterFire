@@ -47,7 +47,6 @@ fn prepare_operator_socket_with(socket: &Path, lookup: GroupLookup) -> io::Resul
             chown(socket, None, Some(gid))?;
             fs::set_permissions(socket, fs::Permissions::from_mode(0o660))?;
             info!(group = OPERATOR_GROUP, "IPC socket open to operator group");
-            Ok(())
         }
         GroupLookup::Missing => {
             fs::set_permissions(socket, fs::Permissions::from_mode(0o600))?;
@@ -55,9 +54,9 @@ fn prepare_operator_socket_with(socket: &Path, lookup: GroupLookup) -> io::Resul
                 group = OPERATOR_GROUP,
                 "operator group missing; socket remains owner-only"
             );
-            Ok(())
         }
     }
+    Ok(())
 }
 
 /// True when `uid` may mutate policy (root, daemon UID, or operator group).
