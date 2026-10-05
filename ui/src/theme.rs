@@ -313,7 +313,6 @@ fn paint_chrome(theme: &mut Theme, c: &PhoenixColors) {
     theme.title_bar_border = c.border;
     theme.status_bar = c.surface;
     theme.status_bar_border = c.border;
-    theme.tiles = c.surface;
     theme.progress_bar = c.accent;
     theme.slider_bar = c.accent;
     theme.slider_thumb = c.on_accent;

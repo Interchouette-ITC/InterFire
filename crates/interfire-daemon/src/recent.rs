@@ -118,14 +118,14 @@ mod tests {
         recent.record(1, 1, dest(443));
         recent.record(2, 2, dest(80));
         recent.record(3, 3, dest(22));
-        assert!(recent.for_process(1, 1).is_empty());
+        assert_eq!(recent.for_process(1, 1).len(), 0);
         assert_eq!(recent.for_process(3, 3).len(), 1);
     }
 
     #[test]
     fn unknown_process_returns_empty() {
         let recent = RecentConnects::new(2, 2);
-        assert!(recent.for_process(99, 1).is_empty());
+        assert_eq!(recent.for_process(99, 1).len(), 0);
     }
 
     #[test]
@@ -141,7 +141,7 @@ mod tests {
                 verdict: "allow".into(),
             },
         );
-        assert!(recent.for_process(1, 1).is_empty());
+        assert_eq!(recent.for_process(1, 1).len(), 0);
         assert_eq!(recent.for_process(2, 2).len(), 1);
     }
 }

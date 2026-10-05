@@ -876,7 +876,7 @@ table inet interfire {
             rules_active: false,
             queue_bound: false,
         });
-        assert!(open.is_empty());
+        assert_eq!(open, "");
         let user_out_with_queue = compose_traffic_script(&TrafficCompose {
             machine: crate::traffic_mode::TrafficPreference::Open,
             users: &[(42, crate::traffic_mode::TrafficPreference::Out)],

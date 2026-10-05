@@ -318,7 +318,7 @@ mod tests {
         store.record_unattributed_deny();
         assert_eq!(store.summary(0).connections, 1);
         assert_eq!(store.summary(0).denied, 1);
-        assert!(store.hosts().is_empty());
+        assert_eq!(store.hosts().len(), 0);
     }
 
     #[test]

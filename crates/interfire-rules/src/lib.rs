@@ -337,7 +337,7 @@ mod tests {
         rules.insert(rule(1, Verdict::Allow)).unwrap();
         assert!(rules.remove(1));
         assert!(!rules.remove(1));
-        assert!(rules.rules().is_empty());
+        assert_eq!(rules.rules(), []);
     }
 
     #[test]
@@ -361,7 +361,7 @@ mod tests {
         ));
         let _ = std::fs::remove_file(&path);
         let store = RulesStore::new(&path);
-        assert!(store.load().unwrap().rules().is_empty());
+        assert_eq!(store.load().unwrap().rules(), []);
     }
 
     #[test]

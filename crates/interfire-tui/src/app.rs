@@ -1877,7 +1877,7 @@ mod tests {
         app.handle_key(KeyCode::Char('t'));
         assert_eq!(app.handle_key(KeyCode::Char('z')), KeyAction::None);
         app.tab = Tab::Help;
-        assert!(app.visible_list(5).items.is_empty());
+        assert_eq!(app.visible_list(5).items, [] as [std::string::String; 0]);
     }
 
     #[test]
