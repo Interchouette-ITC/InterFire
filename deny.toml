@@ -8,6 +8,10 @@ all-features = false
 yanked = "warn"
 # Fail only if a direct workspace crate is unmaintained (GPUI pulls several).
 unmaintained = "workspace"
+ignore = [
+    # object 0.36 / aya-obj pin ruzstd 0.7; fixed line is ruzstd >= 0.9.1.
+    { id = "RUSTSEC-2026-0344", reason = "ruzstd 0.7 via object/aya-obj; no safe upgrade until aya bumps object" },
+]
 
 [licenses]
 unused-allowed-license = "allow"
