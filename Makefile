@@ -114,8 +114,10 @@ geiger:
 	done
 
 ## Requires `cargo install cargo-audit`.
+## RUSTSEC-2026-0344: ruzstd via object 0.36 / aya; object >=0.40 needs aya bump.
 audit:
-	$(CARGO) audit
+	$(CARGO) audit \
+		--ignore RUSTSEC-2026-0344
 
 ## Requires `cargo install cargo-deny`.
 deny:
