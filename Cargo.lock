@@ -4516,11 +4516,14 @@ checksum = "650eef8c711430f1a879fdd01d4745a7deea475becfb90269c06775983bbf086"
 
 [[package]]
 name = "nfq"
-version = "0.2.5"
+version = "0.2.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b9c8f4c88952507d9df9400a6a2e48640fb460e21dcb2b4716eb3ff156d6db9e"
+checksum = "b36d0d229b49eb06057d61a09d7bcba023e31920530ddd00031d6ce6d256ccfe"
 dependencies = [
+ "bytes",
  "libc",
+ "rustix",
+ "zerocopy",
 ]
 
 [[package]]
